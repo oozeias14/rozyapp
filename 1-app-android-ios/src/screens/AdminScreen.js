@@ -478,7 +478,7 @@ function OwnerTab({ owner, reload }) {
     if (result.canceled) return;
     const asset = result.assets[0];
     if (asset.fileSize && asset.fileSize > MAX_PHOTO_BYTES) {
-      Alert.alert('Imagem muito grande', `Essa foto tem ${(asset.fileSize / 1024 / 1024).toFixed(2)} MB. O limite e 1 MB.`);
+      Alert.alert('Imagem muito grande', `Essa foto tem ${(asset.fileSize / 1024).toFixed(0)} KB. O limite e 200 KB.`);
       return;
     }
     setUploading(true);
@@ -486,7 +486,7 @@ function OwnerTab({ owner, reload }) {
       const response = await fetch(asset.uri);
       const blob = await response.blob();
       if (blob.size > MAX_PHOTO_BYTES) {
-        Alert.alert('Imagem muito grande', `Essa foto tem ${(blob.size / 1024 / 1024).toFixed(2)} MB. O limite e 1 MB.`);
+        Alert.alert('Imagem muito grande', `Essa foto tem ${(blob.size / 1024).toFixed(0)} KB. O limite e 200 KB.`);
         setUploading(false);
         return;
       }
@@ -495,7 +495,7 @@ function OwnerTab({ owner, reload }) {
       const { error: uploadError } = await supabase.storage.from('avatars').upload(path, blob, { upsert: true, contentType: blob.type || 'image/jpeg' });
       if (uploadError) {
         const isSizeErr = uploadError.message.toLowerCase().includes('exceed');
-        Alert.alert(isSizeErr ? 'Imagem muito grande' : 'Erro ao enviar foto', isSizeErr ? 'O servidor recusou o arquivo: limite de 1 MB.' : uploadError.message);
+        Alert.alert(isSizeErr ? 'Imagem muito grande' : 'Erro ao enviar foto', isSizeErr ? 'O servidor recusou o arquivo: limite de 200 KB.' : uploadError.message);
         setUploading(false);
         return;
       }
@@ -512,7 +512,7 @@ function OwnerTab({ owner, reload }) {
     setSaving(true);
     try {
       await updateOwnerProfile({ name, photo_url: photoUrl, bio, instagram, facebook, tiktok, whatsapp, youtube });
-      Alert.alert('Pronto', 'Perfil do Dr. Candido salvo.');
+      Alert.alert('Pronto', 'Perfil de Rozy Costa salvo.');
       reload();
     } catch (e) {
       Alert.alert('Erro', e.message);
@@ -535,12 +535,12 @@ function OwnerTab({ owner, reload }) {
         </View>
       </View>
 
-      <Text style={S.cardTitle}>Perfil do Dr. Candido (visivel para todos)</Text>
+      <Text style={S.cardTitle}>Perfil de Rozy Costa (visivel para todos)</Text>
       <View style={{ alignItems: 'center', marginBottom: 12 }}>
         <TouchableOpacity onPress={pickPhoto} style={styles.ownerPhotoRing} disabled={uploading}>
-          {uploading ? <ActivityIndicator color={COLORS.teal} /> : photoUrl ? <Image source={{ uri: photoUrl }} style={{ width: '100%', height: '100%' }} /> : <Text style={{ fontSize: 30 }}>👨‍⚕️</Text>}
+          {uploading ? <ActivityIndicator color={COLORS.teal} /> : photoUrl ? <Image source={{ uri: photoUrl }} style={{ width: '100%', height: '100%' }} /> : <Text style={{ fontSize: 30 }}>👩‍💼</Text>}
         </TouchableOpacity>
-        <Text style={[S.muted, { marginTop: 6 }]}>Toque para trocar a foto (galeria, max. 1 MB)</Text>
+        <Text style={[S.muted, { marginTop: 6 }]}>Toque para trocar a foto (galeria, max. 200 KB)</Text>
       </View>
       <Text style={S.label}>Nome</Text><TextInput style={S.input} value={name} onChangeText={setName} />
       <Text style={S.label}>Bio / Descricao</Text>
@@ -551,7 +551,7 @@ function OwnerTab({ owner, reload }) {
       <Text style={S.label}>WhatsApp</Text><TextInput style={S.input} value={whatsapp} onChangeText={setWhatsapp} placeholder="5561999999999" placeholderTextColor={COLORS.ink3} />
       <Text style={S.label}>YouTube (URL)</Text><TextInput style={S.input} value={youtube} onChangeText={setYoutube} placeholder="https://youtube.com/..." placeholderTextColor={COLORS.ink3} />
       <TouchableOpacity style={[S.btn, S.btnTeal]} onPress={save} disabled={saving}>
-        <Text style={S.btnTextDark}>{saving ? 'Salvando...' : 'Salvar perfil do Dr. Candido'}</Text>
+        <Text style={S.btnTextDark}>{saving ? 'Salvando...' : 'Salvar perfil de Rozy Costa'}</Text>
       </TouchableOpacity>
     </View>
   );

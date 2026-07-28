@@ -18,6 +18,7 @@ export default function NetworkScreen({ profile }) {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [selectedSponsor, setSelectedSponsor] = useState(null);
+  const [showAllList, setShowAllList] = useState(false);
 
   const load = useCallback(async () => {
     const all = await fetchAllProfiles();
@@ -67,8 +68,12 @@ export default function NetworkScreen({ profile }) {
               const x = CX + R * Math.cos(ang);
               const y = CY + R * Math.sin(ang);
               return s ? (
-                <TouchableOpacity key={i} style={[styles.slot, styles.slotFilled, { left: x - 16, top: y - 16 }]} onPress={() => openPerson(s)}>
-                  <Text style={{ color: COLORS.teal, fontSize: 10, fontWeight: '700' }}>{initials(s.name)}</Text>
+                <TouchableOpacity key={i} style={[styles.slot, styles.slotFilled, { left: x - 16, top: y - 16, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }]} onPress={() => openPerson(s)}>
+                  {s.photo_url ? (
+                    <Image source={{ uri: s.photo_url }} style={{ width: '100%', height: '100%' }} />
+                  ) : (
+                    <Text style={{ color: COLORS.teal, fontSize: 10, fontWeight: '700' }}>{initials(s.name)}</Text>
+                  )}
                 </TouchableOpacity>
               ) : (
                 <View key={i} style={[styles.slot, styles.slotEmpty, { left: x - 16, top: y - 16 }]}>
@@ -83,20 +88,32 @@ export default function NetworkScreen({ profile }) {
           <Text style={[S.muted, { marginTop: 6 }]}>{Math.min(direct.length, 10)}/10 slots preenchidos</Text>
         </View>
 
-        <Text style={S.cardTitle}>Todos os seus indicados diretos ({direct.length})</Text>
-        <View style={S.card}>
-          {direct.length === 0 && <Text style={[S.muted, { textAlign: 'center', padding: 10 }]}>Nenhum indicado ainda.{'\n'}Compartilhe seu código em Perfil.</Text>}
-          {direct.map((c) => (
-            <TouchableOpacity key={c.id} style={styles.personRowFull} onPress={() => openPerson(c)}>
-              <Avatar person={c} size={36} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: COLORS.ink1, fontWeight: '600', fontSize: 13 }}>{c.name}</Text>
-                <Text style={S.muted}>{c.instagram || c.email}</Text>
-              </View>
-              <Text style={S.idBadge}>#{c.id}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <TouchableOpacity 
+          style={[S.btn, S.btnTeal, { marginVertical: 12 }]} 
+          onPress={() => setShowAllList(!showAllList)}
+        >
+          <Text style={S.btnTextDark}>
+            {showAllList ? 'Ocultar lista de indicados' : `Ver todos os indicados diretos (${direct.length})`}
+          </Text>
+        </TouchableOpacity>
+
+        {showAllList && (
+          <View style={S.card}>
+            {direct.length === 0 && <Text style={[S.muted, { textAlign: 'center', padding: 10 }]}>Nenhum indicado ainda.{'\n'}Compartilhe seu código em Perfil.</Text>}
+            {direct.map((c, index) => (
+              <TouchableOpacity key={c.id} style={styles.personRowFull} onPress={() => openPerson(c)}>
+                <Avatar person={c} size={36} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: COLORS.ink1, fontWeight: '600', fontSize: 13 }}>
+                    {c.name} {index < 10 ? <Text style={{ color: COLORS.teal, fontSize: 11, fontWeight: '500' }}>(Slot {index + 1})</Text> : <Text style={{ color: COLORS.violet, fontSize: 11, fontWeight: '500' }}>(Excedente)</Text>}
+                  </Text>
+                  <Text style={S.muted}>{c.instagram || c.email}</Text>
+                </View>
+                <Text style={S.idBadge}>#{c.id}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         <View style={[styles.banner]}>
           <Text style={{ color: '#CFC9FA', fontSize: 12 }}>11º indicado em diante entra automaticamente na primeira vaga livre da rede (spillover automático).</Text>

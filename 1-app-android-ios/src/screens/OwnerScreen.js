@@ -31,16 +31,6 @@ export default function OwnerScreen({ profile, onOpenAdminOwner }) {
     Linking.openURL(social.url).catch(err => console.log('Erro ao abrir link social:', err));
   }
 
-  async function shareBusinessCard() {
-    if (!owner) return;
-    const shareMessage = `⚖️ *Dr. Candido Teles — Cartão de Visita Digital*\n\n${owner.bio}\n\n📸 Siga no Instagram: https://instagram.com/${owner.instagram?.replace('@', '') || 'drcandidoteles'}\n\nFaça parte do aplicativo Órbita e conecte-se conosco!`;
-    try {
-      await Share.share({ message: shareMessage });
-    } catch (e) {
-      console.log('Erro ao compartilhar cartão:', e);
-    }
-  }
-
   if (!owner) return null;
 
   const socials = [
@@ -70,7 +60,7 @@ export default function OwnerScreen({ profile, onOpenAdminOwner }) {
             <Image source={require('../../assets/candido.jpg')} style={styles.photo} />
           )}
           <View style={styles.headerText}>
-            <Text style={styles.cardBadge}>⚖️ ADVOCACIA</Text>
+            <Text style={styles.cardBadge}>⚖️ ADVOGADO</Text>
             <Text style={styles.name}>{owner.name}</Text>
             <Text style={styles.subtext}>Especialista Fundiário</Text>
           </View>
@@ -79,10 +69,6 @@ export default function OwnerScreen({ profile, onOpenAdminOwner }) {
         <View style={styles.cardDivider} />
 
         <Text style={styles.bio}>{owner.bio}</Text>
-
-        <TouchableOpacity style={[styles.shareBtn, { width: '100%' }]} onPress={shareBusinessCard}>
-          <Text style={styles.shareBtnText}>🔗 Compartilhar Cartão de Visita</Text>
-        </TouchableOpacity>
       </View>
 
       <Text style={S.cardTitle}>Siga nas redes sociais</Text>

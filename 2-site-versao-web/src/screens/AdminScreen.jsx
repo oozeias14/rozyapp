@@ -396,7 +396,7 @@ function OwnerTab({ owner, reload }) {
       const ext = compressed.name.split('.').pop().toLowerCase();
       const path = `owner/photo.${ext}`;
       const { error: uploadError } = await supabase.storage.from('avatars').upload(path, compressed, { upsert: true, contentType: compressed.type || 'image/jpeg' });
-      if (uploadError) { alert(uploadError.message.toLowerCase().includes('exceed') ? 'Servidor recusou: limite de 1 MB.' : 'Erro: ' + uploadError.message); return; }
+      if (uploadError) { alert(uploadError.message.toLowerCase().includes('exceed') ? 'Servidor recusou: limite de 200 KB.' : 'Erro: ' + uploadError.message); return; }
       const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
       setPhotoUrl(pub.publicUrl + `?t=${Date.now()}`);
     } catch (err) { alert('Erro inesperado: ' + err.message); }
@@ -406,7 +406,7 @@ function OwnerTab({ owner, reload }) {
     setSaving(true);
     try {
       await updateOwnerProfile({ name, photo_url: photoUrl, bio, instagram, facebook, tiktok, whatsapp, youtube });
-      alert('Perfil do Dr. Candido salvo.');
+      alert('Perfil de Rozy Costa salvo.');
       reload();
     } catch (e) { alert('Erro: ' + e.message); } finally { setSaving(false); }
   }
@@ -425,13 +425,13 @@ function OwnerTab({ owner, reload }) {
         </div>
       </div>
 
-      <div className="card-title">Perfil do Dr. Candido (visível para todos)</div>
+      <div className="card-title">Perfil de Rozy Costa (visível para todos)</div>
       <div style={{ textAlign: 'center', marginBottom: 12 }}>
         <div className="photo-ring" style={{ width: 100, height: 100 }} onClick={() => fileRef.current?.click()}>
-          {photoUrl ? <img src={photoUrl} alt="" /> : '👨‍⚕️'}
+          {photoUrl ? <img src={photoUrl} alt="" /> : '👩‍💼'}
         </div>
         <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
-        <div className="muted" style={{ marginTop: 6 }}>Toque para trocar a foto (máx. 1 MB)</div>
+        <div className="muted" style={{ marginTop: 6 }}>Toque para trocar a foto (máx. 200 KB)</div>
       </div>
       <label className="lbl">Nome</label><input value={name} onChange={(e) => setName(e.target.value)} />
       <label className="lbl">Bio / Descrição</label>
@@ -441,7 +441,7 @@ function OwnerTab({ owner, reload }) {
       <label className="lbl">TikTok</label><input value={tiktok} onChange={(e) => setTiktok(e.target.value)} placeholder="@usuario" />
       <label className="lbl">WhatsApp</label><input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="5561999999999" />
       <label className="lbl">YouTube (URL)</label><input value={youtube} onChange={(e) => setYoutube(e.target.value)} placeholder="https://youtube.com/..." />
-      <button className="btn btn-teal" onClick={save} disabled={saving}>{saving ? 'Salvando...' : 'Salvar perfil do Dr. Candido'}</button>
+      <button className="btn btn-teal" onClick={save} disabled={saving}>{saving ? 'Salvando...' : 'Salvar perfil de Rozy Costa'}</button>
     </div>
   );
 }

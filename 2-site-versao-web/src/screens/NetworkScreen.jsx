@@ -21,6 +21,7 @@ export default function NetworkScreen({ profile }) {
   const [direct, setDirect] = useState([]);
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [selectedSponsor, setSelectedSponsor] = useState(null);
+  const [showAllList, setShowAllList] = useState(false);
 
   const load = useCallback(async () => {
     const all = await fetchAllProfiles();
@@ -64,7 +65,13 @@ export default function NetworkScreen({ profile }) {
             const ang = (Math.PI * 2 / 10) * i - Math.PI / 2;
             const x = CX + R * Math.cos(ang), y = CY + R * Math.sin(ang);
             return s ? (
-              <div key={i} className="orbit-slot slot-f" style={{ left: x, top: y }} onClick={() => openPerson(s)}>{initials(s.name)}</div>
+              <div key={i} className="orbit-slot slot-f" style={{ left: x, top: y, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => openPerson(s)}>
+                {s.photo_url ? (
+                  <img src={s.photo_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  initials(s.name)
+                )}
+              </div>
             ) : (
               <div key={i} className="orbit-slot slot-e" style={{ left: x, top: y }}>{i + 1}</div>
             );
@@ -74,20 +81,33 @@ export default function NetworkScreen({ profile }) {
         <div className="muted" style={{ marginTop: 6 }}>{Math.min(direct.length, 10)}/10 slots preenchidos</div>
       </div>
 
-      <div className="card-title">Todos os seus indicados diretos ({direct.length})</div>
-      <div className="card">
-        {direct.length === 0 && <div className="empty">Nenhum indicado ainda.<br />Compartilhe seu código em Perfil.</div>}
-        {direct.map((c) => (
-          <div key={c.id} className="prow" onClick={() => openPerson(c)}>
-            <Avatar person={c} size={36} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 13 }}>{c.name}</div>
-              <div className="muted">{c.instagram || c.email}</div>
-            </div>
-            <span className="id-badge">#{c.id}</span>
-          </div>
-        ))}
+      <div style={{ marginTop: 16, marginBottom: 12 }}>
+        <button 
+          className="btn btn-teal" 
+          style={{ width: '100%' }} 
+          onClick={() => setShowAllList(!showAllList)}
+        >
+          {showAllList ? 'Ocultar lista de indicados' : `Ver todos os indicados diretos (${direct.length})`}
+        </button>
       </div>
+
+      {showAllList && (
+        <div className="card">
+          {direct.length === 0 && <div className="empty">Nenhum indicado ainda.<br />Compartilhe seu código em Perfil.</div>}
+          {direct.map((c, index) => (
+            <div key={c.id} className="prow" onClick={() => openPerson(c)}>
+              <Avatar person={c} size={36} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>
+                  {c.name} {index < 10 ? <span style={{ color: 'var(--teal)', fontSize: 11, fontWeight: 500 }}>(Slot {index + 1})</span> : <span style={{ color: 'var(--violet)', fontSize: 11, fontWeight: 500 }}>(Excedente)</span>}
+                </div>
+                <div className="muted">{c.instagram || c.email}</div>
+              </div>
+              <span className="id-badge">#{c.id}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="card" style={{ background: 'var(--violet-dim)', borderColor: 'var(--violet)' }}>
         <div style={{ fontSize: 12, color: '#CFC9FA' }}>11º indicado em diante entra automaticamente na primeira vaga livre da rede (spillover automático).</div>

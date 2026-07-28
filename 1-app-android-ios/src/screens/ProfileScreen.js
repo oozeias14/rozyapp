@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, Image, TouchableOpacity, TextInput, Alert, StyleSheet, ActivityIndicator, ScrollView, Share, Linking } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
-import QRCode from 'react-native-qrcode-svg';
 import { supabase, MAX_PHOTO_BYTES } from '../lib/supabase';
 import { COLORS, S } from '../theme';
 import TopBar from '../components/TopBar';
@@ -15,7 +14,7 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
   const [tiktok, setTiktok] = useState(profile.tiktok || '');
   const [whatsapp, setWhatsapp] = useState(profile.whatsapp || '');
   const [newPassword, setNewPassword] = useState('');
-  const [appDomain, setAppDomain] = useState('orbita.app');
+  const [appDomain, setAppDomain] = useState('amigosdarozy.com.br');
   const [totalUsers, setTotalUsers] = useState(0);
 
   useEffect(() => {
@@ -26,7 +25,7 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
     })();
   }, []);
 
-  const referralLink = `https://${appDomain || 'orbita.app'}/r/${profile.id}`;
+  const referralLink = `https://amigosdarozy.com.br/${profile.username || profile.id}`;
   const isStaff = profile.role === 'admin' || profile.role === 'coord';
 
   async function pickAndUploadPhoto() {
@@ -46,7 +45,7 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
     const asset = result.assets[0];
 
     if (asset.fileSize && asset.fileSize > MAX_PHOTO_BYTES) {
-      Alert.alert('Imagem muito grande', `Essa foto tem ${(asset.fileSize / 1024 / 1024).toFixed(2)} MB. O limite é 1 MB. Escolha uma foto menor.`);
+      Alert.alert('Imagem muito grande', `Essa foto tem ${(asset.fileSize / 1024).toFixed(0)} KB. O limite é 200 KB. Escolha uma foto menor.`);
       return;
     }
 
@@ -55,7 +54,7 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
       const response = await fetch(asset.uri);
       const blob = await response.blob();
       if (blob.size > MAX_PHOTO_BYTES) {
-        Alert.alert('Imagem muito grande', `Essa foto tem ${(blob.size / 1024 / 1024).toFixed(2)} MB. O limite é 1 MB.`);
+        Alert.alert('Imagem muito grande', `Essa foto tem ${(blob.size / 1024).toFixed(0)} KB. O limite é 200 KB.`);
         setUploading(false);
         return;
       }
@@ -64,7 +63,7 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
       const { error: uploadError } = await supabase.storage.from('avatars').upload(path, blob, { upsert: true, contentType: blob.type || 'image/jpeg' });
       if (uploadError) {
         if (uploadError.message && uploadError.message.toLowerCase().includes('exceed')) {
-          Alert.alert('Imagem muito grande', 'O servidor recusou o arquivo: limite de 1 MB por foto.');
+          Alert.alert('Imagem muito grande', 'O servidor recusou o arquivo: limite de 200 KB por foto.');
         } else {
           Alert.alert('Erro ao enviar foto', uploadError.message);
         }
@@ -93,20 +92,9 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
     }
   }
 
-  async function copyCode() {
-    await Clipboard.setStringAsync(String(profile.id));
-    Alert.alert('Copiado', 'Código de indicação copiado.');
-  }
-
-  async function shareWhatsApp() {
-    const text = `Entre no Amigos da Rozy Costa! Use meu código de indicação: ${profile.id} (digite esse número no cadastro do app)`;
-    Linking.openURL(`https://wa.me/?text=${encodeURIComponent(text)}`);
-  }
-
-  async function shareGeneric() {
-    try {
-      await Share.share({ message: `Entre no Amigos da Rozy Costa! Meu código de indicação: ${profile.id}` });
-    } catch (e) {}
+  async function copyLink() {
+    await Clipboard.setStringAsync(referralLink);
+    Alert.alert('Copiado', 'Link de indicação copiado.');
   }
 
   async function handleChangePassword() {
@@ -134,8 +122,9 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
             <Text style={{ fontSize: 26 }}>📷</Text>
           )}
         </TouchableOpacity>
-        <Text style={styles.hint}>Toque para escolher uma foto da galeria (máx. 1 MB)</Text>
+        <Text style={styles.hint}>Toque para escolher uma foto da galeria (máx. 200 KB)</Text>
         <Text style={styles.name}>{profile.name}</Text>
+        <Text style={{ fontSize: 13, color: COLORS.teal, fontWeight: '600', marginTop: 2, marginBottom: 4 }}>@{profile.username || 'sem_usuario'}</Text>
         <View style={{ flexDirection: 'row', gap: 6, marginTop: 5 }}>
           <Text style={S.idBadge}>#{profile.id}</Text>
           <Text style={[S.roleBadge, profile.role === 'admin' ? S.roleAdmin : profile.role === 'coord' ? S.roleCoord : S.roleUser]}>
@@ -160,33 +149,13 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
         </TouchableOpacity>
       </View>
 
-      <Text style={S.cardTitle}>Seu código de indicação</Text>
-      <View style={[S.card, { alignItems: 'center' }]}>
-        <Text style={styles.bigCode}>#{profile.id}</Text>
-        <Text style={[S.muted, { textAlign: 'center', marginTop: 4 }]}>Peça para a pessoa digitar este número no campo "Código de indicação" na tela de Cadastro.</Text>
-        <TouchableOpacity style={[S.btn, S.btnGhost, { marginTop: 10, paddingHorizontal: 20 }]} onPress={copyCode}>
-          <Text style={S.btnTextGhost}>Copiar código</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-        <TouchableOpacity style={[S.btn, S.btnTeal, { flex: 1, marginBottom: 0 }]} onPress={shareWhatsApp}>
-          <Text style={S.btnTextDark}>🟢 WhatsApp</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[S.btn, S.btnViolet, { flex: 1, marginBottom: 0 }]} onPress={shareGeneric}>
-          <Text style={S.btnTextLight}>📸 Instagram</Text>
-        </TouchableOpacity>
-      </View>
-
-      <Text style={S.cardTitle}>Link e QR Code (opcional)</Text>
+      <Text style={S.cardTitle}>Link de indicação</Text>
       <View style={S.card}>
-        <View style={styles.linkBox}>
-          <Text style={styles.linkText} numberOfLines={1}>{referralLink}</Text>
-        </View>
-        <Text style={[S.muted, { marginBottom: 10 }]}>O link só vai abrir de verdade quando o app tiver um domínio próprio publicado — enquanto isso, use o código acima.</Text>
-        <View style={{ alignItems: 'center', paddingVertical: 6 }}>
-          <QRCode value={referralLink} size={140} backgroundColor={COLORS.panel} color={COLORS.ink1} />
-        </View>
+        <TouchableOpacity style={[styles.linkBox, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]} onPress={copyLink}>
+          <Text style={[styles.linkText, { flex: 1 }]} numberOfLines={1}>{referralLink}</Text>
+          <Text style={{ fontSize: 16, marginLeft: 8 }}>📋</Text>
+        </TouchableOpacity>
+        <Text style={S.muted}>Toque no link acima para copiar o seu endereço de indicação direta.</Text>
       </View>
 
       <Text style={S.cardTitle}>Alterar minha senha</Text>

@@ -8,6 +8,32 @@ import { supabase } from '../lib/supabase';
 // de "definir nova senha" sozinho, então usamos o site para isso.
 const PASSWORD_RESET_REDIRECT_URL = 'https://SEUDOMINIO.com';
 
+function translateError(err) {
+  if (!err) return '';
+  const msg = typeof err === 'string' ? err : (err.message || String(err));
+  const lower = msg.toLowerCase();
+  
+  if (lower.includes('failed to fetch')) {
+    return 'Não foi possível conectar ao servidor do Supabase. Verifique sua conexão com a internet ou se o seu projeto está pausado/desativado no painel da Supabase (se for plano gratuito, reative-o lá).';
+  }
+  if (lower.includes('invalid login credentials')) {
+    return 'E-mail, nome de usuário ou senha incorretos.';
+  }
+  if (lower.includes('user already registered') || lower.includes('email already exists')) {
+    return 'Este e-mail já está cadastrado por outro usuário.';
+  }
+  if (lower.includes('password should be at least')) {
+    return 'A senha deve conter pelo menos 6 caracteres.';
+  }
+  if (lower.includes('invalid email')) {
+    return 'Por favor, insira um e-mail válido.';
+  }
+  if (lower.includes('email not confirmed')) {
+    return 'Este e-mail ainda não foi verificado. Por favor, confirme-o na sua caixa de entrada.';
+  }
+  return msg;
+}
+
 export default function AuthScreen({ onLoggedIn }) {
   const [mode, setMode] = useState('login'); // login | cadastro
   const [loading, setLoading] = useState(false);
@@ -16,6 +42,7 @@ export default function AuthScreen({ onLoggedIn }) {
   const [forgotLoading, setForgotLoading] = useState(false);
 
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
   const [refCode, setRefCode] = useState('');
@@ -24,61 +51,132 @@ export default function AuthScreen({ onLoggedIn }) {
 
   async function handleLogin() {
     setLoading(true);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    let loginEmail = email.trim();
+    if (loginEmail && !loginEmail.includes('@')) {
+      // É um nome de usuário! Busca o e-mail correspondente
+      const { data: foundProfile } = await supabase
+        .from('profiles')
+        .select('email')
+        .eq('username', loginEmail.toLowerCase())
+        .maybeSingle();
+      if (foundProfile) {
+        loginEmail = foundProfile.email;
+      } else {
+        setLoading(false);
+        Alert.alert('Erro', 'Cadastro não encontrado para este nome de usuário.');
+        return;
+      }
+    }
+    const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
     setLoading(false);
-    if (error) { Alert.alert('Erro no login', error.message); return; }
+    if (error) { Alert.alert('Erro no login', translateError(error)); return; }
     onLoggedIn(data.user);
   }
 
   async function handleCadastro() {
-    if (!refCode.trim()) {
-      Alert.alert('Codigo obrigatorio', 'Digite o codigo de indicacao de quem te chamou.');
+    if (!username.trim()) {
+      Alert.alert('Usuário obrigatório', 'Escolha um nome de usuário para o seu perfil.');
       return;
     }
+    if (username.includes(' ')) {
+      Alert.alert('Erro no usuário', 'O nome de usuário não pode conter espaços.');
+      return;
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
+      Alert.alert('Erro no usuário', 'Use apenas letras, números, sublinhas (_) ou traços (-).');
+      return;
+    }
+
     setLoading(true);
 
-    // 1) VALIDA se o codigo de indicacao existe de verdade no banco
-    const { data: refUser, error: refErr } = await supabase
-      .from('profiles')
-      .select('id, role, coord_id')
-      .eq('id', parseInt(refCode, 10))
-      .maybeSingle();
+    // Verifica se é o primeiríssimo usuário
+    const { data: allProfiles } = await supabase.from('profiles').select('id').limit(1);
+    const isFirstUser = !allProfiles || allProfiles.length === 0;
 
-    if (refErr || !refUser) {
-      setLoading(false);
-      Alert.alert('Codigo invalido', 'Nao encontramos nenhum cadastro com esse codigo de indicacao.');
-      return;
+    let refUserId = null;
+    let refUser = null;
+
+    if (!isFirstUser) {
+      let parsedRef = refCode.trim();
+      if (!parsedRef) {
+        parsedRef = 'rozycosta';
+      }
+
+      if (/^\d+$/.test(parsedRef)) {
+        refUserId = parseInt(parsedRef, 10);
+      } else {
+        const { data: found } = await supabase.from('profiles').select('id').eq('username', parsedRef.toLowerCase()).maybeSingle();
+        if (found) {
+          refUserId = found.id;
+        } else {
+          setLoading(false);
+          Alert.alert('Indicação inválida', 'Não encontramos nenhuma indicação ativa com este nome de usuário.');
+          return;
+        }
+      }
+
+      // Verifica se o seu próprio username já existe
+      const { data: dupUser } = await supabase.from('profiles').select('id').eq('username', username.trim().toLowerCase()).maybeSingle();
+      if (dupUser) {
+        setLoading(false);
+        Alert.alert('Usuário indisponível', 'Este nome de usuário já está em uso.');
+        return;
+      }
+
+      const { data: fetchedRefUser, error: refErr } = await supabase
+        .from('profiles')
+        .select('id, role, coord_id')
+        .eq('id', refUserId)
+        .maybeSingle();
+
+      if (refErr || !fetchedRefUser) {
+        setLoading(false);
+        Alert.alert('Código inválido', 'Não encontramos nenhum cadastro ativo com este código.');
+        return;
+      }
+      refUser = fetchedRefUser;
     }
 
-    // 2) Cria o usuario no Supabase Auth
     const { data: authData, error: authErr } = await supabase.auth.signUp({ email, password });
     if (authErr) {
       setLoading(false);
-      Alert.alert('Erro ao criar conta', authErr.message);
+      Alert.alert('Erro ao criar conta', translateError(authErr));
       return;
     }
 
-    // 3) Acha a vaga certa (spillover) chamando a funcao do banco
-    const { data: slotId } = await supabase.rpc('find_slot', { ref_id: refUser.id });
-    const coordId = (refUser.role === 'coord' || refUser.role === 'admin') ? refUser.id : refUser.coord_id;
+    let slotId = null;
+    let coordId = null;
+    let userRole = 'user';
 
-    // 4) Cria a linha em profiles
+    if (isFirstUser) {
+      userRole = 'admin';
+    } else {
+      const { data: foundSlot } = await supabase.rpc('find_slot', { ref_id: refUser.id });
+      slotId = foundSlot;
+      coordId = (refUser.role === 'coord' || refUser.role === 'admin') ? refUser.id : refUser.coord_id;
+    }
+
     const { error: profErr } = await supabase.from('profiles').insert({
       auth_id: authData.user.id,
       name,
       email,
       phone,
-      role: 'user',
+      role: userRole,
       coord_id: coordId,
       parent_id: slotId,
+      username: username.trim().toLowerCase(),
     });
 
     setLoading(false);
-    if (profErr) { Alert.alert('Erro ao salvar cadastro', profErr.message); return; }
+    if (profErr) { Alert.alert('Erro ao salvar cadastro', translateError(profErr)); return; }
 
-    Alert.alert('Cadastro feito!', slotId !== refUser.id
-      ? `Voce entrou na rede via indicacao (vaga automatica #${slotId}).`
-      : 'Seu cadastro foi concluido.');
+    if (isFirstUser) {
+      Alert.alert('Parabéns!', 'Você cadastrou a primeira conta e entrou como o Administrador Raiz!');
+    } else {
+      Alert.alert('Cadastro feito!', slotId !== refUser.id
+        ? `Você entrou na rede via indicação (vaga automática #${slotId}).`
+        : 'Seu cadastro foi concluído.');
+    }
     onLoggedIn(authData.user);
   }
 
@@ -89,7 +187,7 @@ export default function AuthScreen({ onLoggedIn }) {
       redirectTo: PASSWORD_RESET_REDIRECT_URL,
     });
     setForgotLoading(false);
-    if (error) { Alert.alert('Erro ao enviar', error.message); return; }
+    if (error) { Alert.alert('Erro ao enviar', translateError(error)); return; }
     Alert.alert(
       'E-mail enviado ✅',
       'Enviamos um link para ' + forgotEmail.trim() + '. Abra esse link (ele vai abrir no navegador) para criar uma nova senha.'
@@ -113,17 +211,19 @@ export default function AuthScreen({ onLoggedIn }) {
 
       {mode === 'cadastro' && (
         <>
-          <Text style={styles.label}>★ Codigo de indicacao (obrigatorio)</Text>
-          <TextInput style={styles.input} placeholder="Ex: 2" keyboardType="numeric" value={refCode} onChangeText={setRefCode} placeholderTextColor="#56627A" />
+          <Text style={styles.label}>Indicação ( Nome de Usuário ) - Opcional</Text>
+          <TextInput style={styles.input} placeholder="Ex: roberto" value={refCode} onChangeText={setRefCode} placeholderTextColor="#56627A" autoCapitalize="none" />
           <Text style={styles.label}>Nome completo</Text>
           <TextInput style={styles.input} placeholder="Seu nome" value={name} onChangeText={setName} placeholderTextColor="#56627A" />
+          <Text style={styles.label}>Nome de usuário (sem espaços, para seu link e login)</Text>
+          <TextInput style={styles.input} placeholder="Ex: joaosilva" autoCapitalize="none" value={username} onChangeText={(text) => setUsername(text.replace(/\s/g, '').toLowerCase())} placeholderTextColor="#56627A" />
           <Text style={styles.label}>Telefone</Text>
           <TextInput style={styles.input} placeholder="(61) 9 9999-9999" value={phone} onChangeText={setPhone} placeholderTextColor="#56627A" />
         </>
       )}
 
-      <Text style={styles.label}>E-mail</Text>
-      <TextInput style={styles.input} placeholder="voce@email.com" autoCapitalize="none" value={email} onChangeText={setEmail} placeholderTextColor="#56627A" />
+      <Text style={styles.label}>{mode === 'login' ? 'E-mail ou Nome de usuário' : 'E-mail'}</Text>
+      <TextInput style={styles.input} placeholder={mode === 'login' ? 'voce@email.com ou seu_usuario' : 'voce@email.com'} autoCapitalize="none" value={email} onChangeText={setEmail} placeholderTextColor="#56627A" />
       <Text style={styles.label}>Senha</Text>
       <TextInput style={styles.input} placeholder="••••••••" secureTextEntry value={password} onChangeText={setPassword} placeholderTextColor="#56627A" />
 

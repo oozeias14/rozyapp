@@ -1,5 +1,4 @@
 import { useEffect, useState, useRef } from 'react';
-import QRCode from 'qrcode';
 import { supabase, MAX_PHOTO_BYTES, compressImageWeb } from '../lib/supabase';
 import TopBar from '../components/TopBar';
 import { updateProfile, changeOwnPassword, fetchAppSettings, fetchAllProfiles } from '../lib/api';
@@ -11,12 +10,11 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
   const [tiktok, setTiktok] = useState(profile.tiktok || '');
   const [whatsapp, setWhatsapp] = useState(profile.whatsapp || '');
   const [newPassword, setNewPassword] = useState('');
-  const [appDomain, setAppDomain] = useState('orbita.app');
+  const [appDomain, setAppDomain] = useState('amigosdarozy.com.br');
   const [totalUsers, setTotalUsers] = useState(0);
   const fileInputRef = useRef(null);
-  const qrRef = useRef(null);
 
-  const referralLink = `https://${appDomain}/r/${profile.id}`;
+  const referralLink = `https://amigosdarozy.com.br/${profile.username || profile.id}`;
   const isStaff = profile.role === 'admin' || profile.role === 'coord';
 
   useEffect(() => {
@@ -26,10 +24,6 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
       setTotalUsers(all.length);
     })();
   }, []);
-
-  useEffect(() => {
-    if (qrRef.current) QRCode.toCanvas(qrRef.current, referralLink, { width: 150, color: { dark: '#090C12', light: '#F0F4FA' } });
-  }, [referralLink]);
 
   async function handleFileChange(e) {
     const file = e.target.files[0];
@@ -43,7 +37,7 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
       const { error: uploadError } = await supabase.storage.from('avatars').upload(path, compressed, { upsert: true, contentType: compressed.type || 'image/jpeg' });
       if (uploadError) {
         const isSizeErr = uploadError.message.toLowerCase().includes('exceed');
-        alert(isSizeErr ? 'Imagem muito grande: o servidor recusou o arquivo (limite de 1 MB).' : 'Erro ao enviar foto: ' + uploadError.message);
+        alert(isSizeErr ? 'Imagem muito grande: o servidor recusou o arquivo (limite de 200 KB).' : 'Erro ao enviar foto: ' + uploadError.message);
         setUploading(false);
         return;
       }
@@ -66,22 +60,6 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
     } catch (err) { alert('Erro: ' + err.message); }
   }
 
-  async function copyCode() {
-    await navigator.clipboard.writeText(String(profile.id));
-    alert('Código copiado!');
-  }
-
-  function shareWhatsApp() {
-    const text = `Entre no Amigos da Rozy Costa! Use meu código de indicação: ${profile.id} (digite esse número no cadastro do app)`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-  }
-
-  async function shareGeneric() {
-    const text = `Entre no Amigos da Rozy Costa! Meu código de indicação: ${profile.id}`;
-    if (navigator.share) { try { await navigator.share({ text }); } catch {} }
-    else { await navigator.clipboard.writeText(text); alert('Copiado — cole no Instagram'); }
-  }
-
   async function handleChangePassword(e) {
     e.preventDefault();
     if (newPassword.length < 6) { alert('Use ao menos 6 caracteres.'); return; }
@@ -98,8 +76,9 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
           {uploading ? '...' : profile.photo_url ? <img src={profile.photo_url} alt="" /> : '📷'}
         </div>
         <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
-        <div className="muted" style={{ fontSize: 10, marginBottom: 8 }}>Toque para escolher uma foto (máx. 1 MB)</div>
-        <h2 style={{ fontSize: 17 }}>{profile.name}</h2>
+        <div className="muted" style={{ fontSize: 10, marginBottom: 8 }}>Toque para escolher uma foto (máx. 200 KB)</div>
+        <h2 style={{ fontSize: 17, marginBottom: 2 }}>{profile.name}</h2>
+        <div style={{ fontSize: 12, color: 'var(--teal)', fontWeight: 600, marginBottom: 4 }}>@{profile.username || 'sem_usuario'}</div>
         <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 5 }}>
           <span className="id-badge">#{profile.id}</span>
           <span className={`role-badge ${profile.role === 'admin' ? 'role-admin' : profile.role === 'coord' ? 'role-coord' : 'role-user'}`}>
@@ -122,23 +101,40 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
         <button className="btn btn-teal" onClick={saveSocials}>Salvar redes sociais</button>
       </div>
 
-      <div className="card-title">Seu código de indicação</div>
-      <div className="card" style={{ textAlign: 'center' }}>
-        <div className="mono" style={{ fontSize: 34, fontWeight: 700, color: 'var(--teal)', letterSpacing: 1 }}>#{profile.id}</div>
-        <div className="muted" style={{ marginTop: 4 }}>Peça para a pessoa digitar este número no campo "Código de indicação" na tela de Cadastro.</div>
-        <button className="btn btn-ghost btn-sm" style={{ marginTop: 10 }} onClick={copyCode}>Copiar código</button>
-      </div>
-
-      <div className="btn-row" style={{ marginBottom: 12 }}>
-        <button className="btn btn-teal" style={{ flex: 1, marginBottom: 0 }} onClick={shareWhatsApp}>🟢 WhatsApp</button>
-        <button className="btn btn-violet" style={{ flex: 1, marginBottom: 0 }} onClick={shareGeneric}>📸 Instagram</button>
-      </div>
-
-      <div className="card-title">Link e QR Code (opcional)</div>
-      <div className="card">
-        <div className="lbox"><span>{referralLink}</span></div>
-        <div className="muted" style={{ marginBottom: 10 }}>O link só vai abrir de verdade quando o app tiver um domínio próprio publicado — enquanto isso, use o código acima.</div>
-        <div style={{ textAlign: 'center' }}><canvas ref={qrRef} /></div>
+      <div className="card-title">Link de indicação</div>
+      <div className="card" style={{ padding: '16px' }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          background: 'var(--panel2)',
+          border: '1px solid var(--line)',
+          borderRadius: '12px',
+          padding: '12px 16px',
+          cursor: 'pointer',
+          width: '100%'
+        }} onClick={async () => { await navigator.clipboard.writeText(referralLink); alert('Link de indicação copiado!'); }}>
+          <span style={{
+            flex: 1,
+            color: 'var(--teal)',
+            fontFamily: 'var(--mono)',
+            fontSize: '13px',
+            wordBreak: 'break-all',
+            marginRight: '12px',
+            textAlign: 'left'
+          }}>
+            {referralLink}
+          </span>
+          <span style={{
+            fontSize: '18px',
+            color: 'var(--ink2)',
+            display: 'flex',
+            alignItems: 'center',
+            flexShrink: 0
+          }}>
+            📋
+          </span>
+        </div>
+        <div className="muted" style={{ marginTop: '10px' }}>Toque no link acima para copiar o seu endereço de indicação direta.</div>
       </div>
 
       <div className="card-title">Alterar minha senha</div>

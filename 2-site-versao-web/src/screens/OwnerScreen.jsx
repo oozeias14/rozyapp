@@ -24,29 +24,6 @@ export default function OwnerScreen({ profile, onOpenAdminOwner }) {
     }
   }
 
-  async function shareBusinessCard() {
-    if (!owner) return;
-    const shareMessage = `⚖️ *Dr. Candido Teles — Cartão de Visita Digital*\n\n${owner.bio}\n\n📸 Siga no Instagram: https://instagram.com/${owner.instagram?.replace('@', '') || 'drcandidoteles'}\n\nFaça parte do aplicativo Órbita e conecte-se conosco!`;
-    
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: 'Dr. Candido Teles',
-          text: shareMessage,
-        });
-      } catch (e) {
-        console.log('Erro no compartilhamento web:', e);
-      }
-    } else {
-      try {
-        await navigator.clipboard.writeText(shareMessage);
-        alert('Copiado! O cartão de visita digital foi copiado para sua área de transferência.');
-      } catch (e) {
-        console.log('Erro ao copiar para clipboard:', e);
-      }
-    }
-  }
-
   if (!owner) return null;
 
   const socials = [
@@ -69,21 +46,17 @@ export default function OwnerScreen({ profile, onOpenAdminOwner }) {
           <img src={owner.photo_url || '/candido.jpg'} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         </div>
         
-        <div className="card-badge" style={{ color: 'var(--teal)', fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>⚖️ ADVOCACIA</div>
+        <div className="card-badge" style={{ color: 'var(--teal)', fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>⚖️ ADVOGADO</div>
         <h2 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 2px', color: 'var(--ink1)' }}>{owner.name}</h2>
         <div style={{ fontSize: 12, color: 'var(--ink2)', marginBottom: 12 }}>Especialista Fundiário</div>
 
         <div className="card-divider" style={{ width: '100%', height: 1, background: 'var(--line)', margin: '8px 0 16px' }} />
 
-        <div className="bio-text" style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--ink1)', marginBottom: 20, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
+        <div className="bio-text" style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--ink1)', marginBottom: 0, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
           {owner.bio.split('\n').map((line, idx) => (
             <div key={idx}>{line}</div>
           ))}
         </div>
-
-        <button className="btn btn-violet" style={{ width: '100%', marginBottom: 0 }} onClick={shareBusinessCard}>
-          🔗 Compartilhar Cartão de Visita
-        </button>
       </div>
 
       <div className="card-title">Siga nas redes sociais</div>

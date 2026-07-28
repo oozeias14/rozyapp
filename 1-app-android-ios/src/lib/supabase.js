@@ -8,7 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 // ============================================================
 const USE_MOCK = false;
 
-const SUPABASE_URL = 'https://sewwoxhtmhjayufrqfu.supabase.co';
+const SUPABASE_URL = 'https://sewwoxhttmhjayufrqfu.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNld3dveGh0dG1oamF5dWZycWZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyMDUyNjMsImV4cCI6MjEwMDc4MTI2M30.xXcEz_5gtKllyJTlhSWGBNkXAaxc2ceVXEdF5hdQaqQ';
 
 const realClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -22,9 +22,9 @@ const realClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 
 // --- SEED DE DADOS MOCK (Para testes 100% locais offline) ---
 const initialProfiles = [
-  { id: 1, auth_id: 'admin-uid', name: 'Admin oozeias', email: 'oozeias2024@gmail.com', role: 'admin', live_enabled: true },
-  { id: 2, auth_id: 'coord-uid-1', name: 'Coord Roberto', email: 'roberto@gmail.com', role: 'coord', live_enabled: true },
-  { id: 3, auth_id: 'user-uid-1', name: 'Membro Alice', email: 'alice@gmail.com', role: 'user', live_enabled: true }
+  { id: 1, auth_id: 'admin-uid', name: 'Rozy Costa', email: 'oozeias2024@gmail.com', username: 'rozycosta', role: 'admin', live_enabled: true },
+  { id: 2, auth_id: 'coord-uid-1', name: 'Coord Roberto', email: 'roberto@gmail.com', username: 'roberto', role: 'coord', live_enabled: true },
+  { id: 3, auth_id: 'user-uid-1', name: 'Membro Alice', email: 'alice@gmail.com', username: 'alice', role: 'user', live_enabled: true }
 ];
 
 const initialOwnerProfile = {
@@ -58,7 +58,7 @@ class LocalDataStore {
     this.meetings = [...initialMeetings];
     this.messages = [...initialMessages];
     this.owner_profile = [{ ...initialOwnerProfile }];
-    this.app_settings = [{ id: 1, app_domain: 'orbita.app' }];
+    this.app_settings = [{ id: 1, app_domain: 'amigosdarozy.com.br' }];
     this.live_comments = [];
     this.session = null;
     this.load();
@@ -69,7 +69,14 @@ class LocalDataStore {
       .then(saved => {
         if (saved) {
           const parsed = JSON.parse(saved);
-          if (parsed.profiles) this.profiles = parsed.profiles;
+          if (parsed.profiles) {
+            this.profiles = parsed.profiles.map(p => {
+              if (!p.username) {
+                p.username = p.email ? p.email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '') : `user${p.id}`;
+              }
+              return p;
+            });
+          }
           if (parsed.meetings) this.meetings = parsed.meetings;
           if (parsed.messages) this.messages = parsed.messages;
           if (parsed.owner_profile) this.owner_profile = Array.isArray(parsed.owner_profile) ? parsed.owner_profile : [parsed.owner_profile];
@@ -83,10 +90,33 @@ class LocalDataStore {
           }
         }
         
-        // Corrige automaticamente o nome para sem acento caso o cache antigo esteja carregado
-        if (this.owner_profile && this.owner_profile[0] && (this.owner_profile[0].name === 'Dr. Cândido' || this.owner_profile[0].name === 'Dr. C\u00e2ndido')) {
+        // Corrige/atualiza o perfil do proprietário (owner_profile) para Dr. Candido
+        if (this.owner_profile && this.owner_profile[0] && this.owner_profile[0].name !== 'Dr. Candido') {
           this.owner_profile[0].name = 'Dr. Candido';
           this.save();
+        }
+
+        // Corrige automaticamente o domínio padrão caso o cache antigo esteja carregado
+        if (this.app_settings && this.app_settings[0] && this.app_settings[0].app_domain === 'orbita.app') {
+          this.app_settings[0].app_domain = 'amigosdarozy.com.br';
+          this.save();
+        }
+
+        // Corrige/atualiza incondicionalmente o username e nome do admin principal no banco local
+        if (this.profiles && this.profiles.length > 0) {
+          const adminIndex = this.profiles.findIndex(p => p.id === 1);
+          if (adminIndex !== -1) {
+            let dirty = false;
+            if (this.profiles[adminIndex].username !== 'rozycosta') {
+              this.profiles[adminIndex].username = 'rozycosta';
+              dirty = true;
+            }
+            if (this.profiles[adminIndex].name !== 'Rozy Costa') {
+              this.profiles[adminIndex].name = 'Rozy Costa';
+              dirty = true;
+            }
+            if (dirty) this.save();
+          }
         }
       })
       .catch(e => console.log('Erro ao carregar AsyncStorage:', e));
@@ -117,6 +147,10 @@ class MockQueryBuilder {
     this.orderAsc = true;
     this.isSingle = false;
     this.isMaybeSingle = false;
+    this.updatePatch = null;
+    this.isDelete = false;
+    this.isInsert = false;
+    this.insertRow = null;
   }
 
   select(fields) { return this; }
@@ -129,114 +163,131 @@ class MockQueryBuilder {
   maybeSingle() { this.isMaybeSingle = true; return this; }
   single() { this.isSingle = true; return this; }
 
+  insert(row) {
+    this.isInsert = true;
+    this.insertRow = row;
+    return this;
+  }
+
+  update(patch) {
+    this.updatePatch = patch;
+    return this;
+  }
+
+  delete() {
+    this.isDelete = true;
+    return this;
+  }
+
+  // Execução da query (SELECT, INSERT, UPDATE, DELETE)
   then(onfulfilled) {
     let list = [...(this.store[this.table] || [])];
-    
-    for (const f of this.filters) {
-      list = list.filter(item => item[f.column] == f.value);
-    }
+    let result = null;
+    let error = null;
 
-    if (this.orderCol) {
-      list.sort((a, b) => {
-        let valA = a[this.orderCol];
-        let valB = b[this.orderCol];
-        if (typeof valA === 'string') {
-          return this.orderAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
-        }
-        return this.orderAsc ? valA - valB : valB - valA;
-      });
-    }
-
-    if (this.table === 'messages') {
-      list = list.map(item => {
-        const sender = this.store.profiles.find(p => p.id === item.from_id);
-        return {
-          ...item,
-          profiles: { name: sender?.name || 'Coordenação' }
-        };
-      });
-    }
-
-    if (this.table === 'live_comments') {
-      list = list.map(item => {
-        const sender = this.store.profiles.find(p => p.id === item.profile_id);
-        return {
-          ...item,
-          profiles: { name: sender?.name || 'Membro' }
-        };
-      });
-    }
-
-    let result = list;
-    if (this.isSingle || this.isMaybeSingle) {
-      result = list.length > 0 ? list[0] : null;
-    }
-
-    return Promise.resolve(onfulfilled({ data: result, error: null }));
-  }
-
-  async insert(row) {
-    const list = this.store[this.table] || [];
-    const newId = list.length > 0 ? Math.max(...list.map(x => x.id || 0)) + 1 : 1;
-    const newRow = { 
-      id: newId, 
-      created_at: new Date().toISOString(),
-      ...row 
-    };
-    list.push(newRow);
-    this.store[this.table] = list;
-    this.store.save();
-
-    if (this.table === 'live_comments' && mockClient.realtimeCallback) {
-      mockClient.realtimeCallback({
-        new: newRow
-      });
-    }
-
-    return { data: [newRow], error: null };
-  }
-
-  async update(patch) {
-    let list = this.store[this.table] || [];
-    if (this.table === 'owner_profile') {
-      this.store.owner_profile = [{ ...this.store.owner_profile[0], ...patch }];
+    if (this.isInsert) {
+      const newId = list.length > 0 ? Math.max(...list.map(x => x.id || 0)) + 1 : 1;
+      const finalRow = this.table === 'profiles' ? { live_enabled: true, ...this.insertRow } : this.insertRow;
+      const newRow = { 
+        id: newId, 
+        created_at: new Date().toISOString(),
+        ...finalRow 
+      };
+      list.push(newRow);
+      this.store[this.table] = list;
       this.store.save();
-      return { data: this.store.owner_profile, error: null };
+
+      // Trigger de canal realtime de comentários se inseriu comentário
+      if (this.table === 'live_comments' && mockClient.realtimeCallback) {
+        mockClient.realtimeCallback({
+          new: newRow
+        });
+      }
+      result = [newRow];
+    } else if (this.updatePatch) {
+      if (this.table === 'owner_profile') {
+        this.store.owner_profile = [{ ...this.store.owner_profile[0], ...this.updatePatch }];
+        this.store.save();
+        result = this.store.owner_profile;
+      } else {
+        let updatedRows = [];
+        list = list.map(item => {
+          let match = true;
+          for (const f of this.filters) {
+            if (item[f.column] != f.value) match = false;
+          }
+          if (match) {
+            const updated = { ...item, ...this.updatePatch };
+            updatedRows.push(updated);
+            return updated;
+          }
+          return item;
+        });
+        this.store[this.table] = list;
+        this.store.save();
+        result = updatedRows;
+      }
+    } else if (this.isDelete) {
+      let remaining = [];
+      for (const item of list) {
+        let match = true;
+        for (const f of this.filters) {
+          if (item[f.column] != f.value) match = false;
+        }
+        if (!match) {
+          remaining.push(item);
+        }
+      }
+      this.store[this.table] = remaining;
+      this.store.save();
+      result = { success: true };
+    } else {
+      // Filtros do SELECT
+      for (const f of this.filters) {
+        list = list.filter(item => item[f.column] == f.value);
+      }
+
+      // Ordenação
+      if (this.orderCol) {
+        list.sort((a, b) => {
+          let valA = a[this.orderCol];
+          let valB = b[this.orderCol];
+          if (typeof valA === 'string') {
+            return this.orderAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+          }
+          return this.orderAsc ? valA - valB : valB - valA;
+        });
+      }
+
+      // Relacionamento de mensagens
+      if (this.table === 'messages') {
+        list = list.map(item => {
+          const sender = this.store.profiles.find(p => p.id === item.from_id);
+          return {
+            ...item,
+            profiles: { name: sender?.name || 'Coordenação' }
+          };
+        });
+      }
+
+      // Relacionamento de live_comments
+      if (this.table === 'live_comments') {
+        list = list.map(item => {
+          const sender = this.store.profiles.find(p => p.id === item.profile_id);
+          return {
+            ...item,
+            profiles: { name: sender?.name || 'Membro' }
+          };
+        });
+      }
+
+      result = list;
+      if (this.isSingle || this.isMaybeSingle) {
+        result = list.length > 0 ? list[0] : null;
+      }
     }
 
-    let updatedRows = [];
-    list = list.map(item => {
-      let match = true;
-      for (const f of this.filters) {
-        if (item[f.column] != f.value) match = false;
-      }
-      if (match) {
-        const updated = { ...item, ...patch };
-        updatedRows.push(updated);
-        return updated;
-      }
-      return item;
-    });
-    this.store[this.table] = list;
-    this.store.save();
-    return { data: updatedRows, error: null };
-  }
-
-  async delete() {
-    let list = this.store[this.table] || [];
-    let remaining = [];
-    for (const item of list) {
-      let match = true;
-      for (const f of this.filters) {
-        if (item[f.column] != f.value) match = false;
-      }
-      if (!match) {
-        remaining.push(item);
-      }
-    }
-    this.store[this.table] = remaining;
-    this.store.save();
-    return { error: null };
+    return Promise.resolve(onfulfilled({ data: result, error }));
   }
 }
 
@@ -289,8 +340,20 @@ const mockClient = {
       };
     },
 
+    async signUp({ email, password }) {
+      const input = (email || '').trim().toLowerCase();
+      const exists = mockStore.profiles.some(p => p.email.toLowerCase() === input);
+      if (exists) {
+        return { data: { user: null }, error: new Error('E-mail já cadastrado.') };
+      }
+      const mockUid = 'user-' + Math.random().toString(36).substring(2, 11);
+      const user = { id: mockUid, email };
+      return { data: { user }, error: null };
+    },
+
     async signInWithPassword({ email, password }) {
-      const user = mockStore.profiles.find(p => p.email === email);
+      const input = (email || '').trim().toLowerCase();
+      const user = mockStore.profiles.find(p => p.email.toLowerCase() === input || (p.username && p.username.toLowerCase() === input));
       if (!user) {
         return { data: { session: null }, error: new Error('Cadastro não encontrado.') };
       }
@@ -356,4 +419,4 @@ const mockClient = {
 
 export const supabase = USE_MOCK ? mockClient : realClient;
 
-export const MAX_PHOTO_BYTES = 1 * 1024 * 1024; // 1 MB
+export const MAX_PHOTO_BYTES = 200 * 1024; // 200 KB

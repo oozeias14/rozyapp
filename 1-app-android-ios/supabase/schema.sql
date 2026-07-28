@@ -29,6 +29,7 @@ create table if not exists public.profiles (
   tiktok        text,
   whatsapp      text,
   photo_url     text,
+  username      text unique,
   created_at    timestamptz not null default now()
 );
 
@@ -81,10 +82,10 @@ insert into public.owner_profile (id, name, bio, instagram) values (
 -- ── CONFIGURACOES GERAIS DO APP ───────────────────────────
 create table if not exists public.app_settings (
   id          int primary key default 1,
-  app_domain  text not null default 'orbita.app',
+  app_domain  text not null default 'amigosdarozy.com.br',
   constraint single_row_settings check (id = 1)
 );
-insert into public.app_settings (id) values (1) on conflict (id) do nothing;
+insert into public.app_settings (id, app_domain) values (1, 'amigosdarozy.com.br') on conflict (id) do update set app_domain = excluded.app_domain;
 
 -- ============================================================
 -- FUNCAO: achar a primeira vaga livre na rede (spillover)
