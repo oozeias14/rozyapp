@@ -32,3 +32,6 @@ Thumbs.db
 # Logs de Erros
 *.log
 logs/
+
+.vercel
+.env*

@@ -12,8 +12,11 @@ function translateError(err) {
   if (lower.includes('invalid login credentials')) {
     return 'E-mail, nome de usuário ou senha incorretos.';
   }
-  if (lower.includes('user already registered') || lower.includes('email already exists')) {
+  if (lower.includes('user already registered') || lower.includes('email already exists') || lower.includes('profiles_email_key')) {
     return 'Este e-mail já está cadastrado por outro usuário.';
+  }
+  if (lower.includes('profiles_username_key')) {
+    return 'Nome de usuário já cadastrado. Tente outro.';
   }
   if (lower.includes('password should be at least')) {
     return 'A senha deve conter pelo menos 6 caracteres.';
