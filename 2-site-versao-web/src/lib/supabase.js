@@ -4,10 +4,10 @@ import { createClient } from '@supabase/supabase-js';
 // CONEXÃO COM O SUPABASE E MOCK LOCAL DE TESTES
 // Mude USE_MOCK para false quando quiser se conectar ao banco real.
 // ============================================================
-const USE_MOCK = true; 
+const USE_MOCK = false; 
 
-const SUPABASE_URL = 'https://SEU-PROJETO.supabase.co';
-const SUPABASE_ANON_KEY = 'SUA-CHAVE-ANON-AQUI';
+const SUPABASE_URL = 'https://sewwoxhtmhjayufrqfu.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNld3dveGh0dG1oamF5dWZycWZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyMDUyNjMsImV4cCI6MjEwMDc4MTI2M30.xXcEz_5gtKllyJTlhSWGBNkXAaxc2ceVXEdF5hdQaqQ';
 
 const realClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
