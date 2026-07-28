@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "Amigos da Rozy Costa",
+    "slug": "orbita-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#090C12"
+    },
+    "android": {
+      "package": "com.orbita.app",
+      "versionCode": 1,
+      "minSdkVersion": 23,
+      "adaptiveIcon": {
+        "backgroundColor": "#090C12"
+      },
+      "permissions": [
+        "READ_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "POST_NOTIFICATIONS",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O Amigos da Rozy Costa precisa acessar suas fotos para voce escolher a foto de perfil."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "O Amigos da Rozy Costa precisa da sua localizacao para compartilhar o ponto exato da reuniao no Google Maps."
+        }
+      ]
+    ]
+  }
+}

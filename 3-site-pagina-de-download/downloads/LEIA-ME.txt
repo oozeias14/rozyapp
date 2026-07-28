@@ -1,0 +1,9 @@
+Depois de gerar o .apk com o comando:
+
+  eas build -p android --profile preview
+
+Baixe o arquivo .apk gerado e coloque ele NESTA pasta com o nome exato:
+
+  orbita.apk
+
+Assim o botao "Baixar para Android" do site vai funcionar.

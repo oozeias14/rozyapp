@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Amigos da Rozy Costa</title>
+<meta name="description" content="Baixe o Amigos da Rozy Costa para Android ou use direto no navegador (iPhone e Android).">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#05070B;--panel:#121826;--panel2:#1A2235;--line:#232C40;
+    --ink1:#F0F4FA;--ink2:#8A94A8;--ink3:#56627A;
+    --teal:#3DD9B3;--violet:#7B6CF4;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--ink1);font-family:'Inter',sans-serif;}
+  .wrap{max-width:480px;margin:0 auto;padding:50px 22px 60px;}
+  .logo{width:64px;height:64px;border-radius:18px;background:linear-gradient(135deg,var(--teal),var(--violet));display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 16px;}
+  h1{font-family:'Space Grotesk',sans-serif;font-size:28px;text-align:center;}
+  .tag{color:var(--ink2);text-align:center;margin-top:6px;font-size:14px;}
+  .btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:16px;border-radius:14px;border:none;font-weight:700;font-size:15px;cursor:pointer;text-decoration:none;margin-top:14px;}
+  .btn-android{background:linear-gradient(135deg,#3DD9B3,#25B390);color:#051A14;}
+  .btn-web{background:linear-gradient(135deg,#7B6CF4,#5A48D0);color:#fff;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:26px;}
+  .card h3{font-size:14px;margin-bottom:10px;color:var(--ink1);}
+  .card ol{color:var(--ink2);font-size:13.5px;line-height:1.9;padding-left:20px;}
+  .card ol b{color:var(--ink1);}
+  .note{font-size:12px;color:var(--ink3);text-align:center;margin-top:30px;line-height:1.6;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <img src="logo.png" alt="Amigos da Rozy Costa" style="width:170px;height:170px;object-fit:contain;margin:0 auto;display:block;">
+
+  <a class="btn btn-android" href="/downloads/orbita.apk" download>🤖 Baixar para Android</a>
+  <a class="btn btn-web" href="/app/">🌐 Usar no navegador (todos os aparelhos)</a>
+
+  <div class="card">
+    <h3>📱 Instalando no iPhone</h3>
+    <ol>
+      <li>Toque em <b>"Usar no navegador"</b> acima (abre no Safari)</li>
+      <li>Toque no ícone de <b>Compartilhar</b> (o quadrado com a seta para cima)</li>
+      <li>Escolha <b>"Adicionar à Tela de Início"</b></li>
+      <li>Pronto — o Amigos da Rozy Costa fica com ícone próprio, igual um app instalado</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h3>🤖 Instalando no Android</h3>
+    <ol>
+      <li>Toque em <b>"Baixar para Android"</b> acima</li>
+      <li>Abra o arquivo baixado (o Android pode pedir para autorizar "instalar de fontes desconhecidas" — é normal)</li>
+      <li>Toque em Instalar</li>
+    </ol>
+  </div>
+
+  <div class="note">
+    O Amigos da Rozy Costa para iPhone funciona como um app instalado na tela de início,
+    sem precisar passar pela App Store.
+  </div>
+</div>
+</body>
+</html>
