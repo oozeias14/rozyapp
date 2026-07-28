@@ -34,6 +34,9 @@ function translateError(err) {
   if (lower.includes('email not confirmed')) {
     return 'Este e-mail ainda não foi verificado. Por favor, confirme-o na sua caixa de entrada.';
   }
+  if (lower.includes('rate limit exceeded') || lower.includes('too many requests')) {
+    return 'Muitas solicitações de cadastro em pouco tempo. Por favor, aguarde alguns minutos antes de tentar novamente.';
+  }
   return msg;
 }
 
