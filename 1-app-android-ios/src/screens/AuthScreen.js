@@ -33,6 +33,9 @@ function translateError(err) {
   if (lower.includes('failed to fetch')) {
     return 'Não foi possível conectar ao servidor do Supabase. Verifique sua conexão com a internet ou se o seu projeto está pausado/desativado no painel da Supabase (se for plano gratuito, reative-o lá).';
   }
+  if (lower.includes('authretryablefetcherror')) {
+    return 'Erro de conexão no servidor de autenticação. Por favor, verifique se a Porta do SMTP nas configurações do Supabase está como 587 (STARTTLS) e se a senha do Resend está correta.';
+  }
   if (lower.includes('invalid login credentials')) {
     return 'E-mail, nome de usuário ou senha incorretos.';
   }
