@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import TopBar from '../components/TopBar';
 import PersonModal from '../components/PersonModal';
-import { fetchAllProfiles, fetchProfileById } from '../lib/api';
+import { fetchTotalUsersCount, fetchDirectReferrals, fetchMatrixChildren, fetchProfileById } from '../lib/api';
 
 const ORBIT_SIZE = 230, R = 95, CX = ORBIT_SIZE / 2, CY = ORBIT_SIZE / 2;
 function initials(name) { return (name || '?').split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase(); }
@@ -25,12 +25,18 @@ export default function NetworkScreen({ profile }) {
   const [showAllList, setShowAllList] = useState(false);
 
   const load = useCallback(async () => {
-    const all = await fetchAllProfiles();
-    setTotalUsers(all.length);
-    setDirect(all.filter((p) => p.referrer_id === profile.id));
-    setMatrixChildren(all.filter((p) => p.parent_id === profile.id));
-    setSponsor(profile.referrer_id ? all.find((p) => p.id === profile.referrer_id) : null);
-    setCoord(profile.coord_id ? all.find((p) => p.id === profile.coord_id) : null);
+    const [totalCount, directs, matrix, sps, crd] = await Promise.all([
+      fetchTotalUsersCount(),
+      fetchDirectReferrals(profile.id),
+      fetchMatrixChildren(profile.id),
+      profile.referrer_id ? fetchProfileById(profile.referrer_id) : null,
+      profile.coord_id ? fetchProfileById(profile.coord_id) : null
+    ]);
+    setTotalUsers(totalCount);
+    setDirect(directs);
+    setMatrixChildren(matrix);
+    setSponsor(sps);
+    setCoord(crd);
   }, [profile.id, profile.referrer_id, profile.coord_id]);
 
   useEffect(() => { load(); }, [load]);

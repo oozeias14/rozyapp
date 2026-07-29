@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import TopBar from '../components/TopBar';
-import { fetchAllProfiles, fetchMeetings, fetchMessages } from '../lib/api';
+import { fetchTotalUsersCount, fetchDirectReferrals, fetchMeetings, fetchMessages } from '../lib/api';
 
 function fmtDate(d) {
   if (!d) return '';
@@ -15,9 +15,14 @@ export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
   const [messages, setMessages] = useState([]);
 
   const load = useCallback(async () => {
-    const [profiles, mts, msgs] = await Promise.all([fetchAllProfiles(), fetchMeetings(), fetchMessages()]);
-    setTotalUsers(profiles.length);
-    setDirectCount(profiles.filter((p) => p.referrer_id === profile.id).length);
+    const [totalCount, directs, mts, msgs] = await Promise.all([
+      fetchTotalUsersCount(),
+      fetchDirectReferrals(profile.id),
+      fetchMeetings(),
+      fetchMessages()
+    ]);
+    setTotalUsers(totalCount);
+    setDirectCount(directs.length);
     setMeetings(mts);
     setMessages(msgs.slice(0, 2));
   }, [profile.id]);

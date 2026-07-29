@@ -35,6 +35,7 @@ create table if not exists public.profiles (
 
 create index if not exists idx_profiles_parent on public.profiles(parent_id);
 create index if not exists idx_profiles_coord on public.profiles(coord_id);
+create index if not exists idx_profiles_referrer on public.profiles(referrer_id);
 
 -- ── REUNIOES ──────────────────────────────────────────────
 create table if not exists public.meetings (

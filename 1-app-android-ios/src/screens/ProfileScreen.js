@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase, MAX_PHOTO_BYTES } from '../lib/supabase';
 import { COLORS, S } from '../theme';
 import TopBar from '../components/TopBar';
-import { updateProfile, changeOwnPassword, fetchAppSettings, fetchAllProfiles } from '../lib/api';
+import { updateProfile, changeOwnPassword, fetchAppSettings, fetchTotalUsersCount } from '../lib/api';
 
 export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, onLogout }) {
   const [uploading, setUploading] = useState(false);
@@ -19,9 +19,9 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
 
   useEffect(() => {
     (async () => {
-      const [settings, all] = await Promise.all([fetchAppSettings(), fetchAllProfiles()]);
+      const [settings, count] = await Promise.all([fetchAppSettings(), fetchTotalUsersCount()]);
       if (settings) setAppDomain(settings.app_domain);
-      setTotalUsers(all.length);
+      setTotalUsers(count);
     })();
   }, []);
 

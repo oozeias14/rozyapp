@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, RefreshControl, StyleSheet } from 'react-native';
 import { COLORS, S } from '../theme';
 import TopBar from '../components/TopBar';
-import { fetchAllProfiles, fetchMeetings, fetchMessages } from '../lib/api';
+import { fetchTotalUsersCount, fetchDirectReferrals, fetchMeetings, fetchMessages } from '../lib/api';
 
 export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
   const [totalUsers, setTotalUsers] = useState(0);
@@ -12,9 +12,14 @@ export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    const [profiles, mts, msgs] = await Promise.all([fetchAllProfiles(), fetchMeetings(), fetchMessages()]);
-    setTotalUsers(profiles.length);
-    setDirectCount(profiles.filter((p) => p.referrer_id === profile.id).length);
+    const [totalCount, directs, mts, msgs] = await Promise.all([
+      fetchTotalUsersCount(),
+      fetchDirectReferrals(profile.id),
+      fetchMeetings(),
+      fetchMessages()
+    ]);
+    setTotalUsers(totalCount);
+    setDirectCount(directs.length);
     setMeetings(mts);
     setMessages(msgs.slice(0, 2));
   }, [profile.id]);
