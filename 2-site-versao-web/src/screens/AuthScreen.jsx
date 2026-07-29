@@ -3,7 +3,24 @@ import { supabase } from '../lib/supabase';
 
 function translateError(err) {
   if (!err) return '';
-  const msg = typeof err === 'string' ? err : (err.message || String(err));
+  let msg = '';
+  if (typeof err === 'string') {
+    msg = err;
+  } else {
+    msg = err.message || err.error_description || err.error || String(err);
+    if (msg === '[object Object]' || msg === '{}') {
+      try {
+        const keys = Object.keys(err);
+        if (keys.length > 0) {
+          msg = keys.map(k => `${k}: ${err[k]}`).join(', ');
+        } else {
+          msg = 'Erro interno do servidor (Verifique se as configurações de SMTP/Porta do Resend no seu Supabase estão corretas).';
+        }
+      } catch(e) {
+        msg = String(err);
+      }
+    }
+  }
   const lower = msg.toLowerCase();
   
   if (lower.includes('failed to fetch')) {
