@@ -108,12 +108,13 @@ function UsersTab({ users, isAdmin, reload }) {
 
   if (editing) return <EditUserForm user={editing} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); setSelected(null); reload(); }} />;
   if (selected) {
-    const sponsor = users.find((u) => u.id === selected.parent_id);
+    const sponsor = users.find((u) => u.id === selected.referrer_id);
     const coord = users.find((u) => u.id === selected.coord_id);
-    const childrenCount = users.filter((u) => u.parent_id === selected.id).length;
+    const placementParent = users.find((u) => u.id === selected.parent_id);
+    const childrenCount = users.filter((u) => u.referrer_id === selected.id).length;
     return (
       <UserDetail
-        user={{ ...selected, children_count: childrenCount }} sponsor={sponsor} coord={coord} isAdmin={isAdmin}
+        user={{ ...selected, children_count: childrenCount }} sponsor={sponsor} coord={coord} placementParent={placementParent} isAdmin={isAdmin}
         onBack={() => setSelected(null)}
         onEdit={() => setEditing(selected)}
         onChanged={() => { setSelected(null); reload(); }}
@@ -151,13 +152,14 @@ function Avatar({ person, size = 36 }) {
   );
 }
 
-function UserDetail({ user, sponsor, coord, isAdmin, onBack, onEdit, onChanged }) {
+function UserDetail({ user, sponsor, coord, placementParent, isAdmin, onBack, onEdit, onChanged }) {
   const rows = [
     ['E-mail', user.email], ['Telefone', user.phone || '-'], ['Nascimento', user.birth || '-'],
     ['Instagram', user.instagram || '-'], ['Facebook', user.facebook || '-'], ['TikTok', user.tiktok || '-'], ['WhatsApp', user.whatsapp || '-'],
     ['Permissão de Live', user.live_enabled !== false ? '✅ Permitida' : '🚨 Bloqueada (Penalidade)'],
     ['Coordenador', coord ? `${coord.name} (#${coord.id})` : '-'],
     ['Indicado por', sponsor ? `${sponsor.name} (#${sponsor.id})` : '-'],
+    ['Posicionado abaixo de', placementParent ? `${placementParent.name} (#${placementParent.id})` : '-'],
   ];
 
   async function promote() {

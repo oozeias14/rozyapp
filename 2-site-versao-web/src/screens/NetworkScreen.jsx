@@ -19,6 +19,7 @@ export default function NetworkScreen({ profile }) {
   const [sponsor, setSponsor] = useState(null);
   const [coord, setCoord] = useState(null);
   const [direct, setDirect] = useState([]);
+  const [matrixChildren, setMatrixChildren] = useState([]);
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [selectedSponsor, setSelectedSponsor] = useState(null);
   const [showAllList, setShowAllList] = useState(false);
@@ -26,19 +27,20 @@ export default function NetworkScreen({ profile }) {
   const load = useCallback(async () => {
     const all = await fetchAllProfiles();
     setTotalUsers(all.length);
-    setDirect(all.filter((p) => p.parent_id === profile.id));
-    setSponsor(profile.parent_id ? all.find((p) => p.id === profile.parent_id) : null);
+    setDirect(all.filter((p) => p.referrer_id === profile.id));
+    setMatrixChildren(all.filter((p) => p.parent_id === profile.id));
+    setSponsor(profile.referrer_id ? all.find((p) => p.id === profile.referrer_id) : null);
     setCoord(profile.coord_id ? all.find((p) => p.id === profile.coord_id) : null);
-  }, [profile.id, profile.parent_id, profile.coord_id]);
+  }, [profile.id, profile.referrer_id, profile.coord_id]);
 
   useEffect(() => { load(); }, [load]);
 
   async function openPerson(p) {
     setSelectedPerson(p);
-    setSelectedSponsor(p.parent_id ? await fetchProfileById(p.parent_id) : null);
+    setSelectedSponsor(p.referrer_id ? await fetchProfileById(p.referrer_id) : null);
   }
 
-  const slots = Array.from({ length: 10 }, (_, i) => direct[i] || null);
+  const slots = Array.from({ length: 10 }, (_, i) => matrixChildren[i] || null);
 
   return (
     <div className="screen">
@@ -78,7 +80,7 @@ export default function NetworkScreen({ profile }) {
           })}
           <div className="orbit-center mono">#{profile.id}</div>
         </div>
-        <div className="muted" style={{ marginTop: 6 }}>{Math.min(direct.length, 10)}/10 slots preenchidos</div>
+        <div className="muted" style={{ marginTop: 6 }}>{Math.min(matrixChildren.length, 10)}/10 slots preenchidos</div>
       </div>
 
       <div style={{ marginTop: 16, marginBottom: 12 }}>

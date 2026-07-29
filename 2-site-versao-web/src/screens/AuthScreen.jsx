@@ -183,6 +183,7 @@ export default function AuthScreen({ onLoggedIn }) {
       role: userRole, 
       coord_id: coordId, 
       parent_id: slotId, 
+      referrer_id: isFirstUser ? null : refUser.id,
       username: username.trim().toLowerCase(),
     });
 

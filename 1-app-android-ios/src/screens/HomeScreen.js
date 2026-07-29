@@ -14,7 +14,7 @@ export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
   const load = useCallback(async () => {
     const [profiles, mts, msgs] = await Promise.all([fetchAllProfiles(), fetchMeetings(), fetchMessages()]);
     setTotalUsers(profiles.length);
-    setDirectCount(profiles.filter((p) => p.parent_id === profile.id).length);
+    setDirectCount(profiles.filter((p) => p.referrer_id === profile.id).length);
     setMeetings(mts);
     setMessages(msgs.slice(0, 2));
   }, [profile.id]);
