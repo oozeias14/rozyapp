@@ -139,9 +139,9 @@ as $$
   select id from public.profiles where auth_id = auth.uid();
 $$;
 
--- PROFILES: todo mundo logado pode ver todos os cadastros (necessario pra rede/QR/admin)
+-- PROFILES: todos (mesmo deslogados) podem ver os perfis (necessario para verificar indicacao no cadastro)
 create policy "profiles_select_all" on public.profiles
-  for select using (auth.uid() is not null);
+  for select using (true);
 
 -- PROFILES: qualquer pessoa (mesmo deslogada) pode criar seu proprio cadastro no signup
 create policy "profiles_insert_self" on public.profiles
