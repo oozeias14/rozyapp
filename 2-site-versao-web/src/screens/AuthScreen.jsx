@@ -116,9 +116,8 @@ export default function AuthScreen({ onLoggedIn }) {
 
     setLoading(true);
 
-    // Verifica se é o primeiríssimo usuário
-    const { data: allProfiles } = await supabase.from('profiles').select('id').limit(1);
-    const isFirstUser = !allProfiles || allProfiles.length === 0;
+    // O usuário 'rozycosta' é o Administrador Raiz do sistema
+    const isFirstUser = username.trim().toLowerCase() === 'rozycosta';
 
     let refUserId = null;
     let refUser = null;
