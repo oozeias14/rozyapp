@@ -243,7 +243,7 @@ export default function AuthScreen({ onLoggedIn }) {
         )}
         <label className="lbl">{mode === 'login' ? 'E-mail ou Nome de usuário' : 'E-mail'}</label>
         <input type="text" placeholder={mode === 'login' ? 'voce@email.com ou seu_usuario' : 'voce@email.com'} value={email} onChange={(e) => setEmail(e.target.value)} autoCapitalize="none" />
-        <label className="lbl">Senha</label>
+        <label className="lbl">{mode === 'login' ? 'Senha' : 'Senha ( mínimo 6 caracteres )'}</label>
         <input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
 
         <button className="btn btn-teal" type="submit" disabled={loading}>

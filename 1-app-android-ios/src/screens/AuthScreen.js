@@ -250,7 +250,7 @@ export default function AuthScreen({ onLoggedIn }) {
 
       <Text style={styles.label}>{mode === 'login' ? 'E-mail ou Nome de usuário' : 'E-mail'}</Text>
       <TextInput style={styles.input} placeholder={mode === 'login' ? 'voce@email.com ou seu_usuario' : 'voce@email.com'} autoCapitalize="none" value={email} onChangeText={setEmail} placeholderTextColor="#56627A" />
-      <Text style={styles.label}>Senha</Text>
+      <Text style={styles.label}>{mode === 'login' ? 'Senha' : 'Senha ( mínimo 6 caracteres )'}</Text>
       <TextInput style={styles.input} placeholder="••••••••" secureTextEntry value={password} onChangeText={setPassword} placeholderTextColor="#56627A" />
 
       <TouchableOpacity
