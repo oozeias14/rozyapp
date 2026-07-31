@@ -67,8 +67,11 @@ export default function AuthScreen({ onLoggedIn }) {
   const [forgotLoading, setForgotLoading] = useState(false);
 
   useEffect(() => {
-    const path = window.location.pathname;
+    let path = window.location.pathname;
     if (path && path.length > 1) {
+      if (path.endsWith('/')) {
+        path = path.slice(0, -1);
+      }
       let refVal = path.substring(1);
       if (refVal.startsWith('r/')) {
         refVal = refVal.substring(2);
