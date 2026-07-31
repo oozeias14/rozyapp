@@ -38,10 +38,10 @@ function translateError(err) {
   if (lower.includes('profiles_username_key')) {
     return 'Nome de usuário já cadastrado. Tente outro.';
   }
-  if (lower.includes('password should be at least')) {
+  if (lower.includes('password should be at least') || lower.includes('signup requires a valid password')) {
     return 'A senha deve conter pelo menos 6 caracteres.';
   }
-  if (lower.includes('invalid email')) {
+  if (lower.includes('invalid email') || lower.includes('signup requires a valid email')) {
     return 'Por favor, insira um e-mail válido.';
   }
   if (lower.includes('email not confirmed')) {
@@ -49,6 +49,9 @@ function translateError(err) {
   }
   if (lower.includes('rate limit exceeded') || lower.includes('too many requests')) {
     return 'Muitas solicitações de cadastro em pouco tempo. Por favor, aguarde alguns minutos antes de tentar novamente.';
+  }
+  if (lower.includes('network request failed')) {
+    return 'Falha na conexão de rede. Verifique se está conectado à internet.';
   }
   return msg;
 }
