@@ -351,7 +351,7 @@ export default function AuthScreen({ onLoggedIn }) {
       <form onSubmit={mode === 'login' ? handleLogin : handleCadastro}>
         {mode === 'cadastro' && (
           <>
-            <label className="lbl">Indicação ( sem indicador deixe em branco )</label>
+            <label className="lbl">Indicação ( se não tiver deixe em branco )</label>
             <input placeholder="Ex: roberto" value={refCode} onChange={(e) => setRefCode(e.target.value)} />
             <label className="lbl">Nome completo</label>
             <input placeholder="Seu nome" value={name} onChange={(e) => handleNameChange(e.target.value)} />
