@@ -375,7 +375,7 @@ export default function AuthScreen({ onLoggedIn }) {
 
       {mode === 'cadastro' && (
         <>
-          <Text style={styles.label}>Indicação ( se não tiver deixe em branco )</Text>
+          <Text style={styles.label}>Indicação ( se não tiver, deixe em branco )</Text>
           <TextInput style={styles.input} placeholder="Ex: roberto" value={refCode} onChangeText={setRefCode} placeholderTextColor="#56627A" autoCapitalize="none" />
           <Text style={styles.label}>Nome completo</Text>
           <TextInput style={styles.input} placeholder="Seu nome" value={name} onChangeText={handleNameChange} placeholderTextColor="#56627A" />
