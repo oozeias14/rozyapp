@@ -141,23 +141,19 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
       <div className="card">
         <label className="lbl">Instagram</label>
         <div className="social-input-wrapper">
-          <input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@usuario" />
-          <button type="button" className="btn-vincular" onClick={() => openLinkPopup('instagram')}>Vincular</button>
+          <input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@usuario" style={{ paddingRight: '12px' }} />
         </div>
         <label className="lbl">Facebook</label>
         <div className="social-input-wrapper">
-          <input value={facebook} onChange={(e) => setFacebook(e.target.value)} placeholder="Seu nome no Facebook" />
-          <button type="button" className="btn-vincular" onClick={() => openLinkPopup('facebook')}>Vincular</button>
+          <input value={facebook} onChange={(e) => setFacebook(e.target.value)} placeholder="Seu nome no Facebook" style={{ paddingRight: '12px' }} />
         </div>
         <label className="lbl">TikTok</label>
         <div className="social-input-wrapper">
-          <input value={tiktok} onChange={(e) => setTiktok(e.target.value)} placeholder="@usuario" />
-          <button type="button" className="btn-vincular" onClick={() => openLinkPopup('tiktok')}>Vincular</button>
+          <input value={tiktok} onChange={(e) => setTiktok(e.target.value)} placeholder="@usuario" style={{ paddingRight: '12px' }} />
         </div>
         <label className="lbl">WhatsApp</label>
         <div className="social-input-wrapper">
-          <input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="5561999999999" />
-          <button type="button" className="btn-vincular" onClick={() => openLinkPopup('whatsapp')}>Vincular</button>
+          <input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="5561999999999" style={{ paddingRight: '12px' }} />
         </div>
         <button className="btn btn-teal" onClick={saveSocials}>Salvar redes sociais</button>
       </div>

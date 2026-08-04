@@ -225,34 +225,22 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
       <View style={S.card}>
         <Text style={S.label}>Instagram</Text>
         <View style={styles.inputRow}>
-          <TextInput style={[S.input, { flex: 1, marginBottom: 0, paddingRight: 90 }]} value={instagram} onChangeText={setInstagram} placeholder="@usuario" placeholderTextColor={COLORS.ink3} autoCapitalize="none" autoCorrect={false} />
-          <TouchableOpacity style={styles.inlineBtn} onPress={() => openLinkModal('instagram')}>
-            <Text style={styles.inlineBtnText}>Vincular</Text>
-          </TouchableOpacity>
+          <TextInput style={[S.input, { flex: 1, marginBottom: 0 }]} value={instagram} onChangeText={setInstagram} placeholder="@usuario" placeholderTextColor={COLORS.ink3} autoCapitalize="none" autoCorrect={false} />
         </View>
 
         <Text style={S.label}>Facebook</Text>
         <View style={styles.inputRow}>
-          <TextInput style={[S.input, { flex: 1, marginBottom: 0, paddingRight: 90 }]} value={facebook} onChangeText={setFacebook} placeholder="Seu nome no Facebook" placeholderTextColor={COLORS.ink3} autoCorrect={false} />
-          <TouchableOpacity style={styles.inlineBtn} onPress={() => openLinkModal('facebook')}>
-            <Text style={styles.inlineBtnText}>Vincular</Text>
-          </TouchableOpacity>
+          <TextInput style={[S.input, { flex: 1, marginBottom: 0 }]} value={facebook} onChangeText={setFacebook} placeholder="Seu nome no Facebook" placeholderTextColor={COLORS.ink3} autoCorrect={false} />
         </View>
 
         <Text style={S.label}>TikTok</Text>
         <View style={styles.inputRow}>
-          <TextInput style={[S.input, { flex: 1, marginBottom: 0, paddingRight: 90 }]} value={tiktok} onChangeText={setTiktok} placeholder="@usuario" placeholderTextColor={COLORS.ink3} autoCapitalize="none" autoCorrect={false} />
-          <TouchableOpacity style={styles.inlineBtn} onPress={() => openLinkModal('tiktok')}>
-            <Text style={styles.inlineBtnText}>Vincular</Text>
-          </TouchableOpacity>
+          <TextInput style={[S.input, { flex: 1, marginBottom: 0 }]} value={tiktok} onChangeText={setTiktok} placeholder="@usuario" placeholderTextColor={COLORS.ink3} autoCapitalize="none" autoCorrect={false} />
         </View>
 
         <Text style={S.label}>WhatsApp</Text>
         <View style={styles.inputRow}>
-          <TextInput style={[S.input, { flex: 1, marginBottom: 0, paddingRight: 90 }]} value={whatsapp} onChangeText={setWhatsapp} placeholder="5561999999999" placeholderTextColor={COLORS.ink3} keyboardType="phone-pad" />
-          <TouchableOpacity style={styles.inlineBtn} onPress={() => openLinkModal('whatsapp')}>
-            <Text style={styles.inlineBtnText}>Vincular</Text>
-          </TouchableOpacity>
+          <TextInput style={[S.input, { flex: 1, marginBottom: 0 }]} value={whatsapp} onChangeText={setWhatsapp} placeholder="5561999999999" placeholderTextColor={COLORS.ink3} keyboardType="phone-pad" />
         </View>
 
         <TouchableOpacity style={[S.btn, S.btnTeal]} onPress={saveSocials}>
