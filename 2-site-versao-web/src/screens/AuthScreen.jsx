@@ -120,27 +120,42 @@ export default function AuthScreen({ onLoggedIn }) {
     if (!email.trim() || !password) { alert('Preencha todos os campos.'); return; }
     setLoading(true);
     
-    let loginEmail = email.trim();
-    if (loginEmail && !loginEmail.includes('@')) {
-      // É um nome de usuário! Busca o e-mail correspondente
-      const { data: foundProfile } = await supabase
-        .from('profiles')
-        .select('email')
-        .eq('username', loginEmail.toLowerCase())
-        .maybeSingle();
-      if (foundProfile) {
-        loginEmail = foundProfile.email;
-      } else {
-        setLoading(false);
-        alert('Cadastro não encontrado para este nome de usuário.');
-        return;
-      }
-    }
+    try {
+      let loginEmail = email.trim();
+      if (loginEmail && !loginEmail.includes('@')) {
+        // É um nome de usuário! Busca o e-mail correspondente
+        const { data: foundProfile, error: profileError } = await supabase
+          .from('profiles')
+          .select('email')
+          .eq('username', loginEmail.toLowerCase())
+          .maybeSingle();
+        
+        if (profileError) {
+          setLoading(false);
+          alert('Erro ao buscar usuário: ' + translateError(profileError));
+          return;
+        }
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
-    setLoading(false);
-    if (error) { alert('Erro no login: ' + translateError(error)); return; }
-    onLoggedIn(data.user);
+        if (foundProfile) {
+          loginEmail = foundProfile.email;
+        } else {
+          setLoading(false);
+          alert('Este nome de usuário não existe.');
+          return;
+        }
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
+      setLoading(false);
+      if (error) { 
+        alert('Erro no login: ' + translateError(error)); 
+        return; 
+      }
+      onLoggedIn(data.user);
+    } catch (err) {
+      setLoading(false);
+      alert('Erro inesperado no login: ' + err.message);
+    }
   }
 
   async function handleCadastro(e) {
