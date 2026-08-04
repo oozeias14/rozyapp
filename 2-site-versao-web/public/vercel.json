@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/vincular.html",
+      "destination": "/vincular.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
