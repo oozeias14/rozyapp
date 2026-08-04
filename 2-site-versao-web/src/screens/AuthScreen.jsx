@@ -271,21 +271,40 @@ export default function AuthScreen({ onLoggedIn }) {
     setLoading(false);
     if (profErr) { alert('Erro ao salvar cadastro: ' + translateError(profErr)); return; }
 
-    // Fetch the admin's phone number dynamically from owner_profile
+    // Fetch the admin's phone number dynamically from owner_profile with fallback to admin profile
     let adminPhone = '';
-    const { data: ownerProfile } = await supabase
-      .from('owner_profile')
-      .select('whatsapp')
-      .eq('id', 1)
-      .maybeSingle();
+    try {
+      const { data: ownerProfile } = await supabase
+        .from('owner_profile')
+        .select('whatsapp')
+        .eq('id', 1)
+        .maybeSingle();
 
-    if (ownerProfile) {
-      adminPhone = ownerProfile.whatsapp;
+      if (ownerProfile && ownerProfile.whatsapp) {
+        adminPhone = ownerProfile.whatsapp;
+      }
+    } catch (e) {
+      console.log('Error fetching owner_profile:', e);
+    }
+
+    if (!adminPhone) {
+      try {
+        const { data: adminProfile } = await supabase
+          .from('profiles')
+          .select('phone')
+          .eq('username', 'rozycosta')
+          .maybeSingle();
+        if (adminProfile && adminProfile.phone) {
+          adminPhone = adminProfile.phone;
+        }
+      } catch (e) {
+        console.log('Error fetching admin profile:', e);
+      }
     }
 
     const messageText = `Olá! Acabei de fazer meu cadastro no Amigos Dr Candido. *Meu usuário:* ${finalUsername} *Minha senha padrão:* 123456`;
 
-    let waPhone = adminPhone.replace(/\D/g, '');
+    let waPhone = (adminPhone || '').replace(/\D/g, '');
     if (waPhone.length === 10 || waPhone.length === 11) {
       waPhone = '55' + waPhone;
     }
