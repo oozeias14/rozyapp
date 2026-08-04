@@ -308,7 +308,7 @@ export default function AuthScreen({ onLoggedIn }) {
       }
     }
 
-    const messageText = `Olá! Acabei de fazer meu cadastro no Amigos Dr Candido. *Meu usuário:* ${finalUsername} *Minha senha padrão:* 123456`;
+    const messageText = `Olá! Acabei de fazer meu cadastro no Amigos Dr Candido. *Meu usuário:* ${finalUsername}`;
 
     let waPhone = (adminPhone || '').replace(/\D/g, '');
     if (waPhone.length === 10 || waPhone.length === 11) {
