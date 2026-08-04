@@ -7,7 +7,7 @@ export default function TopBar({ totalUsers }) {
     <View style={styles.row}>
       <View style={styles.brand}>
         <View style={styles.dot} />
-        <Text style={styles.brandText}>Amigos da Rozy Costa</Text>
+        <Text style={styles.brandText}>Amigos Dr Candido</Text>
       </View>
       <View style={styles.pill}>
         <Text style={styles.pillText}>🌐 <Text style={styles.pillNum}>{totalUsers}</Text></Text>

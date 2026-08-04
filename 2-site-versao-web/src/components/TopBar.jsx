@@ -3,7 +3,7 @@ export default function TopBar({ totalUsers }) {
     <div className="topbar">
       <div className="brand">
         <div className="dot" />
-        <span style={{ fontSize: 13 }}>Amigos da Rozy Costa</span>
+        <span style={{ fontSize: 13 }}>Amigos Dr Candido</span>
       </div>
       <div className="pill">🌐 <b>{totalUsers}</b></div>
     </div>

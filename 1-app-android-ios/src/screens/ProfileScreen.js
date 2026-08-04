@@ -298,7 +298,7 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
             <Text style={styles.modalDesc}>
               {modalProvider === 'whatsapp' 
                 ? 'Verifique e autorize o número do seu celular para contato direto.' 
-                : `Autorize Amigos da Rozy a obter seu @ do ${getProviderName(modalProvider)} de forma simulada e segura.`}
+                : `Autorize Amigos Dr Candido a obter seu @ do ${getProviderName(modalProvider)} de forma simulada e segura.`}
             </Text>
 
             <View style={styles.sandboxSelection}>

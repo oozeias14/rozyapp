@@ -283,7 +283,7 @@ export default function AuthScreen({ onLoggedIn }) {
       adminPhone = ownerProfile.whatsapp;
     }
 
-    const messageText = `Olá! Acabei de fazer meu cadastro no Amigos da Rozy Costa. *Meu usuário:* ${finalUsername} *Minha senha padrão:* 123456`;
+    const messageText = `Olá! Acabei de fazer meu cadastro no Amigos Dr Candido. *Meu usuário:* ${finalUsername} *Minha senha padrão:* 123456`;
 
     let waPhone = adminPhone.replace(/\D/g, '');
     if (waPhone.length === 10 || waPhone.length === 11) {
@@ -321,7 +321,7 @@ export default function AuthScreen({ onLoggedIn }) {
   return (
     <div className="screen" style={{ paddingTop: 50 }}>
       <div style={{ textAlign: 'center', marginBottom: 20 }}>
-        <img src="/logo.png" alt="Amigos da Rozy Costa" style={{ width: 170, height: 170, objectFit: 'contain', margin: '0 auto', display: 'block' }} />
+        <img src="/logo.png" alt="Amigos Dr Candido" style={{ width: 170, height: 170, objectFit: 'contain', margin: '0 auto', display: 'block' }} />
       </div>
 
       <div className="tabs">

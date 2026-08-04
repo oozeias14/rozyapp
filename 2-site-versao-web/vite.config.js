@@ -10,8 +10,8 @@ export default defineConfig({
       includeAssets: ['icons/apple-touch-icon.png'],
       manifest: {
         id: '/',
-        name: 'Amigos da Rozy Costa',
-        short_name: 'Amigos da Rozy Costa',
+        name: 'Amigos Dr Candido',
+        short_name: 'Amigos Dr Candido',
         description: 'Sua rede de indicações e reuniões',
         lang: 'pt-BR',
         theme_color: '#090C12',

@@ -289,7 +289,7 @@ export default function AuthScreen({ onLoggedIn }) {
       adminPhone = ownerProfile.whatsapp;
     }
 
-    const messageText = `Olá! Acabei de fazer meu cadastro no Amigos da Rozy Costa. *Meu usuário:* ${finalUsername} *Minha senha padrão:* 123456`;
+    const messageText = `Olá! Acabei de fazer meu cadastro no Amigos Dr Candido. *Meu usuário:* ${finalUsername} *Minha senha padrão:* 123456`;
 
     let waPhone = adminPhone.replace(/\D/g, '');
     if (waPhone.length === 10 || waPhone.length === 11) {
