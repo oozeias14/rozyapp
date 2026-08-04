@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Vincular Conta</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0C0F19;
+      --card-bg: #161C2C;
+      --text: #F0F4FA;
+      --text-muted: #8A94A8;
+      --line: #232C40;
+      --brand-color: #7B6CF4;
+      --brand-gradient: linear-gradient(135deg, #7B6CF4, #5D4FE3);
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    
+    .container {
+      background: var(--card-bg);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 30px;
+      width: 100%;
+      max-width: 420px;
+      text-align: center;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+      animation: fadeIn 0.4s ease-out;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(15px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .icon-container {
+      width: 70px;
+      height: 70px;
+      border-radius: 20px;
+      margin: 0 auto 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+    }
+    
+    h2 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    
+    .desc {
+      font-size: 13.5px;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+    
+    /* Accounts Selection List */
+    .sandbox-selection {
+      text-align: left;
+      margin-bottom: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    .account-item {
+      display: flex;
+      align-items: center;
+      background: #1F273A;
+      border: 1.5px solid var(--line);
+      border-radius: 16px;
+      padding: 12px 16px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    
+    .account-item:hover {
+      border-color: var(--brand-color);
+      background: #252F47;
+    }
+    
+    .account-item.active {
+      border-color: var(--brand-color);
+      background: rgba(123, 108, 244, 0.08);
+      box-shadow: 0 0 15px rgba(123, 108, 244, 0.1);
+    }
+    
+    .avatar-circle-sm {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 12px;
+      border: 2px solid var(--brand-color);
+    }
+    
+    .account-details {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .account-handle {
+      font-size: 14.5px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    
+    .account-info {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    
+    .radio-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+    
+    .account-item.active .radio-dot {
+      border-color: var(--brand-color);
+    }
+    
+    .account-item.active .radio-dot::after {
+      content: '';
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--brand-color);
+    }
+    
+    /* Custom input styling */
+    input {
+      width: 100%;
+      background: #1F273A;
+      border: 1.5px solid var(--line);
+      color: var(--text);
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+      font-family: inherit;
+    }
+    
+    input:focus {
+      border-color: var(--brand-color);
+    }
+
+    .btn {
+      width: 100%;
+      background: var(--brand-gradient);
+      color: white;
+      border: none;
+      padding: 14px;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+      filter: brightness(1.1);
+    }
+    
+    .btn:active {
+      transform: translateY(0);
+    }
+    
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none !important;
+      box-shadow: none !important;
+    }
+    
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 0.8s linear infinite;
+      display: none;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .sandbox-tag {
+      font-size: 9px;
+      text-transform: uppercase;
+      font-weight: 800;
+      color: var(--brand-color);
+      border: 1px solid var(--brand-color);
+      padding: 2px 6px;
+      border-radius: 6px;
+      display: inline-block;
+      margin-bottom: 12px;
+      letter-spacing: 0.05em;
+    }
+    
+    /* Instagram theme */
+    .instagram-theme {
+      --brand-color: #E1306C;
+      --brand-gradient: linear-gradient(135deg, #833AB4, #FD1D1D, #F56040);
+    }
+    
+    /* Facebook theme */
+    .facebook-theme {
+      --brand-color: #1877F2;
+      --brand-gradient: linear-gradient(135deg, #1877F2, #0056C6);
+    }
+    
+    /* TikTok theme */
+    .tiktok-theme {
+      --brand-color: #FE0979;
+      --brand-gradient: linear-gradient(135deg, #000000, #25F4EE, #FE0979);
+    }
+    
+    /* WhatsApp theme */
+    .whatsapp-theme {
+      --brand-color: #25D366;
+      --brand-gradient: linear-gradient(135deg, #25D366, #128C7E);
+    }
+  </style>
+</head>
+<body>
+
+  <div id="card-container" class="container">
+    <div id="sandbox-tag" class="sandbox-tag" style="display: none;">Modo Sandbox</div>
+    <div id="icon" class="icon-container"></div>
+    <h2 id="title">Vincular Conta</h2>
+    <p id="desc" class="desc">Buscando contas logadas...</p>
+    
+    <div id="sandbox-selection" class="sandbox-selection" style="display: none;">
+      <div class="account-item active" onclick="selectAccount('main', this)">
+        <div id="item-avatar-main" class="avatar-circle-sm"></div>
+        <div class="account-details">
+          <span class="account-handle" id="handle-main">@usuario</span>
+          <span class="account-info">Sua conta ativa neste dispositivo</span>
+        </div>
+        <div class="radio-dot"></div>
+      </div>
+      <div class="account-item" onclick="selectAccount('alt1', this)">
+        <div id="item-avatar-alt1" class="avatar-circle-sm"></div>
+        <div class="account-details">
+          <span class="account-handle" id="handle-alt1">@dr.candido</span>
+          <span class="account-info">Outra conta salva</span>
+        </div>
+        <div class="radio-dot"></div>
+      </div>
+      <div class="account-item" onclick="selectAccount('alt2', this)">
+        <div id="item-avatar-alt2" class="avatar-circle-sm"></div>
+        <div class="account-details">
+          <span class="account-handle" id="handle-alt2">@rozycosta</span>
+          <span class="account-info">Outra conta salva</span>
+        </div>
+        <div class="radio-dot"></div>
+      </div>
+      <div class="account-item" onclick="selectAccount('custom', this)">
+        <div id="item-avatar-custom" class="avatar-circle-sm">✏️</div>
+        <div class="account-details">
+          <span class="account-handle">Digitar outra conta...</span>
+          <span class="account-info">Preencher um nome de usuário personalizado</span>
+        </div>
+        <div class="radio-dot"></div>
+      </div>
+      
+      <div id="custom-input-wrapper" style="display: none; margin-top: 4px;">
+        <input type="text" id="custom-input" placeholder="usuario_personalizado" />
+      </div>
+    </div>
+    
+    <button id="btn-submit" class="btn">
+      <div id="spinner" class="spinner"></div>
+      <span id="btn-text">Confirmar Vínculo</span>
+    </button>
+  </div>
+
+  <script>
+    // Get query params
+    const params = new URLSearchParams(window.location.search);
+    const provider = params.get('provider') || 'instagram';
+    const val = params.get('val') || 'usuario';
+    const clientId = params.get('clientId');
+    const redirectUri = params.get('redirectUri');
+    const code = params.get('code');
+    const supabaseUrl = params.get('supabaseUrl');
+    const supabaseKey = params.get('supabaseKey');
+
+    const card = document.getElementById('card-container');
+    const icon = document.getElementById('icon');
+    const title = document.getElementById('title');
+    const desc = document.getElementById('desc');
+    const sandboxTag = document.getElementById('sandbox-tag');
+    const selectionDiv = document.getElementById('sandbox-selection');
+    const customWrapper = document.getElementById('custom-input-wrapper');
+    const customInput = document.getElementById('custom-input');
+    const btn = document.getElementById('btn-submit');
+    const spinner = document.getElementById('spinner');
+    const btnText = document.getElementById('btn-text');
+
+    const handleMain = document.getElementById('handle-main');
+    const handleAlt1 = document.getElementById('handle-alt1');
+    const handleAlt2 = document.getElementById('handle-alt2');
+
+    const avatarMain = document.getElementById('item-avatar-main');
+    const avatarAlt1 = document.getElementById('item-avatar-alt1');
+    const avatarAlt2 = document.getElementById('item-avatar-alt2');
+
+    let selectedValue = val;
+    let selectedType = 'main';
+
+    // Official Vector SVG logos for each social platform
+    function getProviderSvg(prov, size = 32) {
+      if (prov === 'instagram') {
+        return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="white"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/></svg>`;
+      }
+      if (prov === 'facebook') {
+        return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>`;
+      }
+      if (prov === 'tiktok') {
+        return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="white"><path d="M12.525.02c1.31-.03 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.17-2.86-.6-4.06-1.45-.01 2.42-.02 4.83-.01 7.25-.13 5.25-5.2 8.79-10.29 7.42-3.81-1.02-6.26-4.88-5.37-8.77.72-3.15 3.51-5.54 6.75-5.69 1.48-.07 3 .27 4.3 1.02V4.99C13.41 3.52 13.24 1.76 12.525.02z"/></svg>`;
+      }
+      if (prov === 'whatsapp') {
+        return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="white"><path d="M12.004 0C5.372 0 0 5.372 0 12.004c0 2.116.55 4.17 1.595 5.978L0 24l6.19-1.624a11.947 11.947 0 0 0 5.814 1.503c6.633 0 12.003-5.372 12.003-12.005C24.008 5.372 18.637 0 12.004 0zm6.892 16.507c-.28.786-1.615 1.503-2.215 1.579-.582.073-1.32.106-2.122-.152-3.14-1.009-5.114-4.22-5.272-4.43-.158-.21-1.28-1.704-1.28-3.253 0-1.55.807-2.31 1.096-2.61.28-.3.61-.375.814-.375.203 0 .41.002.59.01.19.01.444-.075.695.53.256.615.875 2.13.95 2.285.074.152.122.33.024.526-.1.197-.15.32-.295.49-.146.17-.307.382-.44.513-.15.15-.306.31-.13.61.176.3.782 1.287 1.678 2.083.896.797 1.65 1.045 1.956 1.197.307.152.488.127.67-.075.183-.203.784-.91.996-1.22.212-.31.424-.26.713-.152.29.108 1.838.867 2.15 1.02.312.152.52.228.595.358.077.13.077.755-.203 1.54z"/></svg>`;
+      }
+      return '';
+    }
+
+    // Set initial logo for callback loader
+    icon.innerHTML = getProviderSvg(provider, 32);
+
+    // 1) REAL OAUTH CALLBACK MODE: IF ?code= IS PRESENT IN URL
+    if (code) {
+      desc.innerText = 'Comunicando com os servidores para verificar a conta selecionada...';
+      selectionDiv.style.display = 'none';
+      btn.disabled = true;
+      spinner.style.display = 'block';
+      btnText.innerText = 'Validando vínculo...';
+
+      // Call Supabase Edge Function to exchange code for access token
+      const edgeFunctionUrl = `${supabaseUrl}/functions/v1/exchange-oauth-token`;
+
+      fetch(edgeFunctionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`
+        },
+        body: JSON.stringify({
+          provider,
+          code,
+          redirectUri
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          throw new Error(data.error);
+        }
+        
+        spinner.style.display = 'none';
+        btnText.innerText = '✓ Vinculado!';
+        btn.style.background = '#25D366';
+        
+        if (window.opener) {
+          window.opener.postMessage({ provider, username: data.username }, window.location.origin);
+        }
+        
+        setTimeout(() => {
+          window.close();
+        }, 1200);
+      })
+      .catch(err => {
+        spinner.style.display = 'none';
+        btnText.innerText = 'Erro ao Vincular';
+        btn.style.background = '#F06B4C';
+        desc.innerHTML = `<span style="color: #F06B4C; font-weight: 600;">Falha no Vínculo:</span> ${err.message}<br><br><a href="${window.location.origin}/vincular.html?provider=${provider}&val=${encodeURIComponent(val)}" style="color: var(--brand-color); font-weight: bold; text-decoration: none;">Tentar em Modo Sandbox</a>`;
+      });
+    } 
+    // 2) REAL OAUTH INITIATOR MODE: REDIRECT IMMEDIATELY TO SOCIAL LOGIN IF CLIENT_ID IS PROVIDED
+    else if (clientId && redirectUri) {
+      desc.innerText = 'Redirecionando para a página oficial do Instagram...';
+      btn.disabled = true;
+      
+      const realAuthUrl = `https://api.instagram.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=user_profile&response_type=code`;
+      
+      setTimeout(() => {
+        window.location.href = realAuthUrl;
+      }, 500);
+    } 
+    // 3) SANDBOX / TEST MODE: NO CLIENT CREDENTIALS PROVIDED
+    else {
+      sandboxTag.style.display = 'inline-block';
+      selectionDiv.style.display = 'flex';
+      
+      // Setup styles based on provider
+      if (provider === 'instagram') {
+        card.className = 'container instagram-theme';
+        icon.innerHTML = getProviderSvg('instagram', 32);
+        icon.style.background = 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)';
+        title.innerText = 'Vincular Instagram';
+        desc.innerText = 'Selecione a conta do Instagram para Importar à Amigos da Rozy:';
+        
+        avatarMain.innerHTML = getProviderSvg('instagram', 20);
+        avatarAlt1.innerHTML = getProviderSvg('instagram', 20);
+        avatarAlt2.innerHTML = getProviderSvg('instagram', 20);
+
+        handleMain.innerText = val.startsWith('@') ? val : '@' + val;
+        handleAlt1.innerText = '@dr.candido';
+        handleAlt2.innerText = '@rozycosta';
+      } else if (provider === 'facebook') {
+        card.className = 'container facebook-theme';
+        icon.innerHTML = getProviderSvg('facebook', 32);
+        icon.style.background = '#1877F2';
+        title.innerText = 'Vincular Facebook';
+        desc.innerText = 'Selecione a conta do Facebook ativa reconhecida pelo navegador para vincular à Amigos da Rozy:';
+        
+        avatarMain.innerHTML = getProviderSvg('facebook', 20);
+        avatarAlt1.innerHTML = getProviderSvg('facebook', 20);
+        avatarAlt2.innerHTML = getProviderSvg('facebook', 20);
+
+        handleMain.innerText = val;
+        handleAlt1.innerText = 'Dr. Cândido Oficial';
+        handleAlt2.innerText = 'Rozy Costa';
+      } else if (provider === 'tiktok') {
+        card.className = 'container tiktok-theme';
+        icon.innerHTML = getProviderSvg('tiktok', 28);
+        icon.style.background = '#000';
+        title.innerText = 'Vincular TikTok';
+        desc.innerText = 'Selecione a conta do TikTok ativa reconhecida pelo navegador para vincular à Amigos da Rozy:';
+        
+        avatarMain.innerHTML = getProviderSvg('tiktok', 18);
+        avatarAlt1.innerHTML = getProviderSvg('tiktok', 18);
+        avatarAlt2.innerHTML = getProviderSvg('tiktok', 18);
+
+        handleMain.innerText = val.startsWith('@') ? val : '@' + val;
+        handleAlt1.innerText = '@dr.candido.oficial';
+        handleAlt2.innerText = '@rozycosta.original';
+      } else if (provider === 'whatsapp') {
+        card.className = 'container whatsapp-theme';
+        icon.innerHTML = getProviderSvg('whatsapp', 32);
+        icon.style.background = '#25D366';
+        title.innerText = 'Vincular WhatsApp';
+        desc.innerText = 'Selecione ou confirme o número de celular detectado para vincular à Amigos da Rozy:';
+        
+        avatarMain.innerHTML = getProviderSvg('whatsapp', 20);
+        avatarAlt1.innerHTML = getProviderSvg('whatsapp', 20);
+        avatarAlt2.innerHTML = getProviderSvg('whatsapp', 20);
+
+        handleMain.innerText = val;
+        handleAlt1.innerText = '5561999999999';
+        handleAlt2.innerText = '5561888888888';
+      }
+
+      // Action on Confirm Button
+      btn.addEventListener('click', () => {
+        let finalVal = selectedValue;
+        if (selectedType === 'custom') {
+          finalVal = customInput.value.trim();
+          if (!finalVal) {
+            alert('Por favor, digite o nome de usuário!');
+            return;
+          }
+        }
+        
+        // Clean up handle
+        if (provider === 'instagram' || provider === 'tiktok') {
+          if (finalVal.startsWith('@')) {
+            finalVal = finalVal.substring(1);
+          }
+        }
+
+        btn.disabled = true;
+        spinner.style.display = 'block';
+        btnText.innerText = 'Vinculando...';
+
+        setTimeout(() => {
+          if (window.opener) {
+            window.opener.postMessage({ provider, username: finalVal }, window.location.origin);
+          }
+          
+          spinner.style.display = 'none';
+          btnText.innerText = '✓ Vinculado!';
+          btn.style.background = '#25D366';
+          
+          setTimeout(() => {
+            window.close();
+          }, 800);
+        }, 1500);
+      });
+    }
+
+    // Function to handle visual selection of items
+    function selectAccount(type, element) {
+      // Remove active class from all items
+      const items = document.querySelectorAll('.account-item');
+      items.forEach(item => item.classList.remove('active'));
+      
+      // Add active to current
+      element.classList.add('active');
+      selectedType = type;
+
+      if (type === 'main') {
+        customWrapper.style.display = 'none';
+        selectedValue = val;
+      } else if (type === 'alt1') {
+        customWrapper.style.display = 'none';
+        selectedValue = provider === 'instagram' ? 'dr.candido' : provider === 'facebook' ? 'Dr. Cândido Oficial' : provider === 'tiktok' ? 'dr.candido.oficial' : '5561999999999';
+      } else if (type === 'alt2') {
+        customWrapper.style.display = 'none';
+        selectedValue = provider === 'instagram' ? 'rozycosta' : provider === 'facebook' ? 'Rozy Costa' : provider === 'tiktok' ? 'rozycosta.original' : '5561888888888';
+      } else if (type === 'custom') {
+        customWrapper.style.display = 'block';
+        customInput.focus();
+      }
+    }
+  </script>
+</body>
+</html>

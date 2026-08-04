@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, ScrollView, Image, Linking } from 'react-native';
 import { supabase } from '../lib/supabase';
 
 // Depois de configurar o site (pasta 2-site-versao-web), troque esta URL
@@ -78,6 +78,35 @@ export default function AuthScreen({ onLoggedIn }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
 
+  const [isUsernameManual, setIsUsernameManual] = useState(false);
+
+  function generateBaseUsername(fullName) {
+    const parts = fullName.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '';
+    const normalize = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9_-]/g, "");
+    if (parts.length === 1) {
+      return normalize(parts[0]);
+    }
+    return normalize(parts[0]) + normalize(parts[1]);
+  }
+
+  function handleNameChange(val) {
+    setName(val);
+    if (!isUsernameManual) {
+      setUsername(generateBaseUsername(val));
+    }
+  }
+
+  function handleUsernameChange(val) {
+    const cleaned = val.replace(/\s/g, '').toLowerCase();
+    setUsername(cleaned);
+    if (!cleaned) {
+      setIsUsernameManual(false);
+    } else {
+      setIsUsernameManual(true);
+    }
+  }
+
   async function handleLogin() {
     setLoading(true);
     let loginEmail = email.trim();
@@ -103,29 +132,74 @@ export default function AuthScreen({ onLoggedIn }) {
   }
 
   async function handleCadastro() {
-    if (!username.trim()) {
+    // Clean and sanitize spaces from inputs
+    const cleanedUsername = username.trim().toLowerCase().replace(/\s/g, '');
+    const cleanedRefCode = refCode.trim().replace(/\s/g, '');
+    const cleanedPhone = phone.trim().replace(/\s/g, '');
+    const cleanedEmail = email.trim().toLowerCase();
+
+    if (!name.trim()) {
+      Alert.alert('Nome obrigatório', 'Preencha o seu nome completo.');
+      return;
+    }
+    if (!cleanedUsername) {
       Alert.alert('Usuário obrigatório', 'Escolha um nome de usuário para o seu perfil.');
       return;
     }
-    if (username.includes(' ')) {
-      Alert.alert('Erro no usuário', 'O nome de usuário não pode conter espaços.');
+    if (!/^[a-zA-Z0-9_-]+$/.test(cleanedUsername)) {
+      Alert.alert('Erro no usuário', 'Use apenas letras, números, sublinhas (_) ou traços (-).');
       return;
     }
-    if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
-      Alert.alert('Erro no usuário', 'Use apenas letras, números, sublinhas (_) ou traços (-).');
+
+    if (!cleanedPhone) {
+      Alert.alert('WhatsApp obrigatório', 'Preencha o campo de WhatsApp.');
+      return;
+    }
+
+    if (!cleanedEmail) {
+      Alert.alert('E-mail obrigatório', 'Preencha o campo de e-mail.');
+      return;
+    }
+    if (email.includes(' ')) {
+      Alert.alert('E-mail inválido', 'O e-mail não pode conter espaços.');
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanedEmail)) {
+      Alert.alert('E-mail inválido', 'Verifique o formato digitado (ex: nome@email.com).');
       return;
     }
 
     setLoading(true);
 
+    // 1) Encontra uma versão sequencial do username livre no banco
+    let finalUsername = cleanedUsername;
+    let suffix = 1;
+    let usernameTaken = true;
+
+    while (usernameTaken) {
+      const { data: dupUser } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('username', finalUsername)
+        .maybeSingle();
+
+      if (dupUser) {
+        finalUsername = `${cleanedUsername}${suffix}`;
+        suffix++;
+      } else {
+        usernameTaken = false;
+      }
+    }
+
     // O usuário 'rozycosta' é o Administrador Raiz do sistema
-    const isFirstUser = username.trim().toLowerCase() === 'rozycosta';
+    const isFirstUser = finalUsername === 'rozycosta';
 
     let refUserId = null;
     let refUser = null;
 
     if (!isFirstUser) {
-      let parsedRef = refCode.trim();
+      let parsedRef = cleanedRefCode;
       if (!parsedRef) {
         parsedRef = 'rozycosta';
       }
@@ -143,17 +217,9 @@ export default function AuthScreen({ onLoggedIn }) {
         }
       }
 
-      // Verifica se o seu próprio username já existe
-      const { data: dupUser } = await supabase.from('profiles').select('id').eq('username', username.trim().toLowerCase()).maybeSingle();
-      if (dupUser) {
-        setLoading(false);
-        Alert.alert('Usuário indisponível', 'Este nome de usuário já está em uso.');
-        return;
-      }
-
       const { data: fetchedRefUser, error: refErr } = await supabase
         .from('profiles')
-        .select('id, role, coord_id')
+        .select('id, role, coord_id, phone')
         .eq('id', refUserId)
         .maybeSingle();
 
@@ -165,7 +231,7 @@ export default function AuthScreen({ onLoggedIn }) {
       refUser = fetchedRefUser;
     }
 
-    const { data: authData, error: authErr } = await supabase.auth.signUp({ email, password });
+    const { data: authData, error: authErr } = await supabase.auth.signUp({ email: cleanedEmail, password: '123456' });
     if (authErr) {
       setLoading(false);
       Alert.alert('Erro ao criar conta', translateError(authErr));
@@ -187,24 +253,62 @@ export default function AuthScreen({ onLoggedIn }) {
     const { error: profErr } = await supabase.from('profiles').insert({
       auth_id: authData.user.id,
       name,
-      email,
-      phone,
+      email: cleanedEmail,
+      phone: cleanedPhone,
       role: userRole,
       coord_id: coordId,
       parent_id: slotId,
       referrer_id: isFirstUser ? null : refUser.id,
-      username: username.trim().toLowerCase(),
+      username: finalUsername,
     });
 
     setLoading(false);
     if (profErr) { Alert.alert('Erro ao salvar cadastro', translateError(profErr)); return; }
 
+    // Fetch the admin's phone number dynamically from owner_profile
+    let adminPhone = '';
+    const { data: ownerProfile } = await supabase
+      .from('owner_profile')
+      .select('whatsapp')
+      .eq('id', 1)
+      .maybeSingle();
+
+    if (ownerProfile) {
+      adminPhone = ownerProfile.whatsapp;
+    }
+
+    const messageText = `Olá! Acabei de fazer meu cadastro no Amigos da Rozy Costa. *Meu usuário:* ${finalUsername} *Minha senha padrão:* 123456`;
+
+    let waPhone = adminPhone.replace(/\D/g, '');
+    if (waPhone.length === 10 || waPhone.length === 11) {
+      waPhone = '55' + waPhone;
+    }
+
     if (isFirstUser) {
+      await supabase.from('owner_profile').update({ whatsapp: cleanedPhone }).eq('id', 1);
       Alert.alert('Parabéns!', 'Você cadastrou a primeira conta e entrou como o Administrador Raiz!');
     } else {
-      Alert.alert('Cadastro feito!', slotId !== refUser.id
-        ? `Você entrou na rede via indicação (vaga automática #${slotId}).`
-        : 'Seu cadastro foi concluído.');
+      if (waPhone) {
+        Alert.alert(
+          'Cadastro feito com sucesso!',
+          `Seu nome de usuário é: ${finalUsername}\nSua senha padrão é: 123456.\n\nClique em OK para mandar uma mensagem no WhatsApp do Administrador.`,
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                Linking.openURL(`https://wa.me/${waPhone}?text=${encodeURIComponent(messageText)}`).catch(err => {
+                  console.log('Erro ao abrir WhatsApp:', err);
+                });
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert(
+          'Cadastro feito com sucesso!',
+          `Seu nome de usuário é: ${finalUsername}\nSua senha padrão é: 123456.`
+        );
+      }
     }
     onLoggedIn(authData.user);
   }
@@ -243,18 +347,21 @@ export default function AuthScreen({ onLoggedIn }) {
           <Text style={styles.label}>Indicação ( Nome de Usuário ) - Opcional</Text>
           <TextInput style={styles.input} placeholder="Ex: roberto" value={refCode} onChangeText={setRefCode} placeholderTextColor="#56627A" autoCapitalize="none" />
           <Text style={styles.label}>Nome completo</Text>
-          <TextInput style={styles.input} placeholder="Seu nome" value={name} onChangeText={setName} placeholderTextColor="#56627A" />
-          <Text style={styles.label}>Nome de usuário (sem espaços, para seu link e login)</Text>
-          <TextInput style={styles.input} placeholder="Ex: joaosilva" autoCapitalize="none" value={username} onChangeText={(text) => setUsername(text.replace(/\s/g, '').toLowerCase())} placeholderTextColor="#56627A" />
-          <Text style={styles.label}>Telefone</Text>
+          <TextInput style={styles.input} placeholder="Seu nome" value={name} onChangeText={handleNameChange} placeholderTextColor="#56627A" />
+
+          <Text style={styles.label}>WhatsApp</Text>
           <TextInput style={styles.input} placeholder="(61) 9 9999-9999" value={phone} onChangeText={setPhone} placeholderTextColor="#56627A" />
         </>
       )}
 
       <Text style={styles.label}>{mode === 'login' ? 'E-mail ou Nome de usuário' : 'E-mail'}</Text>
       <TextInput style={styles.input} placeholder={mode === 'login' ? 'voce@email.com ou seu_usuario' : 'voce@email.com'} autoCapitalize="none" value={email} onChangeText={setEmail} placeholderTextColor="#56627A" />
-      <Text style={styles.label}>{mode === 'login' ? 'Senha' : 'Senha ( mínimo 6 caracteres )'}</Text>
-      <TextInput style={styles.input} placeholder="••••••••" secureTextEntry value={password} onChangeText={setPassword} placeholderTextColor="#56627A" />
+      {mode === 'login' && (
+        <>
+          <Text style={styles.label}>Senha</Text>
+          <TextInput style={styles.input} placeholder="••••••••" secureTextEntry value={password} onChangeText={setPassword} placeholderTextColor="#56627A" />
+        </>
+      )}
 
       <TouchableOpacity
         style={styles.btn}

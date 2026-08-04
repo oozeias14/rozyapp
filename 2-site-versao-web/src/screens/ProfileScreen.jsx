@@ -25,6 +25,55 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
     })();
   }, []);
 
+  useEffect(() => {
+    function handleMessage(event) {
+      if (event.origin !== window.location.origin) return;
+      if (event.data && event.data.provider) {
+        const { provider, username } = event.data;
+        if (provider === 'instagram') setInstagram(username);
+        else if (provider === 'facebook') setFacebook(username);
+        else if (provider === 'tiktok') setTiktok(username);
+        else if (provider === 'whatsapp') setWhatsapp(username);
+      }
+    }
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  function openLinkPopup(provider) {
+    const w = 450;
+    const h = 600;
+    const left = window.screen.width / 2 - w / 2;
+    const top = window.screen.height / 2 - h / 2;
+    
+    // Normalize and clean up accents from profile name to create a fallback handle
+    const defaultUser = profile.username || profile.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '');
+    const defaultPhone = profile.whatsapp || '5561999999999';
+
+    let mockVal = defaultUser;
+    if (provider === 'facebook') mockVal = profile.name;
+    if (provider === 'whatsapp') mockVal = defaultPhone;
+
+    // Real API configurations if defined in env
+    const clientId = import.meta.env.VITE_INSTAGRAM_CLIENT_ID || '';
+    const redirectUri = window.location.origin + '/vincular.html';
+    const supabaseUrl = supabase.supabaseUrl || '';
+    const supabaseKey = supabase.supabaseKey || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
+    let url = `/vincular.html?provider=${provider}&val=${encodeURIComponent(mockVal)}`;
+
+    // If using Instagram and have clientId configured, append real OAuth parameters
+    if (provider === 'instagram' && clientId) {
+      url += `&clientId=${encodeURIComponent(clientId)}&redirectUri=${encodeURIComponent(redirectUri)}&supabaseUrl=${encodeURIComponent(supabaseUrl)}&supabaseKey=${encodeURIComponent(supabaseKey)}`;
+    }
+
+    window.open(
+      url,
+      'vincular',
+      `width=${w},height=${h},top=${top},left=${left},resizable=yes,scrollbars=yes`
+    );
+  }
+
   async function handleFileChange(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -91,13 +140,25 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
       <div className="card-title">Editar redes sociais</div>
       <div className="card">
         <label className="lbl">Instagram</label>
-        <input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@usuario" />
+        <div className="social-input-wrapper">
+          <input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@usuario" />
+          <button type="button" className="btn-vincular" onClick={() => openLinkPopup('instagram')}>Vincular</button>
+        </div>
         <label className="lbl">Facebook</label>
-        <input value={facebook} onChange={(e) => setFacebook(e.target.value)} placeholder="Seu nome no Facebook" />
+        <div className="social-input-wrapper">
+          <input value={facebook} onChange={(e) => setFacebook(e.target.value)} placeholder="Seu nome no Facebook" />
+          <button type="button" className="btn-vincular" onClick={() => openLinkPopup('facebook')}>Vincular</button>
+        </div>
         <label className="lbl">TikTok</label>
-        <input value={tiktok} onChange={(e) => setTiktok(e.target.value)} placeholder="@usuario" />
+        <div className="social-input-wrapper">
+          <input value={tiktok} onChange={(e) => setTiktok(e.target.value)} placeholder="@usuario" />
+          <button type="button" className="btn-vincular" onClick={() => openLinkPopup('tiktok')}>Vincular</button>
+        </div>
         <label className="lbl">WhatsApp</label>
-        <input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="5561999999999" />
+        <div className="social-input-wrapper">
+          <input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="5561999999999" />
+          <button type="button" className="btn-vincular" onClick={() => openLinkPopup('whatsapp')}>Vincular</button>
+        </div>
         <button className="btn btn-teal" onClick={saveSocials}>Salvar redes sociais</button>
       </div>
 

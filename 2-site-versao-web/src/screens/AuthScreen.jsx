@@ -69,6 +69,35 @@ export default function AuthScreen({ onLoggedIn }) {
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
 
+  const [isUsernameManual, setIsUsernameManual] = useState(false);
+
+  function generateBaseUsername(fullName) {
+    const parts = fullName.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '';
+    const normalize = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9_-]/g, "");
+    if (parts.length === 1) {
+      return normalize(parts[0]);
+    }
+    return normalize(parts[0]) + normalize(parts[1]);
+  }
+
+  function handleNameChange(val) {
+    setName(val);
+    if (!isUsernameManual) {
+      setUsername(generateBaseUsername(val));
+    }
+  }
+
+  function handleUsernameChange(val) {
+    const cleaned = val.replace(/\s/g, '').toLowerCase();
+    setUsername(cleaned);
+    if (!cleaned) {
+      setIsUsernameManual(false);
+    } else {
+      setIsUsernameManual(true);
+    }
+  }
+
   useEffect(() => {
     let path = window.location.pathname;
     if (path && path.length > 1) {
@@ -116,20 +145,59 @@ export default function AuthScreen({ onLoggedIn }) {
 
   async function handleCadastro(e) {
     e.preventDefault();
-    if (!username.trim()) { alert('Escolha um nome de usuário para o seu perfil.'); return; }
-    if (username.includes(' ')) { alert('O nome de usuário não pode conter espaços.'); return; }
-    if (!/^[a-zA-Z0-9_-]+$/.test(username)) { alert('Use apenas letras, números, sublinhas (_) ou traços (-) no nome de usuário.'); return; }
+    
+    // Clean and sanitize spaces from inputs
+    const cleanedUsername = username.trim().toLowerCase().replace(/\s/g, '');
+    const cleanedRefCode = refCode.trim().replace(/\s/g, '');
+    const cleanedPhone = phone.trim().replace(/\s/g, '');
+    const cleanedEmail = email.trim().toLowerCase();
+
+    if (!name.trim()) { alert('Preencha o seu nome completo.'); return; }
+    if (!cleanedUsername) { alert('Escolha um nome de usuário para o seu perfil.'); return; }
+    if (!/^[a-zA-Z0-9_-]+$/.test(cleanedUsername)) { alert('Use apenas letras, números, sublinhas (_) ou traços (-) no nome de usuário.'); return; }
+
+    if (!cleanedPhone) { alert('Preencha o campo de WhatsApp.'); return; }
+
+    if (!cleanedEmail) { alert('Preencha o campo de e-mail.'); return; }
+    if (email.includes(' ')) {
+      alert('O e-mail não pode conter espaços.');
+      return;
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanedEmail)) {
+      alert('E-mail inválido. Verifique o formato digitado (ex: nome@email.com).');
+      return;
+    }
 
     setLoading(true);
 
-    // O usuário 'rozycosta' é o Administrador Raiz do sistema
-    const isFirstUser = username.trim().toLowerCase() === 'rozycosta';
+    // 1) Encontra uma versão sequencial do username livre no banco
+    let finalUsername = cleanedUsername;
+    let suffix = 1;
+    let usernameTaken = true;
+
+    while (usernameTaken) {
+      const { data: dupUser } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('username', finalUsername)
+        .maybeSingle();
+
+      if (dupUser) {
+        finalUsername = `${cleanedUsername}${suffix}`;
+        suffix++;
+      } else {
+        usernameTaken = false;
+      }
+    }
+
+    const isFirstUser = finalUsername === 'rozycosta';
 
     let refUserId = null;
     let refUser = null;
 
     if (!isFirstUser) {
-      let parsedRef = refCode.trim();
+      let parsedRef = cleanedRefCode;
       if (!parsedRef) {
         parsedRef = 'rozycosta';
       }
@@ -147,16 +215,8 @@ export default function AuthScreen({ onLoggedIn }) {
         }
       }
 
-      // Verifica se o seu próprio username já existe
-      const { data: dupUser } = await supabase.from('profiles').select('id').eq('username', username.trim().toLowerCase()).maybeSingle();
-      if (dupUser) {
-        setLoading(false);
-        alert('Este nome de usuário já está em uso. Escolha outro.');
-        return;
-      }
-
       const { data: fetchedRefUser, error: refErr } = await supabase
-        .from('profiles').select('id, role, coord_id').eq('id', refUserId).maybeSingle();
+        .from('profiles').select('id, role, coord_id, phone').eq('id', refUserId).maybeSingle();
 
       if (refErr || !fetchedRefUser) {
         setLoading(false);
@@ -166,7 +226,7 @@ export default function AuthScreen({ onLoggedIn }) {
       refUser = fetchedRefUser;
     }
 
-    const { data: authData, error: authErr } = await supabase.auth.signUp({ email, password });
+    const { data: authData, error: authErr } = await supabase.auth.signUp({ email: cleanedEmail, password: '123456' });
     if (authErr) { setLoading(false); alert('Erro ao criar conta: ' + translateError(authErr)); return; }
 
     let slotId = null;
@@ -184,24 +244,47 @@ export default function AuthScreen({ onLoggedIn }) {
     const { error: profErr } = await supabase.from('profiles').insert({
       auth_id: authData.user.id, 
       name, 
-      email, 
-      phone, 
+      email: cleanedEmail, 
+      phone: cleanedPhone, 
       role: userRole, 
       coord_id: coordId, 
       parent_id: slotId, 
       referrer_id: isFirstUser ? null : refUser.id,
-      username: username.trim().toLowerCase(),
+      username: finalUsername,
     });
 
     setLoading(false);
     if (profErr) { alert('Erro ao salvar cadastro: ' + translateError(profErr)); return; }
 
+    // Fetch the admin's phone number dynamically from owner_profile
+    let adminPhone = '';
+    const { data: ownerProfile } = await supabase
+      .from('owner_profile')
+      .select('whatsapp')
+      .eq('id', 1)
+      .maybeSingle();
+
+    if (ownerProfile) {
+      adminPhone = ownerProfile.whatsapp;
+    }
+
+    const messageText = `Olá! Acabei de fazer meu cadastro no Amigos da Rozy Costa. *Meu usuário:* ${finalUsername} *Minha senha padrão:* 123456`;
+
+    let waPhone = adminPhone.replace(/\D/g, '');
+    if (waPhone.length === 10 || waPhone.length === 11) {
+      waPhone = '55' + waPhone;
+    }
+
     if (isFirstUser) {
+      await supabase.from('owner_profile').update({ whatsapp: cleanedPhone }).eq('id', 1);
       alert('Parabéns! Você cadastrou a primeira conta e entrou como o Administrador Raiz!');
     } else {
-      alert(slotId !== refUser.id
-        ? `Cadastro feito! Você entrou na rede via indicação (vaga automática #${slotId}).`
-        : 'Cadastro feito com sucesso!');
+      if (waPhone) {
+        alert(`Cadastro feito com sucesso!\nSeu nome de usuário é: ${finalUsername}\nSua senha padrão é: 123456.\n\nClique em OK para mandar uma mensagem no WhatsApp do Administrador.`);
+        window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(messageText)}`, '_blank');
+      } else {
+        alert(`Cadastro feito com sucesso!\nSeu nome de usuário é: ${finalUsername}\nSua senha padrão é: 123456.`);
+      }
     }
     onLoggedIn(authData.user);
   }
@@ -237,17 +320,20 @@ export default function AuthScreen({ onLoggedIn }) {
             <label className="lbl">Indicação ( Nome de Usuário ) - Opcional</label>
             <input placeholder="Ex: roberto" value={refCode} onChange={(e) => setRefCode(e.target.value)} />
             <label className="lbl">Nome completo</label>
-            <input placeholder="Seu nome" value={name} onChange={(e) => setName(e.target.value)} />
-            <label className="lbl">Nome de usuário (sem espaços, para seu link e login)</label>
-            <input placeholder="Ex: joaosilva" value={username} onChange={(e) => setUsername(e.target.value.replace(/\s/g, '').toLowerCase())} autoCapitalize="none" />
-            <label className="lbl">Telefone</label>
+            <input placeholder="Seu nome" value={name} onChange={(e) => handleNameChange(e.target.value)} />
+
+            <label className="lbl">WhatsApp</label>
             <input placeholder="(61) 9 9999-9999" value={phone} onChange={(e) => setPhone(e.target.value)} />
           </>
         )}
         <label className="lbl">{mode === 'login' ? 'E-mail ou Nome de usuário' : 'E-mail'}</label>
         <input type="text" placeholder={mode === 'login' ? 'voce@email.com ou seu_usuario' : 'voce@email.com'} value={email} onChange={(e) => setEmail(e.target.value)} autoCapitalize="none" />
-        <label className="lbl">{mode === 'login' ? 'Senha' : 'Senha ( mínimo 6 caracteres )'}</label>
-        <input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
+        {mode === 'login' && (
+          <>
+            <label className="lbl">Senha</label>
+            <input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </>
+        )}
 
         <button className="btn btn-teal" type="submit" disabled={loading}>
           {loading ? 'Aguarde...' : mode === 'login' ? 'Entrar' : 'Criar minha conta'}

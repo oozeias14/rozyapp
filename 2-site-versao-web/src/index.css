@@ -192,3 +192,36 @@ label.lbl { font-size: 10.5px; color: var(--ink2); margin: 0 0 4px 2px; display:
   margin-bottom: 16px;
 }
 
+/* Wrapper to hold input and inline Vincular button */
+.social-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.social-input-wrapper input {
+  margin-bottom: 0 !important;
+  padding-right: 95px !important;
+}
+.social-input-wrapper .btn-vincular {
+  position: absolute;
+  right: 6px;
+  background: var(--teal-dim);
+  color: var(--teal);
+  border: 1px solid rgba(61, 217, 179, 0.3);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  outline: none;
+}
+.social-input-wrapper .btn-vincular:hover {
+  background: var(--teal);
+  color: #051A14;
+}
+
+

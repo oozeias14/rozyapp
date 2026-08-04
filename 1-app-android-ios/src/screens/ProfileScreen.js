@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Image, TouchableOpacity, TextInput, Alert, StyleSheet, ActivityIndicator, ScrollView, Share, Linking } from 'react-native';
+import { View, Text, Image, TouchableOpacity, TextInput, Alert, StyleSheet, ActivityIndicator, ScrollView, Share, Linking, Modal } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase, MAX_PHOTO_BYTES } from '../lib/supabase';
@@ -16,6 +16,93 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
   const [newPassword, setNewPassword] = useState('');
   const [appDomain, setAppDomain] = useState('amigosdarozy.com.br');
   const [totalUsers, setTotalUsers] = useState(0);
+
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalProvider, setModalProvider] = useState('instagram');
+  const [modalUsernameMain, setModalUsernameMain] = useState('');
+  const [modalUsernameCustom, setModalUsernameCustom] = useState('');
+  const [selectedType, setSelectedType] = useState('main');
+  const [modalSubmitting, setModalSubmitting] = useState(false);
+  const [modalSuccess, setModalSuccess] = useState(false);
+
+  function openLinkModal(provider) {
+    // Generate a default mock username if they don't have one
+    const defaultUser = profile.username || profile.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, '');
+    const defaultPhone = profile.whatsapp || '5561999999999';
+    
+    let mockVal = defaultUser;
+    if (provider === 'facebook') mockVal = profile.name;
+    if (provider === 'whatsapp') mockVal = defaultPhone;
+
+    setModalProvider(provider);
+    setModalUsernameMain(mockVal);
+    setModalUsernameCustom('');
+    setSelectedType('main');
+    setModalSubmitting(false);
+    setModalSuccess(false);
+    setModalVisible(true);
+  }
+
+  function confirmLink() {
+    let finalVal = '';
+    if (selectedType === 'main') {
+      finalVal = modalUsernameMain;
+    } else if (selectedType === 'alt1') {
+      finalVal = modalProvider === 'instagram' ? 'dr.candido' : modalProvider === 'facebook' ? 'Dr. Cândido Oficial' : modalProvider === 'tiktok' ? 'dr.candido.oficial' : '5561999999999';
+    } else if (selectedType === 'alt2') {
+      finalVal = modalProvider === 'instagram' ? 'rozycosta' : modalProvider === 'facebook' ? 'Rozy Costa' : modalProvider === 'tiktok' ? 'rozycosta.original' : '5561888888888';
+    } else if (selectedType === 'custom') {
+      finalVal = modalUsernameCustom.trim();
+      if (!finalVal) {
+        Alert.alert('Aviso', 'Por favor, digite o nome de usuário!');
+        return;
+      }
+    }
+
+    let cleanedVal = finalVal;
+    if (modalProvider === 'instagram' || modalProvider === 'tiktok') {
+      if (cleanedVal.startsWith('@')) {
+        cleanedVal = cleanedVal.substring(1);
+      }
+    }
+
+    setModalSubmitting(true);
+    setTimeout(() => {
+      setModalSubmitting(false);
+      setModalSuccess(true);
+
+      setTimeout(() => {
+        if (modalProvider === 'instagram') setInstagram(cleanedVal);
+        else if (modalProvider === 'facebook') setFacebook(cleanedVal);
+        else if (modalProvider === 'tiktok') setTiktok(cleanedVal);
+        else if (modalProvider === 'whatsapp') setWhatsapp(cleanedVal);
+
+        setModalVisible(false);
+      }, 800);
+    }, 1500);
+  }
+
+  function getProviderColor(provider) {
+    if (provider === 'instagram') return '#E1306C';
+    if (provider === 'facebook') return '#1877F2';
+    if (provider === 'tiktok') return '#25F4EE';
+    if (provider === 'whatsapp') return '#25D366';
+    return COLORS.teal;
+  }
+  function getProviderIcon(provider) {
+    if (provider === 'instagram') return '📸';
+    if (provider === 'facebook') return '👥';
+    if (provider === 'tiktok') return '🎵';
+    if (provider === 'whatsapp') return '📞';
+    return '💬';
+  }
+  function getProviderName(provider) {
+    if (provider === 'instagram') return 'Instagram';
+    if (provider === 'facebook') return 'Facebook';
+    if (provider === 'tiktok') return 'TikTok';
+    if (provider === 'whatsapp') return 'WhatsApp';
+    return '';
+  }
 
   useEffect(() => {
     (async () => {
@@ -137,13 +224,37 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
       <Text style={S.cardTitle}>Editar redes sociais</Text>
       <View style={S.card}>
         <Text style={S.label}>Instagram</Text>
-        <TextInput style={S.input} value={instagram} onChangeText={setInstagram} placeholder="@usuario" placeholderTextColor={COLORS.ink3} />
+        <View style={styles.inputRow}>
+          <TextInput style={[S.input, { flex: 1, marginBottom: 0, paddingRight: 90 }]} value={instagram} onChangeText={setInstagram} placeholder="@usuario" placeholderTextColor={COLORS.ink3} autoCapitalize="none" autoCorrect={false} />
+          <TouchableOpacity style={styles.inlineBtn} onPress={() => openLinkModal('instagram')}>
+            <Text style={styles.inlineBtnText}>Vincular</Text>
+          </TouchableOpacity>
+        </View>
+
         <Text style={S.label}>Facebook</Text>
-        <TextInput style={S.input} value={facebook} onChangeText={setFacebook} placeholder="Seu nome no Facebook" placeholderTextColor={COLORS.ink3} />
+        <View style={styles.inputRow}>
+          <TextInput style={[S.input, { flex: 1, marginBottom: 0, paddingRight: 90 }]} value={facebook} onChangeText={setFacebook} placeholder="Seu nome no Facebook" placeholderTextColor={COLORS.ink3} autoCorrect={false} />
+          <TouchableOpacity style={styles.inlineBtn} onPress={() => openLinkModal('facebook')}>
+            <Text style={styles.inlineBtnText}>Vincular</Text>
+          </TouchableOpacity>
+        </View>
+
         <Text style={S.label}>TikTok</Text>
-        <TextInput style={S.input} value={tiktok} onChangeText={setTiktok} placeholder="@usuario" placeholderTextColor={COLORS.ink3} />
+        <View style={styles.inputRow}>
+          <TextInput style={[S.input, { flex: 1, marginBottom: 0, paddingRight: 90 }]} value={tiktok} onChangeText={setTiktok} placeholder="@usuario" placeholderTextColor={COLORS.ink3} autoCapitalize="none" autoCorrect={false} />
+          <TouchableOpacity style={styles.inlineBtn} onPress={() => openLinkModal('tiktok')}>
+            <Text style={styles.inlineBtnText}>Vincular</Text>
+          </TouchableOpacity>
+        </View>
+
         <Text style={S.label}>WhatsApp</Text>
-        <TextInput style={S.input} value={whatsapp} onChangeText={setWhatsapp} placeholder="5561999999999" placeholderTextColor={COLORS.ink3} keyboardType="phone-pad" />
+        <View style={styles.inputRow}>
+          <TextInput style={[S.input, { flex: 1, marginBottom: 0, paddingRight: 90 }]} value={whatsapp} onChangeText={setWhatsapp} placeholder="5561999999999" placeholderTextColor={COLORS.ink3} keyboardType="phone-pad" />
+          <TouchableOpacity style={styles.inlineBtn} onPress={() => openLinkModal('whatsapp')}>
+            <Text style={styles.inlineBtnText}>Vincular</Text>
+          </TouchableOpacity>
+        </View>
+
         <TouchableOpacity style={[S.btn, S.btnTeal]} onPress={saveSocials}>
           <Text style={S.btnTextDark}>Salvar redes sociais</Text>
         </TouchableOpacity>
@@ -176,6 +287,142 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
         <Text style={S.btnTextGhost}>Sair da conta</Text>
       </TouchableOpacity>
       <View style={{ height: 20 }} />
+
+      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
+        <View style={styles.modalBg}>
+          <View style={styles.modalContent}>
+            <View style={[styles.iconContainer, { backgroundColor: getProviderColor(modalProvider) }]}>
+              <Text style={{ fontSize: 32, color: '#fff' }}>{getProviderIcon(modalProvider)}</Text>
+            </View>
+            <Text style={styles.modalTitle}>Vincular {getProviderName(modalProvider)}</Text>
+            <Text style={styles.modalDesc}>
+              {modalProvider === 'whatsapp' 
+                ? 'Verifique e autorize o número do seu celular para contato direto.' 
+                : `Autorize Amigos da Rozy a obter seu @ do ${getProviderName(modalProvider)} de forma simulada e segura.`}
+            </Text>
+
+            <View style={styles.sandboxSelection}>
+              <Text style={{ fontSize: 11, marginBottom: 10, color: COLORS.ink3, textAlign: 'center' }}>
+                Selecione a conta ativa detectada:
+              </Text>
+              
+              <TouchableOpacity 
+                style={[styles.accountItem, selectedType === 'main' && styles.accountItemActive]} 
+                onPress={() => setSelectedType('main')}
+              >
+                <View style={[styles.avatarCircleSm, { borderColor: getProviderColor(modalProvider) }]}>
+                  <Text style={{ fontSize: 16 }}>{getProviderIcon(modalProvider)}</Text>
+                </View>
+                <View style={styles.accountDetails}>
+                  <Text style={styles.accountHandle}>
+                    {(modalProvider === 'instagram' || modalProvider === 'tiktok') 
+                      ? (modalUsernameMain.startsWith('@') ? modalUsernameMain : '@' + modalUsernameMain) 
+                      : modalUsernameMain}
+                  </Text>
+                  <Text style={styles.accountInfo}>Sua conta ativa neste dispositivo</Text>
+                </View>
+                <View style={[styles.radioDot, selectedType === 'main' && styles.radioDotActive]}>
+                  {selectedType === 'main' && (
+                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.teal }} />
+                  )}
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.accountItem, selectedType === 'alt1' && styles.accountItemActive]} 
+                onPress={() => setSelectedType('alt1')}
+              >
+                <View style={[styles.avatarCircleSm, { borderColor: getProviderColor(modalProvider) }]}>
+                  <Text style={{ fontSize: 16 }}>{getProviderIcon(modalProvider)}</Text>
+                </View>
+                <View style={styles.accountDetails}>
+                  <Text style={styles.accountHandle}>
+                    {modalProvider === 'instagram' ? '@dr.candido' : modalProvider === 'facebook' ? 'Dr. Cândido Oficial' : modalProvider === 'tiktok' ? '@dr.candido.oficial' : '5561999999999'}
+                  </Text>
+                  <Text style={styles.accountInfo}>Outra conta salva</Text>
+                </View>
+                <View style={[styles.radioDot, selectedType === 'alt1' && styles.radioDotActive]}>
+                  {selectedType === 'alt1' && (
+                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.teal }} />
+                  )}
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.accountItem, selectedType === 'alt2' && styles.accountItemActive]} 
+                onPress={() => setSelectedType('alt2')}
+              >
+                <View style={[styles.avatarCircleSm, { borderColor: getProviderColor(modalProvider) }]}>
+                  <Text style={{ fontSize: 16 }}>{getProviderIcon(modalProvider)}</Text>
+                </View>
+                <View style={styles.accountDetails}>
+                  <Text style={styles.accountHandle}>
+                    {modalProvider === 'instagram' ? '@rozycosta' : modalProvider === 'facebook' ? 'Rozy Costa' : modalProvider === 'tiktok' ? '@rozycosta.original' : '5561888888888'}
+                  </Text>
+                  <Text style={styles.accountInfo}>Outra conta salva</Text>
+                </View>
+                <View style={[styles.radioDot, selectedType === 'alt2' && styles.radioDotActive]}>
+                  {selectedType === 'alt2' && (
+                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.teal }} />
+                  )}
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.accountItem, selectedType === 'custom' && styles.accountItemActive]} 
+                onPress={() => setSelectedType('custom')}
+              >
+                <View style={styles.avatarCircleSm}>
+                  <Text style={{ fontSize: 16 }}>✏️</Text>
+                </View>
+                <View style={styles.accountDetails}>
+                  <Text style={styles.accountHandle}>Digitar outra conta...</Text>
+                  <Text style={styles.accountInfo}>Preencher um nome de usuário personalizado</Text>
+                </View>
+                <View style={[styles.radioDot, selectedType === 'custom' && styles.radioDotActive]}>
+                  {selectedType === 'custom' && (
+                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.teal }} />
+                  )}
+                </View>
+              </TouchableOpacity>
+
+              {selectedType === 'custom' && (
+                <TextInput
+                  style={[S.input, { marginTop: 4, marginBottom: 0 }]}
+                  value={modalUsernameCustom}
+                  onChangeText={setModalUsernameCustom}
+                  placeholder={modalProvider === 'whatsapp' ? '5561999999999' : 'usuario_personalizado'}
+                  placeholderTextColor={COLORS.ink3}
+                  keyboardType={modalProvider === 'whatsapp' ? 'phone-pad' : 'default'}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              )}
+            </View>
+
+            <TouchableOpacity 
+              style={[
+                styles.modalSubmitBtn, 
+                { backgroundColor: modalSuccess ? '#25D366' : getProviderColor(modalProvider) }
+              ]} 
+              onPress={confirmLink}
+              disabled={modalSubmitting || modalSuccess}
+            >
+              {modalSubmitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.modalSubmitBtnText}>
+                  {modalSuccess ? '✓ Vinculado!' : 'Confirmar Vínculo'}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setModalVisible(false)} disabled={modalSubmitting || modalSuccess}>
+              <Text style={styles.modalCancelBtnText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -188,4 +435,143 @@ const styles = StyleSheet.create({
   bigCode: { fontFamily: 'monospace', fontSize: 34, fontWeight: '700', color: COLORS.teal, letterSpacing: 1 },
   linkBox: { backgroundColor: COLORS.panel2, borderWidth: 1, borderColor: COLORS.line, borderRadius: 12, padding: 10, marginBottom: 8 },
   linkText: { color: COLORS.teal, fontFamily: 'monospace', fontSize: 11.5 },
+  inputRow: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    width: '100%',
+  },
+  inlineBtn: {
+    position: 'absolute',
+    right: 6,
+    backgroundColor: COLORS.tealDim,
+    borderColor: 'rgba(61, 217, 179, 0.3)',
+    borderWidth: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  inlineBtnText: {
+    color: COLORS.teal,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  modalBg: {
+    flex: 1,
+    backgroundColor: 'rgba(3, 5, 10, 0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: COLORS.panel,
+    borderColor: COLORS.line,
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+  },
+  iconContainer: {
+    width: 70,
+    height: 70,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    color: COLORS.ink1,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  modalDesc: {
+    color: COLORS.ink3,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  sandboxSelection: {
+    width: '100%',
+    marginBottom: 20,
+  },
+  accountItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.panel2,
+    borderColor: COLORS.line,
+    borderWidth: 1.5,
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 10,
+    width: '100%',
+  },
+  accountItemActive: {
+    borderColor: COLORS.teal,
+    backgroundColor: COLORS.tealDim,
+  },
+  avatarCircleSm: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    marginRight: 10,
+  },
+  accountDetails: {
+    flex: 1,
+    alignItems: 'flex-start',
+  },
+  accountHandle: {
+    color: COLORS.ink1,
+    fontSize: 14.5,
+    fontWeight: '600',
+  },
+  accountInfo: {
+    color: COLORS.ink3,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  radioDot: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: COLORS.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioDotActive: {
+    borderColor: COLORS.teal,
+  },
+  modalSubmitBtn: {
+    width: '100%',
+    padding: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  modalSubmitBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modalCancelBtn: {
+    padding: 10,
+  },
+  modalCancelBtnText: {
+    color: COLORS.ink3,
+    fontSize: 13,
+    fontWeight: '600',
+  },
 });
