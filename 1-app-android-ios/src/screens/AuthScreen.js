@@ -406,8 +406,8 @@ export default function AuthScreen({ onLoggedIn }) {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 24, paddingTop: 25, backgroundColor: '#05070B', flexGrow: 1 },
-  logoImg: { width: 350, height: 350, alignSelf: 'center', marginTop: -15, marginBottom: -10 },
+  container: { padding: 24, paddingTop: 5, backgroundColor: '#05070B', flexGrow: 1 },
+  logoImg: { width: 350, height: 350, alignSelf: 'center', marginTop: -45, marginBottom: -55 },
   tabs: { flexDirection: 'row', backgroundColor: '#1A2235', borderRadius: 12, padding: 3, marginBottom: 18 },
   tab: { flex: 1, padding: 10, borderRadius: 10, alignItems: 'center' },
   tabOn: { backgroundColor: '#3DD9B3' },
