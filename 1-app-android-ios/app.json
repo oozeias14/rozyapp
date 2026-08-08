@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Amigos da Rozy Costa",
+    "name": "Amigos Dr Candido",
     "slug": "orbita-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -28,13 +28,13 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "O Amigos da Rozy Costa precisa acessar suas fotos para voce escolher a foto de perfil."
+          "photosPermission": "O Amigos Dr Candido precisa acessar suas fotos para voce escolher a foto de perfil."
         }
       ],
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "O Amigos da Rozy Costa precisa da sua localizacao para compartilhar o ponto exato da reuniao no Google Maps."
+          "locationAlwaysAndWhenInUsePermission": "O Amigos Dr Candido precisa da sua localizacao para compartilhar o ponto exato da reuniao no Google Maps."
         }
       ]
     ]

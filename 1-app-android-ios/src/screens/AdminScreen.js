@@ -514,7 +514,7 @@ function OwnerTab({ owner, reload }) {
     setSaving(true);
     try {
       await updateOwnerProfile({ name, photo_url: photoUrl, bio, instagram, facebook, tiktok, whatsapp, youtube });
-      Alert.alert('Pronto', 'Perfil de Rozy Costa salvo.');
+      Alert.alert('Pronto', 'Perfil de Dr. Candido salvo.');
       reload();
     } catch (e) {
       Alert.alert('Erro', e.message);
@@ -537,7 +537,7 @@ function OwnerTab({ owner, reload }) {
         </View>
       </View>
 
-      <Text style={S.cardTitle}>Perfil de Rozy Costa (visivel para todos)</Text>
+      <Text style={S.cardTitle}>Perfil de Dr. Candido (visivel para todos)</Text>
       <View style={{ alignItems: 'center', marginBottom: 12 }}>
         <TouchableOpacity onPress={pickPhoto} style={styles.ownerPhotoRing} disabled={uploading}>
           {uploading ? <ActivityIndicator color={COLORS.teal} /> : photoUrl ? <Image source={{ uri: photoUrl }} style={{ width: '100%', height: '100%' }} /> : <Text style={{ fontSize: 30 }}>👩‍💼</Text>}
@@ -553,7 +553,7 @@ function OwnerTab({ owner, reload }) {
       <Text style={S.label}>WhatsApp</Text><TextInput style={S.input} value={whatsapp} onChangeText={setWhatsapp} placeholder="5561999999999" placeholderTextColor={COLORS.ink3} />
       <Text style={S.label}>YouTube (URL)</Text><TextInput style={S.input} value={youtube} onChangeText={setYoutube} placeholder="https://youtube.com/..." placeholderTextColor={COLORS.ink3} />
       <TouchableOpacity style={[S.btn, S.btnTeal]} onPress={save} disabled={saving}>
-        <Text style={S.btnTextDark}>{saving ? 'Salvando...' : 'Salvar perfil de Rozy Costa'}</Text>
+        <Text style={S.btnTextDark}>{saving ? 'Salvando...' : 'Salvar perfil de Dr. Candido'}</Text>
       </TouchableOpacity>
     </View>
   );

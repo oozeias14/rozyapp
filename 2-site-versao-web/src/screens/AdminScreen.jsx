@@ -408,7 +408,7 @@ function OwnerTab({ owner, reload }) {
     setSaving(true);
     try {
       await updateOwnerProfile({ name, photo_url: photoUrl, bio, instagram, facebook, tiktok, whatsapp, youtube });
-      alert('Perfil de Rozy Costa salvo.');
+      alert('Perfil de Dr. Candido salvo.');
       reload();
     } catch (e) { alert('Erro: ' + e.message); } finally { setSaving(false); }
   }
@@ -427,7 +427,7 @@ function OwnerTab({ owner, reload }) {
         </div>
       </div>
 
-      <div className="card-title">Perfil de Rozy Costa (visível para todos)</div>
+      <div className="card-title">Perfil de Dr. Candido (visível para todos)</div>
       <div style={{ textAlign: 'center', marginBottom: 12 }}>
         <div className="photo-ring" style={{ width: 100, height: 100 }} onClick={() => fileRef.current?.click()}>
           {photoUrl ? <img src={photoUrl} alt="" /> : '👩‍💼'}
@@ -443,7 +443,7 @@ function OwnerTab({ owner, reload }) {
       <label className="lbl">TikTok</label><input value={tiktok} onChange={(e) => setTiktok(e.target.value)} placeholder="@usuario" />
       <label className="lbl">WhatsApp</label><input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="5561999999999" />
       <label className="lbl">YouTube (URL)</label><input value={youtube} onChange={(e) => setYoutube(e.target.value)} placeholder="https://youtube.com/..." />
-      <button className="btn btn-teal" onClick={save} disabled={saving}>{saving ? 'Salvando...' : 'Salvar perfil de Rozy Costa'}</button>
+      <button className="btn btn-teal" onClick={save} disabled={saving}>{saving ? 'Salvando...' : 'Salvar perfil de Dr. Candido'}</button>
     </div>
   );
 }
