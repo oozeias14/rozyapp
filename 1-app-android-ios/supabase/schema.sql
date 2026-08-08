@@ -83,10 +83,10 @@ insert into public.owner_profile (id, name, bio, instagram) values (
 -- ── CONFIGURACOES GERAIS DO APP ───────────────────────────
 create table if not exists public.app_settings (
   id          int primary key default 1,
-  app_domain  text not null default 'amigosdarozy.com.br',
+  app_domain  text not null default 'amigosdrcandido.com.br',
   constraint single_row_settings check (id = 1)
 );
-insert into public.app_settings (id, app_domain) values (1, 'amigosdarozy.com.br') on conflict (id) do update set app_domain = excluded.app_domain;
+insert into public.app_settings (id, app_domain) values (1, 'amigosdrcandido.com.br') on conflict (id) do update set app_domain = excluded.app_domain;
 
 -- ============================================================
 -- FUNCAO: achar a primeira vaga livre na rede (spillover)

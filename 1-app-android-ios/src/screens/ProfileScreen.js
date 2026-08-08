@@ -14,7 +14,7 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
   const [tiktok, setTiktok] = useState(profile.tiktok || '');
   const [whatsapp, setWhatsapp] = useState(profile.whatsapp || '');
   const [newPassword, setNewPassword] = useState('');
-  const [appDomain, setAppDomain] = useState('amigosdarozy.com.br');
+  const [appDomain, setAppDomain] = useState('amigosdrcandido.com.br');
   const [totalUsers, setTotalUsers] = useState(0);
 
   const [modalVisible, setModalVisible] = useState(false);
@@ -112,7 +112,7 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
     })();
   }, []);
 
-  const referralLink = `https://amigosdarozy.com.br/${profile.username || profile.id}`;
+  const referralLink = `https://${appDomain}/${profile.username || profile.id}`;
   const isStaff = profile.role === 'admin' || profile.role === 'coord';
 
   async function pickAndUploadPhoto() {

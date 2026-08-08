@@ -58,7 +58,7 @@ class LocalDataStore {
     this.meetings = [...initialMeetings];
     this.messages = [...initialMessages];
     this.owner_profile = [{ ...initialOwnerProfile }];
-    this.app_settings = [{ id: 1, app_domain: 'amigosdarozy.com.br' }];
+    this.app_settings = [{ id: 1, app_domain: 'amigosdrcandido.com.br' }];
     this.live_comments = [];
     this.session = null;
     this.load();
@@ -97,8 +97,8 @@ class LocalDataStore {
         }
 
         // Corrige automaticamente o domínio padrão caso o cache antigo esteja carregado
-        if (this.app_settings && this.app_settings[0] && this.app_settings[0].app_domain === 'orbita.app') {
-          this.app_settings[0].app_domain = 'amigosdarozy.com.br';
+        if (this.app_settings && this.app_settings[0] && (this.app_settings[0].app_domain === 'orbita.app' || this.app_settings[0].app_domain === 'amigosdarozy.com.br')) {
+          this.app_settings[0].app_domain = 'amigosdrcandido.com.br';
           this.save();
         }
 
