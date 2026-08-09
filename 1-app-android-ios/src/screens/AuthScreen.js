@@ -267,6 +267,7 @@ export default function AuthScreen({ onLoggedIn }) {
       name,
       email: cleanedEmail,
       phone: cleanedPhone,
+      whatsapp: cleanedPhone,
       role: userRole,
       coord_id: coordId,
       parent_id: slotId,

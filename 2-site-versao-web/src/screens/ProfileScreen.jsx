@@ -8,7 +8,7 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
   const [instagram, setInstagram] = useState(profile.instagram || '');
   const [facebook, setFacebook] = useState(profile.facebook || '');
   const [tiktok, setTiktok] = useState(profile.tiktok || '');
-  const [whatsapp, setWhatsapp] = useState(profile.whatsapp || '');
+  const [whatsapp, setWhatsapp] = useState(profile.whatsapp || profile.phone || '');
   const [newPassword, setNewPassword] = useState('');
   const [appDomain, setAppDomain] = useState('amigosdrcandido.com.br');
   const [totalUsers, setTotalUsers] = useState(0);
