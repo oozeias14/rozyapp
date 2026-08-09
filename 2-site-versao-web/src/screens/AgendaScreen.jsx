@@ -73,7 +73,7 @@ export default function AgendaScreen({ profile }) {
   const localStreamRef = useRef(null);
   const activeLiveChannelRef = useRef(null);
 
-  const canAdd = profile.role === 'admin' || profile.role === 'coord';
+  const canAdd = true;
   const hasLivePermission = profile.live_enabled !== false;
 
   const load = useCallback(async () => {
@@ -423,6 +423,7 @@ export default function AgendaScreen({ profile }) {
                   {m.status === 'realizada' && <span style={{ background: 'var(--teal-dim)', color: 'var(--teal)', fontSize: 9, padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>✓ CONCLUÍDA</span>}
                 </div>
                 <div className="muted">📍 {m.location}</div>
+                <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>👤 Criado por: {m.profiles?.name || 'Membro'}</div>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div className="meet-date">{fmtDate(m.date)}</div>
@@ -626,7 +627,8 @@ export default function AgendaScreen({ profile }) {
           <div className="modal">
             <div className="mhandle" />
             <h2 style={{ fontSize: 16, marginBottom: 4 }}>Resumo do Evento</h2>
-            <div style={{ color: 'var(--teal)', fontSize: 13, fontWeight: 600, marginBottom: 14 }}>{selectedMeetingDetails.title}</div>
+            <div style={{ color: 'var(--teal)', fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{selectedMeetingDetails.title}</div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 14 }}>👤 Criado por: {selectedMeetingDetails.profiles?.name || 'Membro'}</div>
 
             <div className="stat-grid" style={{ marginBottom: 14 }}>
               <div className="stat-box" style={{ padding: 10, textAlign: 'center' }}>

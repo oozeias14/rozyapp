@@ -64,7 +64,7 @@ export default function AgendaScreen({ profile }) {
   const printIntervalRef = useRef(null);
   const viewerIntervalRef = useRef(null);
 
-  const canAdd = profile.role === 'admin' || profile.role === 'coord';
+  const canAdd = true;
   const hasLivePermission = profile.live_enabled !== false;
 
   const load = useCallback(async () => {
@@ -462,7 +462,7 @@ export default function AgendaScreen({ profile }) {
 
         {meetings.length === 0 && <Text style={[S.muted, { textAlign: 'center', padding: 20 }]}>Nenhum evento marcado.</Text>}
         {meetings.map((m) => {
-          const isOwnerHost = m.created_by === profile.id || profile.role === 'admin';
+          const isOwnerHost = m.created_by === profile.id || profile.role === 'admin' || profile.role === 'coord';
           return (
             <View key={m.id} style={[S.card, styles.meetCard, m.status === 'em_andamento' && styles.meetCardLive]}>
               <View style={S.rowBetween}>
@@ -477,6 +477,7 @@ export default function AgendaScreen({ profile }) {
                     )}
                   </View>
                   <Text style={S.muted}>📍 {m.location}</Text>
+                  <Text style={[S.muted, { fontSize: 10.5, marginTop: 3 }]}>👤 Criado por: {m.profiles?.name || 'Membro'}</Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={{ color: COLORS.teal, fontFamily: 'monospace', fontSize: 11 }}>{new Date(m.date).toLocaleDateString('pt-BR')}</Text>
@@ -767,7 +768,8 @@ export default function AgendaScreen({ profile }) {
           <View style={[styles.sheet, { maxHeight: '90%' }]}>
             <View style={styles.handle} />
             <Text style={{ color: COLORS.ink1, fontSize: 16, fontWeight: '700', marginBottom: 6 }}>Resumo do Evento</Text>
-            <Text style={{ color: COLORS.teal, fontSize: 13, fontWeight: '600', marginBottom: 14 }}>{selectedMeetingDetails?.title}</Text>
+            <Text style={{ color: COLORS.teal, fontSize: 13, fontWeight: '600', marginBottom: 4 }}>{selectedMeetingDetails?.title}</Text>
+            <Text style={[S.muted, { marginBottom: 14, fontSize: 12 }]}>👤 Criado por: {selectedMeetingDetails?.profiles?.name || 'Membro'}</Text>
 
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
               <View style={styles.statsRow}>

@@ -47,7 +47,7 @@ export async function findSlot(refId) {
 
 // ── REUNIOES ──────────────────────────────────────────────
 export async function fetchMeetings() {
-  const { data, error } = await supabase.from('meetings').select('*').order('date', { ascending: true });
+  const { data, error } = await supabase.from('meetings').select('*, profiles(name)').order('date', { ascending: true });
   if (error) throw error;
   return data;
 }
