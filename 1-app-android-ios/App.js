@@ -3,6 +3,7 @@ import { View, ActivityIndicator, StyleSheet, Text } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import { supabase } from './src/lib/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS } from './src/theme';
 import AuthScreen from './src/screens/AuthScreen';
 import HomeScreen from './src/screens/HomeScreen';
@@ -33,7 +34,31 @@ export default function App() {
     }
     const isStaff = profile.role === 'admin' || profile.role === 'coord';
     const limitSeconds = isStaff ? 30 * 60 : 5 * 60;
-    setTimeLeft(limitSeconds);
+
+    let active = true;
+
+    async function initTimer() {
+      try {
+        let startTime = await AsyncStorage.getItem('session_start_time');
+        if (!startTime) {
+          startTime = Date.now().toString();
+          await AsyncStorage.setItem('session_start_time', startTime);
+        }
+        const elapsedSeconds = Math.floor((Date.now() - parseInt(startTime, 10)) / 1000);
+        const remainingSeconds = limitSeconds - elapsedSeconds;
+
+        if (remainingSeconds <= 0) {
+          if (active) handleLogout();
+          return;
+        }
+
+        if (active) setTimeLeft(remainingSeconds);
+      } catch (e) {
+        if (active) setTimeLeft(limitSeconds);
+      }
+    }
+
+    initTimer();
 
     const interval = setInterval(() => {
       setTimeLeft((prev) => {
@@ -47,7 +72,10 @@ export default function App() {
       });
     }, 1000);
 
-    return () => clearInterval(interval);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, [profile]);
 
   function formatTime(seconds) {
@@ -81,6 +109,12 @@ export default function App() {
   }
 
   async function handleLogout() {
+    await AsyncStorage.removeItem('session_start_time');
+    try {
+      await supabase.removeAllChannels();
+    } catch (e) {
+      console.log('Error removing channels:', e);
+    }
     await supabase.auth.signOut();
     setProfile(null);
     setTab('owner');

@@ -27,7 +27,22 @@ export default function App() {
     }
     const isStaff = profile.role === 'admin' || profile.role === 'coord';
     const limitSeconds = isStaff ? 30 * 60 : 5 * 60;
-    setTimeLeft(limitSeconds);
+
+    let startTime = localStorage.getItem('session_start_time');
+    if (!startTime) {
+      startTime = Date.now().toString();
+      localStorage.setItem('session_start_time', startTime);
+    }
+
+    const elapsedSeconds = Math.floor((Date.now() - parseInt(startTime, 10)) / 1000);
+    const remainingSeconds = limitSeconds - elapsedSeconds;
+
+    if (remainingSeconds <= 0) {
+      handleLogout();
+      return;
+    }
+
+    setTimeLeft(remainingSeconds);
 
     const interval = setInterval(() => {
       setTimeLeft((prev) => {
@@ -109,8 +124,9 @@ export default function App() {
   }
 
   async function handleLogout() {
+    localStorage.removeItem('session_start_time');
     await supabase.auth.signOut();
-    setProfile(null); setTab('owner'); setMode('app');
+    window.location.reload();
   }
 
   function openAdmin(initialTab) {
