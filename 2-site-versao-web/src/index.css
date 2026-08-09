@@ -62,6 +62,12 @@ input, select, textarea {
   padding: 11px 12px; border-radius: 12px; font-size: 14px; margin-bottom: 10px;
   font-family: 'Inter', sans-serif; outline: none;
 }
+input:disabled {
+  background: #080B11;
+  border-color: #1A2235;
+  color: var(--ink3);
+  cursor: not-allowed;
+}
 input:focus, select:focus, textarea:focus { border-color: var(--teal); }
 textarea { resize: none; }
 label.lbl { font-size: 10.5px; color: var(--ink2); margin: 0 0 4px 2px; display: block; text-transform: uppercase; letter-spacing: .06em; }

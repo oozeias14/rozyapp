@@ -377,7 +377,7 @@ export default function AuthScreen({ onLoggedIn }) {
       {mode === 'cadastro' && (
         <>
           <Text style={styles.label}>Indicação</Text>
-          <TextInput style={styles.input} placeholder="Ex: roberto" value={refCode} editable={false} placeholderTextColor="#56627A" autoCapitalize="none" />
+          <TextInput style={[styles.input, styles.inputDisabled]} placeholder="Ex: roberto" value={refCode} editable={false} placeholderTextColor="#56627A" autoCapitalize="none" />
           <Text style={styles.label}>Nome completo</Text>
           <TextInput style={styles.input} placeholder="Seu nome" value={name} onChangeText={handleNameChange} placeholderTextColor="#56627A" />
 
@@ -435,6 +435,7 @@ const styles = StyleSheet.create({
   tabTextOn: { color: '#051A14', fontWeight: '700' },
   label: { color: '#8A94A8', fontSize: 11, marginBottom: 4, marginLeft: 2, textTransform: 'uppercase' },
   input: { backgroundColor: '#1A2235', borderWidth: 1, borderColor: '#232C40', color: '#F0F4FA', padding: 12, borderRadius: 12, marginBottom: 12 },
+  inputDisabled: { backgroundColor: '#080B11', borderColor: '#1A2235', color: '#56627A' },
   btn: { backgroundColor: '#3DD9B3', padding: 14, borderRadius: 12, alignItems: 'center', marginTop: 6 },
   btnText: { color: '#051A14', fontWeight: '700' },
   btnViolet: { backgroundColor: '#7B6CF4' },
