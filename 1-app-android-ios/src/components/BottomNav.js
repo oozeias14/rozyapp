@@ -6,7 +6,7 @@ const TABS = [
   { key: 'owner', label: 'Dr. Candido', icon: '📋' },
   { key: 'home', label: 'Mural', icon: '🏠' },
   { key: 'network', label: 'Rede', icon: '🔗' },
-  { key: 'agenda', label: 'Agenda', icon: '📅' },
+  { key: 'agenda', label: 'Eventos', icon: '📅' },
   { key: 'profile', label: 'Perfil', icon: '👤' },
 ];
 

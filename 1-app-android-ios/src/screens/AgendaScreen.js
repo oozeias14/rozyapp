@@ -51,6 +51,7 @@ export default function AgendaScreen({ profile }) {
   const [presencePhoto, setPresencePhoto] = useState(null); // uri local da foto da lista fisica
   const [meetingPhotos, setMeetingPhotos] = useState([]); // uuris locais das fotos da reuniao
   const [savingCompletion, setSavingCompletion] = useState(false);
+  const [completionLocation, setCompletionLocation] = useState('');
 
   // Controle de Visualização de Detalhes
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
@@ -303,6 +304,7 @@ export default function AgendaScreen({ profile }) {
     setPresentMembers([]);
     setPresencePhoto(null);
     setMeetingPhotos([]);
+    setCompletionLocation(m.location || '');
     setCompletionModalOpen(true);
   }
 
@@ -312,6 +314,7 @@ export default function AgendaScreen({ profile }) {
     setCompletingMeeting(m);
     setDurationHours('2');
     setAttendeesCount('15');
+    setCompletionLocation(m.location || '');
     setPresentMembers([]);
     setPresencePhoto(null);
     setMeetingPhotos([]);
@@ -393,6 +396,7 @@ export default function AgendaScreen({ profile }) {
       // 3. Salva no banco de dados
       const payload = {
         status: 'realizada',
+        location: completionLocation.trim() || completingMeeting.location || 'A definir',
         duration_minutes: parseInt(durationHours) * 60,
         attendees_count: parseInt(attendeesCount),
         presence_list: presentMembers.map(m => ({ id: m.id, name: m.name })),
@@ -424,11 +428,11 @@ export default function AgendaScreen({ profile }) {
         
         {/* Painel de Histórico e Estatísticas Transparentes */}
         <View style={styles.statsPanel}>
-          <Text style={styles.statsPanelTitle}>📊 Histórico de Reuniões</Text>
+          <Text style={styles.statsPanelTitle}>📊 Histórico de Eventos</Text>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
             <View style={styles.statMiniBox}>
               <Text style={styles.statMiniNum}>{completedMeetings.length}</Text>
-              <Text style={styles.statMiniLabel}>Realizadas</Text>
+              <Text style={styles.statMiniLabel}>Realizados</Text>
             </View>
             <View style={styles.statMiniBox}>
               <Text style={styles.statMiniNum}>{totalHours.toFixed(1)}h</Text>
@@ -442,21 +446,21 @@ export default function AgendaScreen({ profile }) {
         </View>
 
         <View style={S.rowBetween}>
-          <Text style={{ color: COLORS.ink1, fontSize: 17, fontWeight: '700', marginVertical: 8 }}>Agenda</Text>
+          <Text style={{ color: COLORS.ink1, fontSize: 17, fontWeight: '700', marginVertical: 8 }}>Eventos</Text>
           {canAdd && (
             <TouchableOpacity style={[S.btn, S.btnViolet, { marginBottom: 0, paddingHorizontal: 14 }]} onPress={() => setModalOpen(true)}>
-              <Text style={S.btnTextLight}>+ Nova reunião</Text>
+              <Text style={S.btnTextLight}>+ Novo Evento</Text>
             </TouchableOpacity>
           )}
         </View>
 
         {!canAdd && (
           <View style={styles.infoBanner}>
-            <Text style={{ color: '#9AFAE0', fontSize: 12 }}>Apenas admin e coordenadores podem agendar reuniões.</Text>
+            <Text style={{ color: '#9AFAE0', fontSize: 12 }}>Apenas admin e coordenadores podem agendar eventos.</Text>
           </View>
         )}
 
-        {meetings.length === 0 && <Text style={[S.muted, { textAlign: 'center', padding: 20 }]}>Nenhuma reunião marcada.</Text>}
+        {meetings.length === 0 && <Text style={[S.muted, { textAlign: 'center', padding: 20 }]}>Nenhum evento marcado.</Text>}
         {meetings.map((m) => {
           const isOwnerHost = m.created_by === profile.id || profile.role === 'admin';
           return (
@@ -537,15 +541,15 @@ export default function AgendaScreen({ profile }) {
         <View style={{ height: 20 }} />
       </ScrollView>
 
-      {/* MODAL DE CRIAÇÃO DE REUNIÃO */}
+      {/* MODAL DE CRIAÇÃO DE EVENTO */}
       <Modal visible={modalOpen} animationType="slide" transparent onRequestClose={() => setModalOpen(false)}>
         <View style={styles.overlay}>
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setModalOpen(false)} />
           <View style={styles.sheet}>
             <View style={styles.handle} />
-            <Text style={{ color: COLORS.ink1, fontSize: 16, fontWeight: '700', marginBottom: 14 }}>Nova reunião</Text>
+            <Text style={{ color: COLORS.ink1, fontSize: 16, fontWeight: '700', marginBottom: 14 }}>Novo Evento</Text>
             <Text style={S.label}>Título</Text>
-            <TextInput style={S.input} placeholder="Ex: Reunião mensal" placeholderTextColor={COLORS.ink3} value={title} onChangeText={setTitle} />
+            <TextInput style={S.input} placeholder="Ex: Grande encontro" placeholderTextColor={COLORS.ink3} value={title} onChangeText={setTitle} />
             <Text style={S.label}>Data (AAAA-MM-DD)</Text>
             <TextInput style={S.input} placeholder="2026-08-01" placeholderTextColor={COLORS.ink3} value={date} onChangeText={setDate} />
             <Text style={S.label}>Horário</Text>
@@ -656,10 +660,13 @@ export default function AgendaScreen({ profile }) {
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setCompletionModalOpen(false)} />
           <View style={[styles.sheet, { maxHeight: '90%' }]}>
             <View style={styles.handle} />
-            <Text style={{ color: COLORS.ink1, fontSize: 16, fontWeight: '700', marginBottom: 12 }}>Finalizar Reunião</Text>
+            <Text style={{ color: COLORS.ink1, fontSize: 16, fontWeight: '700', marginBottom: 12 }}>Finalizar Evento</Text>
             <Text style={{ color: COLORS.teal, fontSize: 12, marginBottom: 14 }}>{completingMeeting?.title}</Text>
 
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
+              <Text style={S.label}>Onde foi feita a reunião (Local)</Text>
+              <TextInput style={S.input} placeholder="Ex: Chácara São José - DF" value={completionLocation} onChangeText={setCompletionLocation} placeholderTextColor={COLORS.ink3} />
+
               <Text style={S.label}>Duração (Horas)</Text>
               <TextInput style={S.input} keyboardType="numeric" value={durationHours} onChangeText={setDurationHours} />
 
@@ -667,7 +674,7 @@ export default function AgendaScreen({ profile }) {
               <TextInput style={S.input} keyboardType="numeric" value={attendeesCount} onChangeText={setAttendeesCount} />
 
               {/* Anexar Fotos da Reunião */}
-              <Text style={S.label}>Fotos da Reunião (Máx. 3 fotos)</Text>
+              <Text style={S.label}>Fotos do Evento (Anexar 2 fotos)</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
                 {meetingPhotos.map((p, i) => (
                   <View key={i} style={styles.previewThumbContainer}>
@@ -686,7 +693,7 @@ export default function AgendaScreen({ profile }) {
               </View>
 
               {/* Anexar Lista de Presentes Física */}
-              <Text style={S.label}>Foto da Lista Física de Assinaturas (Se houver)</Text>
+              <Text style={S.label}>Foto da Lista de Presentes (Nome e Telefone)</Text>
               {presencePhoto ? (
                 <View style={[styles.coordBox, { marginBottom: 12 }]}>
                   <Image source={{ uri: presencePhoto }} style={{ width: 40, height: 40, borderRadius: 6, marginRight: 10 }} />
@@ -753,13 +760,13 @@ export default function AgendaScreen({ profile }) {
         </View>
       </Modal>
 
-      {/* MODAL DE VISUALIZAÇÃO DE DETALHES DE REUNIÃO CONCLUÍDA */}
+      {/* MODAL DE VISUALIZAÇÃO DE DETALHES DE EVENTO CONCLUÍDO */}
       <Modal visible={detailsModalOpen} animationType="slide" transparent onRequestClose={() => setDetailsModalOpen(false)}>
         <View style={styles.overlay}>
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setDetailsModalOpen(false)} />
           <View style={[styles.sheet, { maxHeight: '90%' }]}>
             <View style={styles.handle} />
-            <Text style={{ color: COLORS.ink1, fontSize: 16, fontWeight: '700', marginBottom: 6 }}>Resumo da Reunião</Text>
+            <Text style={{ color: COLORS.ink1, fontSize: 16, fontWeight: '700', marginBottom: 6 }}>Resumo do Evento</Text>
             <Text style={{ color: COLORS.teal, fontSize: 13, fontWeight: '600', marginBottom: 14 }}>{selectedMeetingDetails?.title}</Text>
 
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
@@ -777,7 +784,7 @@ export default function AgendaScreen({ profile }) {
               {/* Lista de fotos anexadas */}
               {selectedMeetingDetails?.photos && selectedMeetingDetails.photos.length > 0 && (
                 <View style={{ marginVertical: 12 }}>
-                  <Text style={S.label}>Fotos Registradas ({selectedMeetingDetails.photos.length})</Text>
+                  <Text style={S.label}>Fotos do Evento ({selectedMeetingDetails.photos.length})</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
                     {selectedMeetingDetails.photos.map((p, idx) => (
                       <TouchableOpacity key={idx} onPress={() => Linking.openURL(p)}>
@@ -803,13 +810,13 @@ export default function AgendaScreen({ profile }) {
               {/* Foto da lista física de assinaturas (Apenas para admin/coord) */}
               {(profile.role === 'admin' || profile.role === 'coord') && selectedMeetingDetails?.presence_photo_url && (
                 <View style={{ marginTop: 14 }}>
-                  <Text style={S.label}>Lista de Presença Assinada (Física)</Text>
+                  <Text style={S.label}>Foto da Lista de Presentes</Text>
                   <TouchableOpacity 
                     style={[S.btn, S.btnGhost, { marginTop: 6, flexDirection: 'row', gap: 8 }]} 
                     onPress={() => Linking.openURL(selectedMeetingDetails.presence_photo_url)}
                   >
                     <Image source={{ uri: selectedMeetingDetails.presence_photo_url }} style={{ width: 30, height: 30, borderRadius: 6 }} />
-                    <Text style={S.btnTextGhost}>Ver Lista de Assinaturas (PDF/Foto)</Text>
+                    <Text style={S.btnTextGhost}>Ver Foto da Lista de Presentes (Assinada)</Text>
                   </TouchableOpacity>
                 </View>
               )}

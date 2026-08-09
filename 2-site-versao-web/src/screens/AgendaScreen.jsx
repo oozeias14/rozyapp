@@ -57,6 +57,7 @@ export default function AgendaScreen({ profile }) {
   const [presencePhotoFile, setPresencePhotoFile] = useState(null); 
   const [meetingPhotoFiles, setMeetingPhotoFiles] = useState([]); 
   const [savingCompletion, setSavingCompletion] = useState(false);
+  const [completionLocation, setCompletionLocation] = useState('');
 
   // Modal de Detalhes da Reunião Realizada
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
@@ -292,9 +293,11 @@ export default function AgendaScreen({ profile }) {
     setActiveLive(null);
     setLiveMode(null);
 
-    setCompletingMeeting(meetings.find(m => m.id === meetId) || activeLive);
+    const m = meetings.find(x => x.id === meetId) || activeLive;
+    setCompletingMeeting(m);
     setDurationHours('2');
     setAttendeesCount('15');
+    setCompletionLocation(m.location || '');
     setPresentMembers([]);
     setPresencePhotoFile(null);
     setMeetingPhotoFiles([]);
@@ -307,6 +310,7 @@ export default function AgendaScreen({ profile }) {
     setCompletingMeeting(m);
     setDurationHours('2');
     setAttendeesCount('15');
+    setCompletionLocation(m.location || '');
     setPresentMembers([]);
     setPresencePhotoFile(null);
     setMeetingPhotoFiles([]);
@@ -347,6 +351,7 @@ export default function AgendaScreen({ profile }) {
       // 3. Salva no banco de dados
       const payload = {
         status: 'realizada',
+        location: completionLocation.trim() || completingMeeting.location || 'A definir',
         duration_minutes: parseInt(durationHours) * 60,
         attendees_count: parseInt(attendeesCount),
         presence_list: presentMembers.map(m => ({ id: m.id, name: m.name })),
@@ -375,13 +380,13 @@ export default function AgendaScreen({ profile }) {
     <div className="screen">
       <TopBar totalUsers={totalUsers} />
 
-      {/* Histórico Transparente de Reuniões */}
+      {/* Histórico Transparente de Eventos */}
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-        <div className="card-title" style={{ color: 'var(--teal)' }}>📊 Histórico de Reuniões</div>
+        <div className="card-title" style={{ color: 'var(--teal)' }}>📊 Histórico de Eventos</div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
           <div style={{ textAlign: 'center', flex: 1 }}>
             <div style={{ fontSize: 18, fontWeight: 700 }}>{completedMeetings.length}</div>
-            <div style={{ fontSize: 9, color: 'var(--ink2)', textTransform: 'uppercase', marginTop: 2 }}>Realizadas</div>
+            <div style={{ fontSize: 9, color: 'var(--ink2)', textTransform: 'uppercase', marginTop: 2 }}>Realizados</div>
           </div>
           <div style={{ textAlign: 'center', flex: 1, borderLeft: '1px solid var(--line)', borderRight: '1px solid var(--line)' }}>
             <div style={{ fontSize: 18, fontWeight: 700 }}>{totalHours.toFixed(1)}h</div>
@@ -395,17 +400,17 @@ export default function AgendaScreen({ profile }) {
       </div>
 
       <div className="row-bw">
-        <h2 style={{ fontSize: 17 }}>Agenda</h2>
-        {canAdd && <button className="btn btn-violet btn-sm" onClick={() => setModalOpen(true)}>+ Nova reunião</button>}
+        <h2 style={{ fontSize: 17 }}>Eventos</h2>
+        {canAdd && <button className="btn btn-violet btn-sm" onClick={() => setModalOpen(true)}>+ Novo Evento</button>}
       </div>
 
       {!canAdd && (
         <div className="card" style={{ background: 'var(--teal-dim)', borderColor: 'var(--teal)' }}>
-          <div style={{ fontSize: 12, color: '#9AFAE0' }}>Apenas admin e coordenadores podem agendar reuniões.</div>
+          <div style={{ fontSize: 12, color: '#9AFAE0' }}>Apenas admin e coordenadores podem agendar eventos.</div>
         </div>
       )}
 
-      {meetings.length === 0 && <div className="empty">Nenhuma reunião marcada.</div>}
+      {meetings.length === 0 && <div className="empty">Nenhum evento marcado.</div>}
       {meetings.map((m) => {
         const isOwnerHost = m.created_by === profile.id || profile.role === 'admin';
         return (
@@ -456,15 +461,15 @@ export default function AgendaScreen({ profile }) {
       })}
       <div style={{ height: 20 }} />
 
-      {/* MODAL DE CRIAÇÃO DE REUNIÃO */}
+      {/* MODAL DE CRIAÇÃO DE EVENTO */}
       {modalOpen && (
         <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && setModalOpen(false)}>
           <div className="modal">
             <div className="mhandle" />
-            <h2 style={{ fontSize: 16, marginBottom: 14 }}>Nova reunião</h2>
+            <h2 style={{ fontSize: 16, marginBottom: 14 }}>Novo Evento</h2>
             <form onSubmit={handleSave}>
               <label className="lbl">Título</label>
-              <input placeholder="Ex: Reunião mensal" value={title} onChange={(e) => setTitle(e.target.value)} />
+              <input placeholder="Ex: Grande encontro" value={title} onChange={(e) => setTitle(e.target.value)} />
               <label className="lbl">Data</label>
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
               <label className="lbl">Horário</label>
@@ -558,10 +563,13 @@ export default function AgendaScreen({ profile }) {
         <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && setCompletionModalOpen(false)}>
           <div className="modal" style={{ maxHeight: '90vh' }}>
             <div className="mhandle" />
-            <h2 style={{ fontSize: 16, marginBottom: 6 }}>Finalizar Reunião</h2>
+            <h2 style={{ fontSize: 16, marginBottom: 6 }}>Finalizar Evento</h2>
             <div style={{ color: 'var(--teal)', fontSize: 12, marginBottom: 14 }}>{completingMeeting?.title}</div>
 
             <form onSubmit={saveCompletion}>
+              <label className="lbl">Onde foi feita a reunião (Local)</label>
+              <input placeholder="Ex: Chácara São José - DF" value={completionLocation} onChange={(e) => setCompletionLocation(e.target.value)} required style={{ marginBottom: 12 }} />
+
               <label className="lbl">Duração (Horas)</label>
               <input type="number" required min="1" value={durationHours} onChange={(e) => setDurationHours(e.target.value)} />
 
@@ -569,11 +577,11 @@ export default function AgendaScreen({ profile }) {
               <input type="number" required min="1" value={attendeesCount} onChange={(e) => setAttendeesCount(e.target.value)} />
 
               {/* Anexar Fotos */}
-              <label className="lbl">Fotos da Reunião (Máx. 3 fotos)</label>
+              <label className="lbl">Fotos do Evento (Anexar 2 fotos)</label>
               <input type="file" accept="image/*" multiple onChange={(e) => setMeetingPhotoFiles(Array.from(e.target.files))} style={{ marginBottom: 12 }} />
 
               {/* Lista física */}
-              <label className="lbl">Foto da Lista Física de Presença (Se houver)</label>
+              <label className="lbl">Foto da Lista de Presentes (Nome e Telefone)</label>
               <input type="file" accept="image/*" onChange={(e) => setPresencePhotoFile(e.target.files[0])} style={{ marginBottom: 12 }} />
 
               {/* Lista digital de presentes */}
@@ -605,19 +613,19 @@ export default function AgendaScreen({ profile }) {
               <div className="muted" style={{ marginBottom: 14 }}>Selecionados: {presentMembers.length} membros.</div>
 
               <button className="btn btn-violet" type="submit" disabled={savingCompletion}>
-                {savingCompletion ? 'Registrando...' : 'Registrar e Publicar Reunião'}
+                {savingCompletion ? 'Registrando...' : 'Registrar e Publicar Evento'}
               </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* MODAL DE DETALHES DE REUNIÃO CONCLUÍDA */}
+      {/* MODAL DE DETALHES DE EVENTO CONCLUÍDO */}
       {detailsModalOpen && selectedMeetingDetails && (
         <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && {}}>
           <div className="modal">
             <div className="mhandle" />
-            <h2 style={{ fontSize: 16, marginBottom: 4 }}>Resumo da Reunião</h2>
+            <h2 style={{ fontSize: 16, marginBottom: 4 }}>Resumo do Evento</h2>
             <div style={{ color: 'var(--teal)', fontSize: 13, fontWeight: 600, marginBottom: 14 }}>{selectedMeetingDetails.title}</div>
 
             <div className="stat-grid" style={{ marginBottom: 14 }}>
@@ -634,7 +642,7 @@ export default function AgendaScreen({ profile }) {
             {/* Fotos registradas */}
             {selectedMeetingDetails.photos && selectedMeetingDetails.photos.length > 0 && (
               <div style={{ marginBottom: 14 }}>
-                <label className="lbl">Fotos da Reunião ({selectedMeetingDetails.photos.length})</label>
+                <label className="lbl">Fotos do Evento ({selectedMeetingDetails.photos.length})</label>
                 <div style={{ display: 'flex', gap: 8, overflowX: 'auto', marginTop: 4 }}>
                   {selectedMeetingDetails.photos.map((p, idx) => (
                     <a key={idx} href={p} target="_blank" rel="noreferrer" style={{ flexShrink: 0 }}>
@@ -660,10 +668,10 @@ export default function AgendaScreen({ profile }) {
             {/* Foto da lista física (Admins/Coords) */}
             {(profile.role === 'admin' || profile.role === 'coord') && selectedMeetingDetails.presence_photo_url && (
               <div style={{ marginBottom: 14 }}>
-                <label className="lbl">Lista de Presença Assinada (Física)</label>
+                <label className="lbl">Foto da Lista de Presentes</label>
                 <a href={selectedMeetingDetails.presence_photo_url} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ fontSize: 12, gap: 8, padding: 8 }}>
                   <img src={selectedMeetingDetails.presence_photo_url} alt="" style={{ width: 28, height: 28, borderRadius: 4 }} />
-                  Ver Lista de Assinaturas Física
+                  Ver Foto da Lista de Presentes (Assinada)
                 </a>
               </div>
             )}
