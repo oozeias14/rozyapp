@@ -18,6 +18,70 @@ export default function App() {
   const [mode, setMode] = useState('app');
   const [adminInitialTab, setAdminInitialTab] = useState('users');
   const [passwordRecovery, setPasswordRecovery] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(null);
+
+  useEffect(() => {
+    if (!profile) {
+      setTimeLeft(null);
+      return;
+    }
+    const isStaff = profile.role === 'admin' || profile.role === 'coord';
+    const limitSeconds = isStaff ? 30 * 60 : 5 * 60;
+    setTimeLeft(limitSeconds);
+
+    const interval = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev === null) return null;
+        if (prev <= 1) {
+          clearInterval(interval);
+          handleLogout();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [profile]);
+
+  function formatTime(seconds) {
+    if (seconds === null) return '';
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  const timerStyle = {
+    position: 'fixed',
+    top: '12px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    zIndex: 9999,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '4px 10px',
+    background: 'rgba(18, 24, 38, 0.85)',
+    backdropFilter: 'blur(8px)',
+    border: '1px solid rgba(61, 217, 179, 0.25)',
+    borderRadius: '16px',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)',
+    fontFamily: "'Space Grotesk', sans-serif",
+    fontSize: '11px',
+    fontWeight: '600',
+    color: '#F0F4FA',
+    pointerEvents: 'none',
+    letterSpacing: '0.03em',
+  };
+
+  const dotStyle = {
+    width: '5px',
+    height: '5px',
+    borderRadius: '50%',
+    backgroundColor: '#3DD9B3',
+    boxShadow: '0 0 6px #3DD9B3',
+    animation: 'timerPulse 1.5s infinite',
+  };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -75,6 +139,19 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      {timeLeft !== null && (
+        <div style={timerStyle}>
+          <style>{`
+            @keyframes timerPulse {
+              0% { opacity: 0.4; }
+              50% { opacity: 1; }
+              100% { opacity: 0.4; }
+            }
+          `}</style>
+          <div style={dotStyle} />
+          <span>Sessão: {formatTime(timeLeft)}</span>
+        </div>
+      )}
       {mode === 'admin' ? (
         <AdminScreen profile={profile} initialTab={adminInitialTab} onBack={() => setMode('app')} />
       ) : (

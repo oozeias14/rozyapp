@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Text } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import { supabase } from './src/lib/supabase';
@@ -24,6 +24,38 @@ export default function App() {
   const [tab, setTab] = useState('owner');
   const [mode, setMode] = useState('app'); // 'app' | 'admin'
   const [adminInitialTab, setAdminInitialTab] = useState('users');
+  const [timeLeft, setTimeLeft] = useState(null);
+
+  useEffect(() => {
+    if (!profile) {
+      setTimeLeft(null);
+      return;
+    }
+    const isStaff = profile.role === 'admin' || profile.role === 'coord';
+    const limitSeconds = isStaff ? 30 * 60 : 5 * 60;
+    setTimeLeft(limitSeconds);
+
+    const interval = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev === null) return null;
+        if (prev <= 1) {
+          clearInterval(interval);
+          handleLogout();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [profile]);
+
+  function formatTime(seconds) {
+    if (seconds === null) return '';
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }
 
   useEffect(() => {
     Notifications.requestPermissionsAsync().catch(() => {});
@@ -81,6 +113,15 @@ export default function App() {
     <View style={styles.container}>
       <StatusBar style="light" />
 
+      {timeLeft !== null && (
+        <View style={styles.timerContainer}>
+          <View style={styles.timerBadge}>
+            <View style={styles.timerDot} />
+            <Text style={styles.timerText}>Sessão: {formatTime(timeLeft)}</Text>
+          </View>
+        </View>
+      )}
+
       {mode === 'admin' ? (
         <AdminScreen profile={profile} initialTab={adminInitialTab} onBack={() => setMode('app')} />
       ) : (
@@ -107,4 +148,41 @@ export default function App() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   center: { flex: 1, backgroundColor: COLORS.bg, alignItems: 'center', justifyContent: 'center' },
+  timerContainer: {
+    position: 'absolute',
+    top: 50,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+  },
+  timerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(18, 24, 38, 0.85)',
+    borderColor: 'rgba(61, 217, 179, 0.3)',
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  timerDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: COLORS.teal,
+    marginRight: 6,
+  },
+  timerText: {
+    color: '#F0F4FA',
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
 });
