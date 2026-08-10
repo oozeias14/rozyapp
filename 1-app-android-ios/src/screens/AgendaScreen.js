@@ -25,7 +25,7 @@ export default function AgendaScreen({ profile }) {
 
   // Form de criação de reunião
   const [title, setTitle] = useState('');
-  const [date, setDate] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [time, setTime] = useState('');
   const [location, setLocation] = useState('');
   const [coords, setCoords] = useState(null); 
@@ -79,11 +79,11 @@ export default function AgendaScreen({ profile }) {
       setCapturing(false);
     }
   }
-
   async function handleSave() {
-    if (!title.trim() || !date.trim() || !location.trim()) { 
-      Alert.alert('Preencha os campos obrigatórios', 'Por favor, preencha o título, a data e o local do evento.'); 
-      return; 
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (date < todayStr) {
+      Alert.alert('Data inválida 🚨', 'Não é possível cadastrar eventos com datas passadas.');
+      return;
     }
     setSavingCompletion(true);
     try {
@@ -141,7 +141,7 @@ export default function AgendaScreen({ profile }) {
       setModalOpen(false);
 
       // Limpar formulário
-      setTitle(''); setDate(''); setTime(''); setLocation(''); setCoords(null);
+      setTitle(''); setDate(new Date().toISOString().split('T')[0]); setTime(''); setLocation(''); setCoords(null);
       setDurationHours('2'); setAttendeesCount('15');
       setPresentMembers([]); setPresencePhoto(null); setMeetingPhotos([]);
       setOnBehalfOfProfile(null); setBehalfSearchText('');

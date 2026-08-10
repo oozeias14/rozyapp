@@ -30,7 +30,7 @@ export default function AgendaScreen({ profile }) {
 
   // Form de criação de Evento Direto
   const [title, setTitle] = useState('');
-  const [date, setDate] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [time, setTime] = useState('');
   const [location, setLocation] = useState('');
   const [coords, setCoords] = useState(null);
@@ -137,9 +137,10 @@ export default function AgendaScreen({ profile }) {
   // Cadastro direto de evento concluído
   async function handleSave(e) {
     e.preventDefault();
-    if (!title.trim() || !date.trim() || !location.trim()) { 
-      alert('Por favor, preencha o título, a data e o local do evento.'); 
-      return; 
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (date < todayStr) {
+      alert('Não é possível cadastrar eventos com datas passadas.');
+      return;
     }
     setSavingCompletion(true);
 
@@ -199,7 +200,7 @@ export default function AgendaScreen({ profile }) {
       setModalOpen(false);
       
       // Limpar formulário
-      setTitle(''); setDate(''); setLocation(''); setCoords(null);
+      setTitle(''); setDate(new Date().toISOString().split('T')[0]); setLocation(''); setCoords(null);
       setDurationHours('2'); setAttendeesCount('15');
       setPresencePhotoFile(null); setMeetingPhotoFiles([]);
       setOnBehalfOfProfile(null); setBehalfSearchText('');
@@ -346,7 +347,7 @@ export default function AgendaScreen({ profile }) {
               <input placeholder="Ex: Grande reunião" value={title} onChange={(e) => setTitle(e.target.value)} required />
               
               <label className="lbl">Data</label>
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required min={new Date().toISOString().split('T')[0]} />
               
               <label className="lbl">Onde foi feita a reunião (Local)</label>
               <input placeholder="Ex: Chácara São José - DF" value={location} onChange={(e) => setLocation(e.target.value)} required />
