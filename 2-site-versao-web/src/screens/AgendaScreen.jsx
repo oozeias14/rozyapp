@@ -73,6 +73,11 @@ export default function AgendaScreen({ profile }) {
 
   useEffect(() => {
     load();
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
   }, [load]);
 
   // WebRTC inline camera para navegadores celulares (previne reload por falta de RAM)
