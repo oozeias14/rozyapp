@@ -98,13 +98,13 @@ export default function AgendaScreen({ profile }) {
         date,
         time: time || '—',
         location: location.trim(),
-        lat: coords?.lat ?? null,
-        lng: coords?.lng ?? null,
+        lat: null,
+        lng: null,
         created_by: profile.id,
         status: 'realizada',
         duration_minutes: parseInt(durationHours) * 60,
         attendees_count: parseInt(attendeesCount),
-        presence_list: presentMembers.map(m => ({ id: m.id, name: m.name }))
+        presence_list: []
       });
 
       const meetId = newMeet.id;
@@ -247,18 +247,7 @@ export default function AgendaScreen({ profile }) {
               <label className="lbl">Onde foi feita a reunião (Local)</label>
               <input placeholder="Ex: Chácara São José - DF" value={location} onChange={(e) => setLocation(e.target.value)} required />
 
-              <label className="lbl">Localização exata (opcional)</label>
-              {coords ? (
-                <div className="lbox" style={{ borderColor: 'var(--teal)' }}>
-                  <span style={{ color: 'var(--teal)' }}>📍 Localização capturada ✅</span>
-                  <a href={mapsUrl(coords.lat, coords.lng)} target="_blank" rel="noreferrer" style={{ color: 'var(--violet)', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>Ver no mapa</a>
-                  <button type="button" onClick={() => setCoords(null)} style={{ background: 'none', border: 'none', color: 'var(--warn)', fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>Remover</button>
-                </div>
-              ) : (
-                <button type="button" className="btn btn-ghost" onClick={captureLocation} disabled={capturing} style={{ marginBottom: 14 }}>
-                  {capturing ? 'Obtendo localização...' : '📍 Usar minha localização atual'}
-                </button>
-              )}
+
               <label className="lbl">Duração (Horas)</label>
               <input type="number" required min="1" value={durationHours} onChange={(e) => setDurationHours(e.target.value)} />
 
@@ -273,33 +262,7 @@ export default function AgendaScreen({ profile }) {
               <label className="lbl">Foto da Lista de Presentes (Nome e Telefone)</label>
               <input type="file" accept="image/*" onChange={(e) => setPresencePhotoFile(e.target.files[0])} style={{ marginBottom: 12 }} />
 
-              {/* Lista digital de presentes */}
-              <label className="lbl">Marcar Perfis Presentes (Lista Digital)</label>
-              <input placeholder="Filtrar membros..." value={searchMember} onChange={(e) => setSearchMember(e.target.value)} style={{ marginBottom: 8 }} />
-              
-              <div style={{ maxHeight: 110, overflowY: 'auto', background: 'var(--panel2)', borderRadius: 12, padding: '6px 10px', marginBottom: 12 }}>
-                {profiles
-                  .filter(p => p.name.toLowerCase().includes(searchMember.toLowerCase()))
-                  .slice(0, 5)
-                  .map(p => {
-                    const isChecked = presentMembers.some(x => x.id === p.id);
-                    return (
-                      <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--line)' }}>
-                        <input type="checkbox" checked={isChecked} style={{ width: 'auto', marginBottom: 0 }} onChange={() => {
-                          if (isChecked) {
-                            setPresentMembers(prev => prev.filter(x => x.id !== p.id));
-                          } else {
-                            setPresentMembers(prev => [...prev, p]);
-                          }
-                        }} />
-                        <span style={{ fontSize: 12.5 }}>{p.name}</span>
-                      </div>
-                    );
-                  })
-                }
-              </div>
 
-              <div className="muted" style={{ marginBottom: 14 }}>Selecionados: {presentMembers.length} membros.</div>
 
               <button className="btn btn-violet" type="submit" disabled={savingCompletion}>
                 {savingCompletion ? 'Registrando...' : 'Registrar Evento'}
@@ -343,17 +306,7 @@ export default function AgendaScreen({ profile }) {
               </div>
             )}
 
-            {/* Lista digital */}
-            <label className="lbl">Presenças Marcadas Digitalmente</label>
-            <div style={{ background: 'var(--panel2)', borderRadius: 12, padding: '10px 12px', maxHeight: 110, overflowY: 'auto', marginBottom: 14 }}>
-              {(!selectedMeetingDetails.presence_list || selectedMeetingDetails.presence_list.length === 0) ? (
-                <div className="muted" style={{ fontStyle: 'italic', fontSize: 12 }}>Nenhum membro marcado digitalmente.</div>
-              ) : (
-                selectedMeetingDetails.presence_list.map((m, idx) => (
-                  <div key={idx} style={{ fontSize: 12.5, padding: '2px 0' }}>• {m.name}</div>
-                ))
-              )}
-            </div>
+
 
             {/* Foto da lista física (Admins/Coords) */}
             {(profile.role === 'admin' || profile.role === 'coord') && selectedMeetingDetails.presence_photo_url && (

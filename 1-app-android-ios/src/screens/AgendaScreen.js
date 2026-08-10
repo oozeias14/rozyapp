@@ -92,12 +92,13 @@ export default function AgendaScreen({ profile }) {
         time: time || '—',
         location: location.trim(),
         lat: coords?.lat ?? null,
-        lng: coords?.lng ?? null,
+        lat: null,
+        lng: null,
         created_by: profile.id,
         status: 'realizada',
         duration_minutes: parseInt(durationHours) * 60,
         attendees_count: parseInt(attendeesCount),
-        presence_list: presentMembers.map(m => ({ id: m.id, name: m.name }))
+        presence_list: []
       });
 
       const meetId = newMeet.id;
@@ -289,22 +290,7 @@ export default function AgendaScreen({ profile }) {
               <Text style={S.label}>Onde foi feita a reunião (Local)</Text>
               <TextInput style={S.input} placeholder="Ex: Chácara São José - DF" placeholderTextColor={COLORS.ink3} value={location} onChangeText={setLocation} />
 
-              <Text style={S.label}>Localização exata (opcional)</Text>
-              {coords ? (
-                <View style={styles.coordBox}>
-                  <Text style={{ color: COLORS.teal, fontSize: 12.5, flex: 1 }}>📍 Localização capturada ✅</Text>
-                  <TouchableOpacity onPress={() => Linking.openURL(mapsUrl(coords.lat, coords.lng))}>
-                    <Text style={{ color: COLORS.violet, fontSize: 12, fontWeight: '700' }}>Ver no mapa</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setCoords(null)} style={{ marginLeft: 12 }}>
-                    <Text style={{ color: COLORS.warn, fontSize: 12, fontWeight: '700' }}>Remover</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity style={[S.btn, S.btnGhost]} onPress={captureLocation} disabled={capturing}>
-                  <Text style={S.btnTextGhost}>{capturing ? 'Obtendo localização...' : '📍 Usar minha localização atual'}</Text>
-                </TouchableOpacity>
-              )}
+
 
               <Text style={S.label}>Duração (Horas)</Text>
               <TextInput style={S.input} placeholder="2" keyboardType="numeric" placeholderTextColor={COLORS.ink3} value={durationHours} onChangeText={setDurationHours} />
@@ -346,37 +332,7 @@ export default function AgendaScreen({ profile }) {
                 </View>
               )}
 
-              {/* Lista Digital */}
-              <Text style={S.label}>Marcar Perfis Presentes (Lista Digital)</Text>
-              <TextInput style={S.input} placeholder="Filtrar membros..." placeholderTextColor={COLORS.ink3} value={searchMember} onChangeText={setSearchMember} />
-              
-              <View style={{ maxHeight: 110, backgroundColor: COLORS.panel2, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 12 }}>
-                <ScrollView nestedScrollEnabled showsVerticalScrollIndicator>
-                  {profiles
-                    .filter(p => p.name.toLowerCase().includes(searchMember.toLowerCase()))
-                    .slice(0, 5)
-                    .map(p => {
-                      const isChecked = presentMembers.some(x => x.id === p.id);
-                      return (
-                        <TouchableOpacity key={p.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: COLORS.line }} onPress={() => {
-                          if (isChecked) {
-                            setPresentMembers(prev => prev.filter(x => x.id !== p.id));
-                          } else {
-                            setPresentMembers(prev => [...prev, p]);
-                          }
-                        }}>
-                          <View style={{ width: 16, height: 16, borderRadius: 4, borderWidth: 1, borderColor: COLORS.teal, backgroundColor: isChecked ? COLORS.teal : 'transparent', justifyContent: 'center', alignItems: 'center' }}>
-                            {isChecked && <Text style={{ color: COLORS.bg, fontSize: 10, fontWeight: '900' }}>✓</Text>}
-                          </View>
-                          <Text style={{ color: COLORS.ink1, fontSize: 12.5 }}>{p.name}</Text>
-                        </TouchableOpacity>
-                      );
-                    })
-                  }
-                </ScrollView>
-              </View>
 
-              <Text style={[S.muted, { marginBottom: 14 }]}>Selecionados: {presentMembers.length} membros.</Text>
 
               <TouchableOpacity style={[S.btn, S.btnViolet, { marginBottom: 20 }]} onPress={handleSave} disabled={savingCompletion}>
                 {savingCompletion ? (
@@ -426,17 +382,7 @@ export default function AgendaScreen({ profile }) {
                 </View>
               )}
 
-              {/* Lista digital de presentes */}
-              <Text style={[S.label, { marginTop: 10 }]}>Presentes Digitalizados ({selectedMeetingDetails?.presence_list?.length || 0})</Text>
-              <View style={styles.presenceListContainer}>
-                {(!selectedMeetingDetails?.presence_list || selectedMeetingDetails.presence_list.length === 0) ? (
-                  <Text style={{ color: COLORS.ink3, fontStyle: 'italic', fontSize: 12 }}>Nenhum membro marcado digitalmente.</Text>
-                ) : (
-                  selectedMeetingDetails.presence_list.map((m, idx) => (
-                    <Text key={idx} style={{ color: COLORS.ink1, fontSize: 12.5, marginVertical: 2 }}>• {m.name}</Text>
-                  ))
-                )}
-              </View>
+
 
               {/* Foto da lista física de assinaturas (Apenas para admin/coord) */}
               {(profile.role === 'admin' || profile.role === 'coord') && selectedMeetingDetails?.presence_photo_url && (
