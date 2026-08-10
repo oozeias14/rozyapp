@@ -55,6 +55,10 @@ export default function AgendaScreen({ profile }) {
   const fileInputEventGallery = useRef(null);
   const fileInputPresenceCamera = useRef(null);
   const fileInputPresenceGallery = useRef(null);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraTarget, setCameraTarget] = useState(null); // 'event' | 'presence'
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
 
   const load = useCallback(async () => {
     try {
@@ -71,19 +75,56 @@ export default function AgendaScreen({ profile }) {
     load();
   }, [load]);
 
-  // GPS no navegador
-  function captureLocation() {
-    if (!navigator.geolocation) { alert('Seu navegador não suporta localização.'); return; }
-    setCapturing(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setCapturing(false);
-        alert('Localização capturada! O ponto exato foi salvo.');
-      },
-      (err) => { setCapturing(false); alert('Erro ao obter localização: ' + err.message); },
-      { enableHighAccuracy: true, timeout: 15000 }
-    );
+  // WebRTC inline camera para navegadores celulares (previne reload por falta de RAM)
+  async function startWebCamera(target) {
+    setCameraTarget(target);
+    setCameraActive(true);
+    setTimeout(async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      } catch (err) {
+        alert('Não foi possível acessar a câmera: ' + err.message);
+        setCameraActive(false);
+      }
+    }, 100);
+  }
+
+  function stopWebCamera() {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setCameraActive(false);
+    setCameraTarget(null);
+  }
+
+  function captureWebPhoto() {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const file = new File([blob], `${cameraTarget}_photo.jpg`, { type: 'image/jpeg' });
+        if (cameraTarget === 'event') {
+          setMeetingPhotoFiles([file]);
+        } else {
+          setPresencePhotoFile(file);
+        }
+      }
+      stopWebCamera();
+    }, 'image/jpeg', 0.85);
   }
 
   // Cadastro direto de evento concluído
@@ -270,9 +311,8 @@ export default function AgendaScreen({ profile }) {
                 </div>
               ) : (
                 <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-                  <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '8px 10px', fontSize: 12 }} onClick={() => fileInputEventCamera.current?.click()}>📸 Tirar Foto</button>
+                  <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '8px 10px', fontSize: 12 }} onClick={() => startWebCamera('event')}>📸 Tirar Foto</button>
                   <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '8px 10px', fontSize: 12 }} onClick={() => fileInputEventGallery.current?.click()}>🖼️ Escolher Galeria</button>
-                  <input ref={fileInputEventCamera} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(e) => setMeetingPhotoFiles(e.target.files ? [e.target.files[0]] : [])} />
                   <input ref={fileInputEventGallery} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => setMeetingPhotoFiles(e.target.files ? [e.target.files[0]] : [])} />
                 </div>
               )}
@@ -287,9 +327,8 @@ export default function AgendaScreen({ profile }) {
                 </div>
               ) : (
                 <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-                  <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '8px 10px', fontSize: 12 }} onClick={() => fileInputPresenceCamera.current?.click()}>📸 Tirar Foto da Lista</button>
+                  <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '8px 10px', fontSize: 12 }} onClick={() => startWebCamera('presence')}>📸 Tirar Foto da Lista</button>
                   <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '8px 10px', fontSize: 12 }} onClick={() => fileInputPresenceGallery.current?.click()}>🖼️ Escolher Galeria</button>
-                  <input ref={fileInputPresenceCamera} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(e) => setPresencePhotoFile(e.target.files ? e.target.files[0] : null)} />
                   <input ref={fileInputPresenceGallery} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => setPresencePhotoFile(e.target.files ? e.target.files[0] : null)} />
                 </div>
               )}
@@ -352,6 +391,45 @@ export default function AgendaScreen({ profile }) {
             )}
 
             <button className="btn btn-ghost" onClick={() => { setDetailsModalOpen(false); setSelectedMeetingDetails(null); }}>Fechar</button>
+          </div>
+        </div>
+      )}
+      {/* MODAL CÂMERA WEB REALTIME */}
+      {cameraActive && (
+        <div className="modal-bg" style={{ zIndex: 3000 }}>
+          <div className="modal" style={{ maxWidth: 440, padding: 16, backgroundColor: '#090d16', borderColor: 'var(--line)' }}>
+            <h3 style={{ color: '#fff', fontSize: 15, marginBottom: 12, textAlign: 'center' }}>
+              {cameraTarget === 'event' ? 'Tirar Foto do Evento' : 'Tirar Foto da Lista de Presentes'}
+            </h3>
+            
+            <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', backgroundColor: '#000', height: 350 }}>
+              <video 
+                ref={videoRef} 
+                autoPlay 
+                playsInline 
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, marginTop: 16 }}>
+              <button 
+                type="button" 
+                className="btn btn-violet" 
+                onClick={captureWebPhoto}
+                style={{ borderRadius: '50%', width: 56, height: 56, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, padding: 0 }}
+              >
+                📸
+              </button>
+              
+              <button 
+                type="button" 
+                className="btn btn-ghost" 
+                onClick={stopWebCamera}
+                style={{ width: '100%', color: 'var(--ink3)' }}
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}
