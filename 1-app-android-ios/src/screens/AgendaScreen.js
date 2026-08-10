@@ -89,9 +89,8 @@ export default function AgendaScreen({ profile }) {
       const newMeet = await createMeeting({
         title: title.trim(),
         date,
-        time: time || '—',
+        time: '—',
         location: location.trim(),
-        lat: coords?.lat ?? null,
         lat: null,
         lng: null,
         created_by: profile.id,
@@ -152,6 +151,10 @@ export default function AgendaScreen({ profile }) {
   }
 
   async function handleDelete(id) {
+    if (profile.role !== 'admin') {
+      Alert.alert('Acesso negado 🚨', 'Apenas administradores podem excluir eventos.');
+      return;
+    }
     Alert.alert('Excluir evento', 'Deseja excluir este evento permanentemente?', [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Excluir', style: 'destructive', onPress: async () => {
@@ -166,11 +169,11 @@ export default function AgendaScreen({ profile }) {
     
     Alert.alert('Anexar Lista Física', 'Como deseja anexar a foto?', [
       { text: 'Tirar Foto', onPress: async () => {
-          const res = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+          const res = await ImagePicker.launchCameraAsync({ quality: 0.2, maxWidth: 600, maxHeight: 600, allowsEditing: true });
           if (!res.canceled) setPresencePhoto(res.assets[0].uri);
       }},
       { text: 'Escolher da Galeria', onPress: async () => {
-          const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
+          const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.2, maxWidth: 600, maxHeight: 600, allowsEditing: true });
           if (!res.canceled) setPresencePhoto(res.assets[0].uri);
       }},
       { text: 'Cancelar', style: 'cancel' }
@@ -178,8 +181,8 @@ export default function AgendaScreen({ profile }) {
   }
 
   async function handleAddMeetingPhoto() {
-    if (meetingPhotos.length >= 3) {
-      Alert.alert('Limite máximo', 'Você pode anexar no máximo 3 fotos por evento.');
+    if (meetingPhotos.length >= 1) {
+      Alert.alert('Limite máximo', 'Você pode anexar no máximo 1 foto do evento.');
       return;
     }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -187,11 +190,11 @@ export default function AgendaScreen({ profile }) {
     
     Alert.alert('Foto do Evento', 'Selecione a fonte da foto:', [
       { text: 'Tirar Foto', onPress: async () => {
-          const res = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+          const res = await ImagePicker.launchCameraAsync({ quality: 0.2, maxWidth: 600, maxHeight: 600, allowsEditing: true });
           if (!res.canceled) setMeetingPhotos(prev => [...prev, res.assets[0].uri]);
       }},
       { text: 'Escolher da Galeria', onPress: async () => {
-          const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.8 });
+          const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.2, maxWidth: 600, maxHeight: 600, allowsEditing: true });
           if (!res.canceled) setMeetingPhotos(prev => [...prev, res.assets[0].uri]);
       }},
       { text: 'Cancelar', style: 'cancel' }
@@ -236,7 +239,6 @@ export default function AgendaScreen({ profile }) {
 
         {meetings.length === 0 && <Text style={[S.muted, { textAlign: 'center', padding: 20 }]}>Nenhum evento registrado.</Text>}
         {meetings.map((m) => {
-          const isOwnerHost = m.created_by === profile.id || profile.role === 'admin' || profile.role === 'coord';
           return (
             <View key={m.id} style={[S.card, styles.meetCard, { borderLeftColor: COLORS.teal, borderLeftWidth: 3, paddingVertical: 14 }]}>
               <View style={S.rowBetween}>
@@ -250,7 +252,6 @@ export default function AgendaScreen({ profile }) {
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={{ color: COLORS.teal, fontFamily: 'monospace', fontSize: 11 }}>{new Date(m.date).toLocaleDateString('pt-BR')}</Text>
-                  <Text style={S.muted}>{m.time}</Text>
                 </View>
               </View>
 
@@ -258,7 +259,7 @@ export default function AgendaScreen({ profile }) {
                 <Text style={S.btnTextGhost}>📊 Ver Detalhes e Lista</Text>
               </TouchableOpacity>
 
-              {isOwnerHost && (
+              {profile.role === 'admin' && (
                 <TouchableOpacity style={[S.btn, S.btnWarn, { marginTop: 8, marginBottom: 0, paddingVertical: 8 }]} onPress={() => handleDelete(m.id)}>
                   <Text style={S.btnTextWarn}>Excluir</Text>
                 </TouchableOpacity>
@@ -284,9 +285,6 @@ export default function AgendaScreen({ profile }) {
               <Text style={S.label}>Data (AAAA-MM-DD)</Text>
               <TextInput style={S.input} placeholder="2026-08-01" placeholderTextColor={COLORS.ink3} value={date} onChangeText={setDate} />
               
-              <Text style={S.label}>Horário</Text>
-              <TextInput style={S.input} placeholder="19:00" placeholderTextColor={COLORS.ink3} value={time} onChangeText={setTime} />
-              
               <Text style={S.label}>Onde foi feita a reunião (Local)</Text>
               <TextInput style={S.input} placeholder="Ex: Chácara São José - DF" placeholderTextColor={COLORS.ink3} value={location} onChangeText={setLocation} />
 
@@ -299,9 +297,9 @@ export default function AgendaScreen({ profile }) {
               <TextInput style={S.input} placeholder="15" keyboardType="numeric" placeholderTextColor={COLORS.ink3} value={attendeesCount} onChangeText={setAttendeesCount} />
 
               {/* Fotos do Evento */}
-              <Text style={S.label}>Fotos do Evento (Anexar até 3 fotos)</Text>
+              <Text style={S.label}>Foto do Evento (Anexar 1 foto)</Text>
               <TouchableOpacity style={[S.btn, S.btnGhost, { marginBottom: 12 }]} onPress={handleAddMeetingPhoto}>
-                <Text style={S.btnTextGhost}>📸 Anexar Foto ({meetingPhotos.length}/3)</Text>
+                <Text style={S.btnTextGhost}>📸 Anexar Foto ({meetingPhotos.length}/1)</Text>
               </TouchableOpacity>
               
               {meetingPhotos.length > 0 && (

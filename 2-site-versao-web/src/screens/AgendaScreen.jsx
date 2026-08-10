@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import TopBar from '../components/TopBar';
-import { supabase } from '../lib/supabase';
+import { supabase, compressImageWeb } from '../lib/supabase';
 import { 
   fetchAllProfiles, fetchMeetings, createMeeting, deleteMeeting, 
   updateMeeting, createLiveComment, fetchLiveComments, fetchProfileById 
@@ -96,7 +96,7 @@ export default function AgendaScreen({ profile }) {
       const newMeet = await createMeeting({
         title: title.trim(),
         date,
-        time: time || '—',
+        time: '—', // Removido campo horário
         location: location.trim(),
         lat: null,
         lng: null,
@@ -111,22 +111,25 @@ export default function AgendaScreen({ profile }) {
       let finalPresencePhotoUrl = null;
       let finalPhotos = [];
 
-      // 2. Upload da foto da lista de presentes
+      // 2. Comprimir e Upload da foto da lista de presentes
       if (presencePhotoFile) {
-        const ext = presencePhotoFile.name.split('.').pop().toLowerCase();
+        // Comprime para 600px max e qualidade 0.7 para economizar espaço
+        const compressedPresence = await compressImageWeb(presencePhotoFile, 600, 0.7);
+        const ext = compressedPresence.name.split('.').pop().toLowerCase();
         const filename = `meeting_${meetId}/presence_list.${ext}`;
-        const { error: uploadError } = await supabase.storage.from('meetings').upload(filename, presencePhotoFile, { upsert: true, contentType: presencePhotoFile.type });
+        const { error: uploadError } = await supabase.storage.from('meetings').upload(filename, compressedPresence, { upsert: true, contentType: compressedPresence.type });
         if (uploadError) throw uploadError;
         const { data: pub } = supabase.storage.from('meetings').getPublicUrl(filename);
         finalPresencePhotoUrl = pub.publicUrl;
       }
 
-      // 3. Upload das fotos do evento
-      for (const file of meetingPhotoFiles) {
-        if (finalPhotos.length >= 3) break;
-        const ext = file.name.split('.').pop().toLowerCase();
-        const filename = `meeting_${meetId}/photo_${Date.now()}_${Math.floor(Math.random()*1000)}.${ext}`;
-        const { error: uploadError } = await supabase.storage.from('meetings').upload(filename, file, { upsert: true, contentType: file.type });
+      // 3. Comprimir e Upload da foto do evento
+      if (meetingPhotoFiles && meetingPhotoFiles.length > 0) {
+        const file = meetingPhotoFiles[0]; // Limite de 1 foto do evento
+        const compressedPhoto = await compressImageWeb(file, 600, 0.7);
+        const ext = compressedPhoto.name.split('.').pop().toLowerCase();
+        const filename = `meeting_${meetId}/photo_${Date.now()}.${ext}`;
+        const { error: uploadError } = await supabase.storage.from('meetings').upload(filename, compressedPhoto, { upsert: true, contentType: compressedPhoto.type });
         if (uploadError) throw uploadError;
         const { data: pub } = supabase.storage.from('meetings').getPublicUrl(filename);
         finalPhotos.push(pub.publicUrl);
@@ -144,9 +147,9 @@ export default function AgendaScreen({ profile }) {
       setModalOpen(false);
       
       // Limpar formulário
-      setTitle(''); setDate(''); setTime(''); setLocation(''); setCoords(null);
+      setTitle(''); setDate(''); setLocation(''); setCoords(null);
       setDurationHours('2'); setAttendeesCount('15');
-      setPresentMembers([]); setPresencePhotoFile(null); setMeetingPhotoFiles([]);
+      setPresencePhotoFile(null); setMeetingPhotoFiles([]);
       await load();
     } catch (err) {
       alert('Erro ao registrar evento: ' + err.message);
@@ -156,6 +159,10 @@ export default function AgendaScreen({ profile }) {
   }
 
   async function handleDelete(id) {
+    if (profile.role !== 'admin') {
+      alert('Apenas administradores podem excluir eventos.');
+      return;
+    }
     if (!confirm('Excluir este evento permanentemente?')) return;
     try { 
       await deleteMeeting(id); 
@@ -200,7 +207,6 @@ export default function AgendaScreen({ profile }) {
 
       {meetings.length === 0 && <div className="empty">Nenhum evento registrado.</div>}
       {meetings.map((m) => {
-        const isOwnerHost = m.created_by === profile.id || profile.role === 'admin' || profile.role === 'coord';
         return (
           <div key={m.id} className="card meet-card" style={{ borderLeftColor: 'var(--teal)', borderLeftWidth: 3 }}>
             <div className="row-bw">
@@ -214,13 +220,12 @@ export default function AgendaScreen({ profile }) {
               </div>
               <div style={{ textAlign: 'right' }}>
                 <div className="meet-date">{fmtDate(m.date)}</div>
-                <div className="muted">{m.time}</div>
               </div>
             </div>
 
             <button className="btn btn-ghost btn-sm" style={{ marginTop: 10, width: '100%', marginBottom: 0 }} onClick={() => { setSelectedMeetingDetails(m); setDetailsModalOpen(true); }}>📊 Ver Detalhes e Lista</button>
 
-            {isOwnerHost && (
+            {profile.role === 'admin' && (
               <button className="btn btn-warn btn-sm" style={{ marginTop: 8, width: '100%', marginBottom: 0 }} onClick={() => handleDelete(m.id)}>Excluir</button>
             )}
           </div>
@@ -241,9 +246,6 @@ export default function AgendaScreen({ profile }) {
               <label className="lbl">Data</label>
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
               
-              <label className="lbl">Horário</label>
-              <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-              
               <label className="lbl">Onde foi feita a reunião (Local)</label>
               <input placeholder="Ex: Chácara São José - DF" value={location} onChange={(e) => setLocation(e.target.value)} required />
 
@@ -255,8 +257,8 @@ export default function AgendaScreen({ profile }) {
               <input type="number" required min="1" value={attendeesCount} onChange={(e) => setAttendeesCount(e.target.value)} />
 
               {/* Anexar Fotos */}
-              <label className="lbl">Fotos do Evento (Anexar até 3 fotos)</label>
-              <input type="file" accept="image/*" multiple onChange={(e) => setMeetingPhotoFiles(Array.from(e.target.files))} style={{ marginBottom: 12 }} />
+              <label className="lbl">Foto do Evento (Anexar 1 foto)</label>
+              <input type="file" accept="image/*" onChange={(e) => setMeetingPhotoFiles(e.target.files ? [e.target.files[0]] : [])} style={{ marginBottom: 12 }} />
 
               {/* Lista física */}
               <label className="lbl">Foto da Lista de Presentes (Nome e Telefone)</label>

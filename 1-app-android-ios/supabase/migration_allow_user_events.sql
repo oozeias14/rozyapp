@@ -20,6 +20,6 @@ CREATE POLICY "meetings_update_owner" ON public.meetings
     created_by = (SELECT id FROM public.profiles WHERE auth_id = auth.uid() LIMIT 1)
   );
 
--- 5. Apenas Admins e Coordenadores podem excluir (delete) reuniões/eventos
-CREATE POLICY "meetings_delete_admin_coord" ON public.meetings
-  FOR DELETE USING (public.my_role() IN ('admin','coord'));
+-- 5. Apenas Admins podem excluir (delete) reuniões/eventos
+CREATE POLICY "meetings_delete_admin" ON public.meetings
+  FOR DELETE USING (public.my_role() = 'admin');
