@@ -316,7 +316,12 @@ export default function AuthScreen({ onLoggedIn }) {
     } else {
       if (waPhone) {
         alert(`Cadastro feito com sucesso!\nSeu nome de usuário é: ${finalUsername}\nSua senha padrão é: 123456.\n\nClique em OK para mandar uma mensagem no WhatsApp do Administrador.`);
-        window.location.href = `https://wa.me/${waPhone}?text=${encodeURIComponent(messageText)}`;
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        if (isMobile) {
+          window.location.href = `whatsapp://send?phone=${waPhone}&text=${encodeURIComponent(messageText)}`;
+        } else {
+          window.location.href = `https://web.whatsapp.com/send?phone=${waPhone}&text=${encodeURIComponent(messageText)}`;
+        }
       } else {
         alert(`Cadastro feito com sucesso!\nSeu nome de usuário é: ${finalUsername}\nSua senha padrão é: 123456.`);
       }
