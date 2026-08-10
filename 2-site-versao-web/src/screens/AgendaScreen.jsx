@@ -51,6 +51,10 @@ export default function AgendaScreen({ profile }) {
   const [selectedMeetingDetails, setSelectedMeetingDetails] = useState(null);
 
   const canAdd = true; // Qualquer usuário logado pode registrar eventos
+  const fileInputEventCamera = useRef(null);
+  const fileInputEventGallery = useRef(null);
+  const fileInputPresenceCamera = useRef(null);
+  const fileInputPresenceGallery = useRef(null);
 
   const load = useCallback(async () => {
     try {
@@ -258,11 +262,37 @@ export default function AgendaScreen({ profile }) {
 
               {/* Anexar Fotos */}
               <label className="lbl">Foto do Evento (Anexar 1 foto)</label>
-              <input type="file" accept="image/*" onChange={(e) => setMeetingPhotoFiles(e.target.files ? [e.target.files[0]] : [])} style={{ marginBottom: 12 }} />
+              {meetingPhotoFiles.length > 0 ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--panel2)', padding: 8, borderRadius: 10, marginBottom: 12 }}>
+                  <img src={URL.createObjectURL(meetingPhotoFiles[0])} alt="Preview" style={{ width: 50, height: 50, borderRadius: 6, objectFit: 'cover' }} />
+                  <span style={{ fontSize: 12, color: 'var(--ink1)', flex: 1 }}>Foto do Evento Selecionada</span>
+                  <button type="button" className="btn btn-warn btn-sm" style={{ width: 'auto', margin: 0, padding: '4px 10px' }} onClick={() => setMeetingPhotoFiles([])}>Remover</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                  <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '8px 10px', fontSize: 12 }} onClick={() => fileInputEventCamera.current?.click()}>📸 Tirar Foto</button>
+                  <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '8px 10px', fontSize: 12 }} onClick={() => fileInputEventGallery.current?.click()}>🖼️ Escolher Galeria</button>
+                  <input ref={fileInputEventCamera} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(e) => setMeetingPhotoFiles(e.target.files ? [e.target.files[0]] : [])} />
+                  <input ref={fileInputEventGallery} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => setMeetingPhotoFiles(e.target.files ? [e.target.files[0]] : [])} />
+                </div>
+              )}
 
               {/* Lista física */}
               <label className="lbl">Foto da Lista de Presentes (Nome e Telefone)</label>
-              <input type="file" accept="image/*" onChange={(e) => setPresencePhotoFile(e.target.files[0])} style={{ marginBottom: 12 }} />
+              {presencePhotoFile ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--panel2)', padding: 8, borderRadius: 10, marginBottom: 12 }}>
+                  <img src={URL.createObjectURL(presencePhotoFile)} alt="Preview" style={{ width: 50, height: 50, borderRadius: 6, objectFit: 'cover' }} />
+                  <span style={{ fontSize: 12, color: 'var(--ink1)', flex: 1 }}>Foto da Lista Selecionada</span>
+                  <button type="button" className="btn btn-warn btn-sm" style={{ width: 'auto', margin: 0, padding: '4px 10px' }} onClick={() => setPresencePhotoFile(null)}>Remover</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                  <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '8px 10px', fontSize: 12 }} onClick={() => fileInputPresenceCamera.current?.click()}>📸 Tirar Foto da Lista</button>
+                  <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '8px 10px', fontSize: 12 }} onClick={() => fileInputPresenceGallery.current?.click()}>🖼️ Escolher Galeria</button>
+                  <input ref={fileInputPresenceCamera} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(e) => setPresencePhotoFile(e.target.files ? e.target.files[0] : null)} />
+                  <input ref={fileInputPresenceGallery} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => setPresencePhotoFile(e.target.files ? e.target.files[0] : null)} />
+                </div>
+              )}
 
 
 
