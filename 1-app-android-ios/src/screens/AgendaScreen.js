@@ -384,8 +384,8 @@ export default function AgendaScreen({ profile }) {
 
 
 
-              {/* Foto da lista física de assinaturas (Apenas para admin/coord) */}
-              {(profile.role === 'admin' || profile.role === 'coord') && selectedMeetingDetails?.presence_photo_url && (
+              {/* Foto da lista física de assinaturas */}
+              {selectedMeetingDetails?.presence_photo_url && (
                 <View style={{ marginTop: 14 }}>
                   <Text style={S.label}>Foto da Lista de Presentes</Text>
                   <TouchableOpacity 

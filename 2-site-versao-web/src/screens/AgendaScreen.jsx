@@ -379,8 +379,8 @@ export default function AgendaScreen({ profile }) {
 
 
 
-            {/* Foto da lista física (Admins/Coords) */}
-            {(profile.role === 'admin' || profile.role === 'coord') && selectedMeetingDetails.presence_photo_url && (
+            {/* Foto da lista física */}
+            {selectedMeetingDetails.presence_photo_url && (
               <div style={{ marginBottom: 14 }}>
                 <label className="lbl">Foto da Lista de Presentes</label>
                 <a href={selectedMeetingDetails.presence_photo_url} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ fontSize: 12, gap: 8, padding: 8 }}>
