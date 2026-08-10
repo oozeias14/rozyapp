@@ -106,6 +106,33 @@ export default function AgendaScreen({ profile }) {
         presence_list: []
       });
 
+      // Agendar notificação push local de lembrete 24h antes (gratuito)
+      if (date > todayStr) {
+        try {
+          const settings = await Notifications.getPermissionsAsync();
+          if (!settings.granted && settings.canAskAgain) {
+            await Notifications.requestPermissionsAsync();
+          }
+          
+          const eventDateObj = new Date(date + 'T09:00:00'); // Evento planejado para as 09:00
+          const triggerDate = new Date(eventDateObj.getTime() - 24 * 60 * 60 * 1000); // 24 horas antes
+          const now = new Date();
+          
+          if (triggerDate > now) {
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: 'Lembrete de Evento Amanhã 📅',
+                body: `O seu evento "${title.trim()}" é amanhã! Lembre-se de registrar a lista de presentes e as fotos.`,
+                sound: true,
+              },
+              trigger: triggerDate,
+            });
+          }
+        } catch (notifErr) {
+          console.log('Erro ao agendar notificação:', notifErr);
+        }
+      }
+
       const meetId = newMeet.id;
       let finalPresencePhotoUrl = null;
       let finalPhotos = [];
