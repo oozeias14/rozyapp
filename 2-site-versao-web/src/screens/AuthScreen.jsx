@@ -68,6 +68,7 @@ export default function AuthScreen({ onLoggedIn }) {
   const [forgotOpen, setForgotOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
+  const [successData, setSuccessData] = useState(null);
 
   const [isUsernameManual, setIsUsernameManual] = useState(false);
 
@@ -313,20 +314,20 @@ export default function AuthScreen({ onLoggedIn }) {
     if (isFirstUser) {
       await supabase.from('owner_profile').update({ whatsapp: cleanedPhone }).eq('id', 1);
       alert('Parabéns! Você cadastrou a primeira conta e entrou como o Administrador Raiz!');
+      onLoggedIn(authData.user);
     } else {
       if (waPhone) {
-        alert(`Cadastro feito com sucesso!\nSeu nome de usuário é: ${finalUsername}\nSua senha padrão é: 123456.\n\nClique em OK para mandar uma mensagem no WhatsApp do Administrador.`);
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-        if (isMobile) {
-          window.location.href = `whatsapp://send?phone=${waPhone}&text=${encodeURIComponent(messageText)}`;
-        } else {
-          window.location.href = `https://web.whatsapp.com/send?phone=${waPhone}&text=${encodeURIComponent(messageText)}`;
-        }
+        setSuccessData({
+          username: finalUsername,
+          waPhone: waPhone,
+          messageText: messageText,
+          user: authData.user
+        });
       } else {
         alert(`Cadastro feito com sucesso!\nSeu nome de usuário é: ${finalUsername}\nSua senha padrão é: 123456.`);
+        onLoggedIn(authData.user);
       }
     }
-    onLoggedIn(authData.user);
   }
 
   async function handleForgotPassword(e) {
@@ -399,6 +400,70 @@ export default function AuthScreen({ onLoggedIn }) {
           </form>
           <div style={{ textAlign: 'center' }}>
             <span className="muted" style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => setForgotOpen(false)}>Cancelar</span>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE SUCESSO DE CADASTRO - REDIRECIONAMENTO DIRETO */}
+      {successData && (
+        <div className="modal-bg" style={{ zIndex: 4000 }}>
+          <div className="modal" style={{ maxWidth: 400, padding: 24, textAlign: 'center', backgroundColor: '#090d16', borderColor: 'var(--line)' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>🎉</div>
+            <h2 style={{ fontSize: 18, color: '#fff', marginBottom: 10 }}>Cadastro Realizado!</h2>
+            
+            <p style={{ color: 'var(--ink2)', fontSize: 13, marginBottom: 18, lineHeight: 1.5 }}>
+              Seu cadastro foi concluído com sucesso. Anote seus dados de acesso:
+            </p>
+
+            <div style={{ background: 'var(--panel2)', borderRadius: 12, padding: 14, marginBottom: 20, textAlign: 'left' }}>
+              <div style={{ fontSize: 12, color: 'var(--ink3)' }}>Usuário:</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--teal)', marginBottom: 8 }}>{successData.username}</div>
+              
+              <div style={{ fontSize: 12, color: 'var(--ink3)' }}>Senha Padrão:</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>123456</div>
+            </div>
+
+            <a 
+              href={
+                /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+                  ? `whatsapp://send?phone=${successData.waPhone}&text=${encodeURIComponent(successData.messageText)}`
+                  : `https://web.whatsapp.com/send?phone=${successData.waPhone}&text=${encodeURIComponent(successData.messageText)}`
+              }
+              className="btn"
+              style={{ 
+                backgroundColor: '#25D366', 
+                color: '#fff', 
+                fontWeight: 700, 
+                textDecoration: 'none', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                gap: 8,
+                padding: '12px',
+                borderRadius: 10,
+                marginBottom: 10
+              }}
+              onClick={() => {
+                setTimeout(() => {
+                  onLoggedIn(successData.user);
+                  setSuccessData(null);
+                }, 1000);
+              }}
+            >
+              💬 Mandar mensagem no WhatsApp
+            </a>
+
+            <button 
+              type="button" 
+              className="btn btn-ghost" 
+              style={{ margin: 0, color: 'var(--ink3)' }}
+              onClick={() => {
+                onLoggedIn(successData.user);
+                setSuccessData(null);
+              }}
+            >
+              Acessar Aplicativo Direto
+            </button>
           </div>
         </div>
       )}
