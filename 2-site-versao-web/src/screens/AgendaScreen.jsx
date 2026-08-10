@@ -62,6 +62,11 @@ export default function AgendaScreen({ profile }) {
   const [onBehalfOfProfile, setOnBehalfOfProfile] = useState(null);
   const [behalfSearchText, setBehalfSearchText] = useState('');
   const [participantSearchText, setParticipantSearchText] = useState('');
+  const [editPresencePhotoFile, setEditPresencePhotoFile] = useState(null);
+  const [editMeetingPhotoFiles, setEditMeetingPhotoFiles] = useState([]);
+  const [savingEditPhotos, setSavingEditPhotos] = useState(false);
+  const editFileInputEventGallery = useRef(null);
+  const editFileInputPresenceGallery = useRef(null);
 
   const load = useCallback(async () => {
     try {
@@ -127,12 +132,67 @@ export default function AgendaScreen({ profile }) {
         const file = new File([blob], `${cameraTarget}_photo.jpg`, { type: 'image/jpeg' });
         if (cameraTarget === 'event') {
           setMeetingPhotoFiles([file]);
-        } else {
+        } else if (cameraTarget === 'presence') {
           setPresencePhotoFile(file);
+        } else if (cameraTarget === 'edit_event') {
+          setEditMeetingPhotoFiles([file]);
+        } else if (cameraTarget === 'edit_presence') {
+          setEditPresencePhotoFile(file);
         }
       }
       stopWebCamera();
     }, 'image/jpeg', 0.85);
+  }
+
+  // Enviar novas fotos de evento/lista salvando na edição
+  async function handleSaveEditPhotos() {
+    setSavingEditPhotos(true);
+    try {
+      const meetId = selectedMeetingDetails.id;
+      let finalPresencePhotoUrl = selectedMeetingDetails.presence_photo_url;
+      let finalPhotos = selectedMeetingDetails.photos || [];
+
+      // 1. Upload de foto da lista física
+      if (editPresencePhotoFile) {
+        const filename = `meeting_${meetId}/presence_list.jpg`;
+        const { error: uploadError } = await supabase.storage.from('meetings').upload(filename, editPresencePhotoFile, { upsert: true });
+        if (uploadError) throw uploadError;
+        const { data: pub } = supabase.storage.from('meetings').getPublicUrl(filename);
+        finalPresencePhotoUrl = pub.publicUrl;
+      }
+
+      // 2. Upload de foto do evento
+      if (editMeetingPhotoFiles.length > 0) {
+        const file = editMeetingPhotoFiles[0];
+        const filename = `meeting_${meetId}/photo_${Date.now()}.jpg`;
+        const { error: uploadError } = await supabase.storage.from('meetings').upload(filename, file, { upsert: true });
+        if (uploadError) throw uploadError;
+        const { data: pub } = supabase.storage.from('meetings').getPublicUrl(filename);
+        finalPhotos = [pub.publicUrl];
+      }
+
+      // 3. Atualizar no banco de dados
+      await updateMeeting(meetId, {
+        presence_photo_url: finalPresencePhotoUrl,
+        photos: finalPhotos
+      });
+
+      alert('Fotos salvas com sucesso! ✅');
+
+      // Atualizar o modal com os novos dados de fotos
+      setSelectedMeetingDetails(prev => ({
+        ...prev,
+        presence_photo_url: finalPresencePhotoUrl,
+        photos: finalPhotos
+      }));
+      setEditPresencePhotoFile(null);
+      setEditMeetingPhotoFiles([]);
+      await load();
+    } catch (err) {
+      alert('Erro ao salvar novas fotos: ' + err.message);
+    } finally {
+      setSavingEditPhotos(false);
+    }
   }
 
   // Cadastro direto de evento concluído
@@ -549,7 +609,73 @@ export default function AgendaScreen({ profile }) {
               </div>
             )}
 
-            <button className="btn btn-ghost" onClick={() => { setDetailsModalOpen(false); setSelectedMeetingDetails(null); }}>Fechar</button>
+            {/* Se o evento já aconteceu (hoje ou no passado) e o usuário pode editar (é criador ou admin) */}
+            {selectedMeetingDetails.date <= new Date().toISOString().split('T')[0] && 
+             (profile.role === 'admin' || selectedMeetingDetails.created_by === profile.id) && (
+              <div style={{ marginBottom: 14, borderTop: '1px solid var(--line)', paddingTop: 14 }}>
+                <label className="lbl" style={{ color: 'var(--teal)' }}>📷 Anexar ou Alterar Fotos do Evento</label>
+                
+                {/* Upload Foto do Evento */}
+                <div style={{ marginBottom: 10 }}>
+                  <span style={{ fontSize: 11, color: 'var(--ink2)' }}>Foto do Evento:</span>
+                  {editMeetingPhotoFiles.length > 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--panel2)', padding: 6, borderRadius: 8, marginTop: 4 }}>
+                      <img src={URL.createObjectURL(editMeetingPhotoFiles[0])} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover' }} />
+                      <span style={{ fontSize: 11, color: 'var(--ink1)', flex: 1 }}>Nova foto selecionada</span>
+                      <button type="button" className="btn btn-warn btn-sm" style={{ width: 'auto', margin: 0, padding: '2px 8px', fontSize: 11 }} onClick={() => setEditMeetingPhotoFiles([])}>Remover</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '6px 8px', fontSize: 11 }} onClick={() => startWebCamera('edit_event')}>📸 Tirar</button>
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '6px 8px', fontSize: 11 }} onClick={() => editFileInputEventGallery.current?.click()}>🖼️ Galeria</button>
+                      <input ref={editFileInputEventGallery} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => setEditMeetingPhotoFiles(e.target.files ? [e.target.files[0]] : [])} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Upload Foto da Lista */}
+                <div style={{ marginBottom: 14 }}>
+                  <span style={{ fontSize: 11, color: 'var(--ink2)' }}>Foto da Lista de Presentes:</span>
+                  {editPresencePhotoFile ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--panel2)', padding: 6, borderRadius: 8, marginTop: 4 }}>
+                      <img src={URL.createObjectURL(editPresencePhotoFile)} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover' }} />
+                      <span style={{ fontSize: 11, color: 'var(--ink1)', flex: 1 }}>Nova lista selecionada</span>
+                      <button type="button" className="btn btn-warn btn-sm" style={{ width: 'auto', margin: 0, padding: '2px 8px', fontSize: 11 }} onClick={() => setEditPresencePhotoFile(null)}>Remover</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '6px 8px', fontSize: 11 }} onClick={() => startWebCamera('edit_presence')}>📸 Tirar</button>
+                      <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '6px 8px', fontSize: 11 }} onClick={() => editFileInputPresenceGallery.current?.click()}>🖼️ Galeria</button>
+                      <input ref={editFileInputPresenceGallery} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => setEditPresencePhotoFile(e.target.files ? e.target.files[0] : null)} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Botão de Salvar */}
+                {(editMeetingPhotoFiles.length > 0 || editPresencePhotoFile) && (
+                  <button 
+                    type="button" 
+                    className="btn btn-violet" 
+                    disabled={savingEditPhotos}
+                    onClick={handleSaveEditPhotos}
+                    style={{ padding: '10px', fontSize: 13, width: '100%', marginBottom: 10 }}
+                  >
+                    {savingEditPhotos ? 'Salvando Fotos...' : '💾 Salvar Novas Fotos'}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Aviso para datas futuras */}
+            {selectedMeetingDetails.date > new Date().toISOString().split('T')[0] && (
+              <div style={{ backgroundColor: 'rgba(235, 94, 40, 0.1)', border: '1px dashed var(--warn)', borderRadius: 10, padding: 12, marginBottom: 14, textAlign: 'center' }}>
+                <span style={{ color: 'var(--warn)', fontSize: 12.5, fontWeight: 600 }}>
+                  ⚠️ Anexe as fotos na data do evento
+                </span>
+              </div>
+            )}
+
+            <button className="btn btn-ghost" onClick={() => { setDetailsModalOpen(false); setSelectedMeetingDetails(null); setEditMeetingPhotoFiles([]); setEditPresencePhotoFile(null); }}>Fechar</button>
           </div>
         </div>
       )}
