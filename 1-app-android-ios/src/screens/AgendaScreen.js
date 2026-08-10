@@ -41,6 +41,8 @@ export default function AgendaScreen({ profile }) {
   // Controle de Visualização de Detalhes
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedMeetingDetails, setSelectedMeetingDetails] = useState(null);
+  const [onBehalfOfProfile, setOnBehalfOfProfile] = useState(null);
+  const [behalfSearchText, setBehalfSearchText] = useState('');
 
   const canAdd = true; // Qualquer usuário logado pode registrar eventos
 
@@ -93,7 +95,7 @@ export default function AgendaScreen({ profile }) {
         location: location.trim(),
         lat: null,
         lng: null,
-        created_by: profile.id,
+        created_by: onBehalfOfProfile ? onBehalfOfProfile.id : profile.id,
         status: 'realizada',
         duration_minutes: parseInt(durationHours) * 60,
         attendees_count: parseInt(attendeesCount),
@@ -142,6 +144,7 @@ export default function AgendaScreen({ profile }) {
       setTitle(''); setDate(''); setTime(''); setLocation(''); setCoords(null);
       setDurationHours('2'); setAttendeesCount('15');
       setPresentMembers([]); setPresencePhoto(null); setMeetingPhotos([]);
+      setOnBehalfOfProfile(null); setBehalfSearchText('');
       await load();
     } catch (e) {
       Alert.alert('Erro ao cadastrar evento', e.message);
@@ -273,6 +276,57 @@ export default function AgendaScreen({ profile }) {
             <Text style={{ color: COLORS.ink1, fontSize: 16, fontWeight: '700', marginBottom: 14 }}>Cadastrar Evento</Text>
             
             <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }}>
+              <Text style={S.label}>Cadastrar em nome de outro membro (Opcional)</Text>
+              <View style={{ position: 'relative', marginBottom: 12 }}>
+                <TextInput 
+                  style={S.input} 
+                  placeholder="Pesquisar por usuário (digite 3 letras)..." 
+                  placeholderTextColor={COLORS.ink3}
+                  value={behalfSearchText} 
+                  onChangeText={(val) => {
+                    setBehalfSearchText(val);
+                    if (onBehalfOfProfile) {
+                      setOnBehalfOfProfile(null);
+                    }
+                  }} 
+                />
+                {onBehalfOfProfile && (
+                  <TouchableOpacity 
+                    style={{ position: 'absolute', right: 12, top: 12 }} 
+                    onPress={() => { setOnBehalfOfProfile(null); setBehalfSearchText(''); }}
+                  >
+                    <Text style={{ color: COLORS.warn, fontWeight: '700', fontSize: 13 }}>Limpar</Text>
+                  </TouchableOpacity>
+                )}
+                {behalfSearchText.trim().length >= 3 && !onBehalfOfProfile && (
+                  <View style={{ backgroundColor: COLORS.panel2, borderWidth: 1, borderColor: COLORS.line, borderRadius: 8, maxHeight: 150, padding: 4, marginTop: 4 }}>
+                    <ScrollView nestedScrollEnabled style={{ maxHeight: 140 }}>
+                      {profiles
+                        .filter(p => p.username?.toLowerCase().includes(behalfSearchText.toLowerCase()) || p.name?.toLowerCase().includes(behalfSearchText.toLowerCase()))
+                        .slice(0, 5)
+                        .map(p => (
+                          <TouchableOpacity 
+                            key={p.id} 
+                            style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: COLORS.line }}
+                            onPress={() => {
+                              setOnBehalfOfProfile(p);
+                              setBehalfSearchText(`@${p.username} - ${p.name}`);
+                            }}
+                          >
+                            <Text style={{ color: COLORS.ink1, fontSize: 13 }}>
+                              <Text style={{ fontWeight: '700' }}>@{p.username}</Text> - {p.name}
+                            </Text>
+                          </TouchableOpacity>
+                        ))
+                      }
+                      {profiles.filter(p => p.username?.toLowerCase().includes(behalfSearchText.toLowerCase()) || p.name?.toLowerCase().includes(behalfSearchText.toLowerCase())).length === 0 && (
+                        <Text style={{ padding: 10, color: COLORS.ink3, fontSize: 12.5, textAlign: 'center' }}>Nenhum membro encontrado.</Text>
+                      )}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+
               <Text style={S.label}>Título</Text>
               <TextInput style={S.input} placeholder="Ex: Grande reunião" placeholderTextColor={COLORS.ink3} value={title} onChangeText={setTitle} />
               

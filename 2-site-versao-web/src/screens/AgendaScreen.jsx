@@ -59,6 +59,8 @@ export default function AgendaScreen({ profile }) {
   const [cameraTarget, setCameraTarget] = useState(null); // 'event' | 'presence'
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const [onBehalfOfProfile, setOnBehalfOfProfile] = useState(null);
+  const [behalfSearchText, setBehalfSearchText] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -150,7 +152,7 @@ export default function AgendaScreen({ profile }) {
         location: location.trim(),
         lat: null,
         lng: null,
-        created_by: profile.id,
+        created_by: onBehalfOfProfile ? onBehalfOfProfile.id : profile.id,
         status: 'realizada',
         duration_minutes: parseInt(durationHours) * 60,
         attendees_count: parseInt(attendeesCount),
@@ -200,6 +202,7 @@ export default function AgendaScreen({ profile }) {
       setTitle(''); setDate(''); setLocation(''); setCoords(null);
       setDurationHours('2'); setAttendeesCount('15');
       setPresencePhotoFile(null); setMeetingPhotoFiles([]);
+      setOnBehalfOfProfile(null); setBehalfSearchText('');
       await load();
     } catch (err) {
       alert('Erro ao registrar evento: ' + err.message);
@@ -289,7 +292,56 @@ export default function AgendaScreen({ profile }) {
           <div className="modal" style={{ maxHeight: '90vh' }}>
             <div className="mhandle" />
             <h2 style={{ fontSize: 16, marginBottom: 14 }}>Cadastrar Evento</h2>
-            <form onSubmit={handleSave}>
+             <form onSubmit={handleSave}>
+              <label className="lbl">Cadastrar em nome de outro membro (Opcional)</label>
+              <div style={{ position: 'relative', marginBottom: 12 }}>
+                <input 
+                  placeholder="Pesquisar por usuário (digite 3 letras)..." 
+                  value={behalfSearchText} 
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setBehalfSearchText(val);
+                    if (onBehalfOfProfile) {
+                      setOnBehalfOfProfile(null);
+                    }
+                  }} 
+                />
+                {onBehalfOfProfile && (
+                  <button 
+                    type="button" 
+                    onClick={() => { setOnBehalfOfProfile(null); setBehalfSearchText(''); }}
+                    style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--warn)', fontWeight: '700', cursor: 'pointer', outline: 'none' }}
+                  >
+                    Limpar
+                  </button>
+                )}
+                {behalfSearchText.trim().length >= 3 && !onBehalfOfProfile && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, zIndex: 1000, maxHeight: 150, overflowY: 'auto', marginTop: 4 }}>
+                    {profiles
+                      .filter(p => p.username?.toLowerCase().includes(behalfSearchText.toLowerCase()) || p.name?.toLowerCase().includes(behalfSearchText.toLowerCase()))
+                      .slice(0, 5)
+                      .map(p => (
+                        <div 
+                          key={p.id} 
+                          onClick={() => {
+                            setOnBehalfOfProfile(p);
+                            setBehalfSearchText(`@${p.username} - ${p.name}`);
+                          }}
+                          style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid var(--line)', color: 'var(--ink1)', fontSize: 13 }}
+                          onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--panel2)'}
+                          onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                        >
+                          <strong>@{p.username}</strong> - {p.name}
+                        </div>
+                      ))
+                    }
+                    {profiles.filter(p => p.username?.toLowerCase().includes(behalfSearchText.toLowerCase()) || p.name?.toLowerCase().includes(behalfSearchText.toLowerCase())).length === 0 && (
+                      <div style={{ padding: '8px 12px', color: 'var(--ink3)', fontSize: 12.5 }}>Nenhum membro encontrado.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <label className="lbl">Título</label>
               <input placeholder="Ex: Grande reunião" value={title} onChange={(e) => setTitle(e.target.value)} required />
               
