@@ -24,7 +24,11 @@ CREATE POLICY "meetings_update_owner" ON public.meetings
 CREATE POLICY "meetings_delete_admin" ON public.meetings
   FOR DELETE USING (public.my_role() = 'admin');
 
--- 6. Restringir leitura (select) de eventos
+-- 6. Adicionar coluna inserted_by para rastrear quem realizou o cadastro
+ALTER TABLE public.meetings 
+  ADD COLUMN IF NOT EXISTS inserted_by uuid DEFAULT auth.uid();
+
+-- 7. Restringir leitura (select) de eventos
 DROP POLICY IF EXISTS "meetings_select_all" ON public.meetings;
 DROP POLICY IF EXISTS "meetings_select_admin_coord" ON public.meetings;
 DROP POLICY IF EXISTS "meetings_select_owner" ON public.meetings;
@@ -35,4 +39,6 @@ CREATE POLICY "meetings_select_admin_coord" ON public.meetings
 CREATE POLICY "meetings_select_owner" ON public.meetings
   FOR SELECT USING (
     created_by = (SELECT id FROM public.profiles WHERE auth_id = auth.uid() LIMIT 1)
+    OR
+    inserted_by = auth.uid()
   );
