@@ -163,42 +163,36 @@ export default function AgendaScreen({ profile }) {
     ]);
   }
 
-  async function handlePickPresencePhoto() {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Acesso negado', 'Precisamos de acesso para fotos.'); return; }
-    
-    Alert.alert('Anexar Lista Física', 'Como deseja anexar a foto?', [
-      { text: 'Tirar Foto', onPress: async () => {
-          const res = await ImagePicker.launchCameraAsync({ quality: 0.2, maxWidth: 600, maxHeight: 600, allowsEditing: true });
-          if (!res.canceled) setPresencePhoto(res.assets[0].uri);
-      }},
-      { text: 'Escolher da Galeria', onPress: async () => {
-          const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.2, maxWidth: 600, maxHeight: 600, allowsEditing: true });
-          if (!res.canceled) setPresencePhoto(res.assets[0].uri);
-      }},
-      { text: 'Cancelar', style: 'cancel' }
-    ]);
+  async function handlePickPresencePhoto(isCamera) {
+    if (isCamera) {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) { Alert.alert('Acesso negado 🚨', 'Precisamos de acesso à câmera para tirar a foto.'); return; }
+      const res = await ImagePicker.launchCameraAsync({ quality: 0.2, maxWidth: 600, maxHeight: 600, allowsEditing: true });
+      if (!res.canceled) setPresencePhoto(res.assets[0].uri);
+    } else {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) { Alert.alert('Acesso negado 🚨', 'Precisamos de acesso à galeria para selecionar a foto.'); return; }
+      const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.2, maxWidth: 600, maxHeight: 600, allowsEditing: true });
+      if (!res.canceled) setPresencePhoto(res.assets[0].uri);
+    }
   }
 
-  async function handleAddMeetingPhoto() {
+  async function handleAddMeetingPhoto(isCamera) {
     if (meetingPhotos.length >= 1) {
       Alert.alert('Limite máximo', 'Você pode anexar no máximo 1 foto do evento.');
       return;
     }
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) { Alert.alert('Acesso negado', 'Precisamos de acesso.'); return; }
-    
-    Alert.alert('Foto do Evento', 'Selecione a fonte da foto:', [
-      { text: 'Tirar Foto', onPress: async () => {
-          const res = await ImagePicker.launchCameraAsync({ quality: 0.2, maxWidth: 600, maxHeight: 600, allowsEditing: true });
-          if (!res.canceled) setMeetingPhotos(prev => [...prev, res.assets[0].uri]);
-      }},
-      { text: 'Escolher da Galeria', onPress: async () => {
-          const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.2, maxWidth: 600, maxHeight: 600, allowsEditing: true });
-          if (!res.canceled) setMeetingPhotos(prev => [...prev, res.assets[0].uri]);
-      }},
-      { text: 'Cancelar', style: 'cancel' }
-    ]);
+    if (isCamera) {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) { Alert.alert('Acesso negado 🚨', 'Precisamos de acesso à câmera para tirar a foto.'); return; }
+      const res = await ImagePicker.launchCameraAsync({ quality: 0.2, maxWidth: 600, maxHeight: 600, allowsEditing: true });
+      if (!res.canceled) setMeetingPhotos(prev => [...prev, res.assets[0].uri]);
+    } else {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) { Alert.alert('Acesso negado 🚨', 'Precisamos de acesso à galeria para selecionar a foto.'); return; }
+      const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.2, maxWidth: 600, maxHeight: 600, allowsEditing: true });
+      if (!res.canceled) setMeetingPhotos(prev => [...prev, res.assets[0].uri]);
+    }
   }
 
   // Estatísticas de eventos realizados
@@ -298,34 +292,42 @@ export default function AgendaScreen({ profile }) {
 
               {/* Fotos do Evento */}
               <Text style={S.label}>Foto do Evento (Anexar 1 foto)</Text>
-              <TouchableOpacity style={[S.btn, S.btnGhost, { marginBottom: 12 }]} onPress={handleAddMeetingPhoto}>
-                <Text style={S.btnTextGhost}>📸 Anexar Foto ({meetingPhotos.length}/1)</Text>
-              </TouchableOpacity>
-              
-              {meetingPhotos.length > 0 && (
-                <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-                  {meetingPhotos.map((uri, idx) => (
-                    <View key={idx} style={{ position: 'relative' }}>
-                      <Image source={{ uri }} style={{ width: 60, height: 60, borderRadius: 8 }} />
-                      <TouchableOpacity style={{ position: 'absolute', top: -4, right: -4, backgroundColor: COLORS.warn, borderRadius: 10, width: 20, height: 20, justifyContent: 'center', alignItems: 'center' }} onPress={() => setMeetingPhotos(prev => prev.filter((_, i) => i !== idx))}>
-                        <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>X</Text>
-                      </TouchableOpacity>
-                    </View>
-                  ))}
+              {meetingPhotos.length > 0 ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.panel2, padding: 10, borderRadius: 12, marginBottom: 12 }}>
+                  <Image source={{ uri: meetingPhotos[0] }} style={{ width: 50, height: 50, borderRadius: 8 }} />
+                  <Text style={{ color: COLORS.ink1, fontSize: 12.5, flex: 1 }}>Foto do evento anexada ✅</Text>
+                  <TouchableOpacity style={[S.btn, S.btnWarn, { width: 'auto', marginBottom: 0, paddingVertical: 6, paddingHorizontal: 12 }]} onPress={() => setMeetingPhotos([])}>
+                    <Text style={[S.btnTextWarn, { fontSize: 11 }]}>Remover</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+                  <TouchableOpacity style={[S.btn, S.btnGhost, { flex: 1, marginBottom: 0 }]} onPress={() => handleAddMeetingPhoto(true)}>
+                    <Text style={S.btnTextGhost}>📸 Tirar Foto</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[S.btn, S.btnGhost, { flex: 1, marginBottom: 0 }]} onPress={() => handleAddMeetingPhoto(false)}>
+                    <Text style={S.btnTextGhost}>🖼️ Galeria</Text>
+                  </TouchableOpacity>
                 </View>
               )}
 
               {/* Foto da Lista Física */}
               <Text style={S.label}>Foto da Lista de Presentes (Nome e Telefone)</Text>
-              <TouchableOpacity style={[S.btn, S.btnGhost, { marginBottom: 12 }]} onPress={handlePickPresencePhoto}>
-                <Text style={S.btnTextGhost}>{presencePhoto ? '✅ Foto Anexada (Clique para Alterar)' : '📸 Anexar Foto da Lista'}</Text>
-              </TouchableOpacity>
-              
-              {presencePhoto && (
-                <View style={{ position: 'relative', alignSelf: 'flex-start', marginBottom: 12 }}>
-                  <Image source={{ uri: presencePhoto }} style={{ width: 100, height: 100, borderRadius: 8 }} />
-                  <TouchableOpacity style={{ position: 'absolute', top: -4, right: -4, backgroundColor: COLORS.warn, borderRadius: 10, width: 20, height: 20, justifyContent: 'center', alignItems: 'center' }} onPress={() => setPresencePhoto(null)}>
-                    <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>X</Text>
+              {presencePhoto ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: COLORS.panel2, padding: 10, borderRadius: 12, marginBottom: 12 }}>
+                  <Image source={{ uri: presencePhoto }} style={{ width: 50, height: 50, borderRadius: 8 }} />
+                  <Text style={{ color: COLORS.ink1, fontSize: 12.5, flex: 1 }}>Foto da lista anexada ✅</Text>
+                  <TouchableOpacity style={[S.btn, S.btnWarn, { width: 'auto', marginBottom: 0, paddingVertical: 6, paddingHorizontal: 12 }]} onPress={() => setPresencePhoto(null)}>
+                    <Text style={[S.btnTextWarn, { fontSize: 11 }]}>Remover</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+                  <TouchableOpacity style={[S.btn, S.btnGhost, { flex: 1, marginBottom: 0 }]} onPress={() => handlePickPresencePhoto(true)}>
+                    <Text style={S.btnTextGhost}>📸 Tirar da Lista</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[S.btn, S.btnGhost, { flex: 1, marginBottom: 0 }]} onPress={() => handlePickPresencePhoto(false)}>
+                    <Text style={S.btnTextGhost}>🖼️ Galeria</Text>
                   </TouchableOpacity>
                 </View>
               )}
