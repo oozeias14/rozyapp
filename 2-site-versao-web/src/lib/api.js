@@ -60,7 +60,6 @@ export async function deleteMeeting(id) {
   const { error } = await supabase.from('meetings').delete().eq('id', id);
   if (error) throw error;
 }
-
 // ── MENSAGENS ─────────────────────────────────────────────
 export async function fetchMessages() {
   const { data, error } = await supabase

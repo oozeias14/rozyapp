@@ -43,6 +43,7 @@ export default function AgendaScreen({ profile }) {
   const [selectedMeetingDetails, setSelectedMeetingDetails] = useState(null);
   const [onBehalfOfProfile, setOnBehalfOfProfile] = useState(null);
   const [behalfSearchText, setBehalfSearchText] = useState('');
+  const [participantSearchText, setParticipantSearchText] = useState('');
 
   const canAdd = true; // Qualquer usuário logado pode registrar eventos
 
@@ -420,6 +421,104 @@ export default function AgendaScreen({ profile }) {
                   <Text style={styles.statLabel}>👥 Presentes</Text>
                   <Text style={styles.statValue}>{selectedMeetingDetails?.attendees_count || 0}</Text>
                 </View>
+              </View>
+
+              {/* Participantes do Evento */}
+              <View style={{ borderTopWidth: 1, borderTopColor: COLORS.line, paddingTop: 14, marginTop: 14 }}>
+                <Text style={S.label}>Membros Participantes</Text>
+                
+                {(!selectedMeetingDetails?.presence_list || selectedMeetingDetails.presence_list.length === 0) ? (
+                  <Text style={[S.muted, { fontSize: 13, marginBottom: 8 }]}>Nenhum membro marcado neste evento.</Text>
+                ) : (
+                  <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                    {(selectedMeetingDetails.presence_list || []).map((userObj) => (
+                      <View 
+                        key={userObj.id} 
+                        style={{ 
+                          flexDirection: 'row', 
+                          alignItems: 'center', 
+                          gap: 6, 
+                          backgroundColor: COLORS.panel2, 
+                          borderWidth: 1, 
+                          borderColor: COLORS.line, 
+                          borderRadius: 20, 
+                          paddingVertical: 4, 
+                          paddingHorizontal: 10 
+                        }}
+                      >
+                        <Text style={{ color: COLORS.ink1, fontSize: 12 }}>@{userObj.username}</Text>
+                        
+                        {(profile.role === 'admin' || selectedMeetingDetails.created_by === profile.id) && (
+                          <TouchableOpacity 
+                            onPress={async () => {
+                              const updated = (selectedMeetingDetails.presence_list || []).filter(u => u.id !== userObj.id);
+                              try {
+                                await updateMeeting(selectedMeetingDetails.id, { presence_list: updated });
+                                setSelectedMeetingDetails(prev => ({ ...prev, presence_list: updated }));
+                                await load();
+                              } catch (err) {
+                                Alert.alert('Erro', 'Não foi possível remover participante: ' + err.message);
+                              }
+                            }}
+                          >
+                            <Text style={{ color: COLORS.warn, fontWeight: '700', marginLeft: 4 }}>✕</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* Autocomplete para adicionar participante */}
+                {(profile.role === 'admin' || selectedMeetingDetails?.created_by === profile.id) && (
+                  <View style={{ position: 'relative', marginTop: 8 }}>
+                    <TextInput 
+                      style={[S.input, { fontSize: 12, paddingVertical: 6, paddingHorizontal: 10, minHeight: 36 }]}
+                      placeholder="Pesquisar participante por usuário..." 
+                      placeholderTextColor={COLORS.ink3}
+                      value={participantSearchText} 
+                      onChangeText={setParticipantSearchText} 
+                    />
+                    {participantSearchText.trim().length >= 3 && (
+                      <View style={{ backgroundColor: COLORS.panel2, borderWidth: 1, borderColor: COLORS.line, borderRadius: 8, maxHeight: 120, padding: 4, marginTop: 4 }}>
+                        <ScrollView nestedScrollEnabled style={{ maxHeight: 110 }}>
+                          {profiles
+                            .filter(p => p.username?.toLowerCase().includes(participantSearchText.toLowerCase()) || p.name?.toLowerCase().includes(participantSearchText.toLowerCase()))
+                            .filter(p => !(selectedMeetingDetails?.presence_list || []).some(existing => existing.id === p.id))
+                            .slice(0, 5)
+                            .map(p => (
+                              <TouchableOpacity 
+                                key={p.id} 
+                                style={{ padding: 8, borderBottomWidth: 1, borderBottomColor: COLORS.line }}
+                                onPress={async () => {
+                                  const updated = [...(selectedMeetingDetails?.presence_list || []), { id: p.id, username: p.username, name: p.name }];
+                                  try {
+                                    await updateMeeting(selectedMeetingDetails.id, { presence_list: updated });
+                                    setSelectedMeetingDetails(prev => ({ ...prev, presence_list: updated }));
+                                    setParticipantSearchText('');
+                                    await load();
+                                  } catch (err) {
+                                    Alert.alert('Erro', 'Não foi possível adicionar participante: ' + err.message);
+                                  }
+                                }}
+                              >
+                                <Text style={{ color: COLORS.ink1, fontSize: 12.5 }}>
+                                  <Text style={{ fontWeight: '700' }}>@{p.username}</Text> - {p.name}
+                                </Text>
+                              </TouchableOpacity>
+                            ))
+                          }
+                          {profiles
+                            .filter(p => p.username?.toLowerCase().includes(participantSearchText.toLowerCase()) || p.name?.toLowerCase().includes(participantSearchText.toLowerCase()))
+                            .filter(p => !(selectedMeetingDetails?.presence_list || []).some(existing => existing.id === p.id))
+                            .length === 0 && (
+                              <Text style={{ padding: 8, color: COLORS.ink3, fontSize: 12, textAlign: 'center' }}>Nenhum membro disponível.</Text>
+                            )}
+                        </ScrollView>
+                      </View>
+                    )}
+                  </View>
+                )}
               </View>
 
               {/* Lista de fotos anexadas */}

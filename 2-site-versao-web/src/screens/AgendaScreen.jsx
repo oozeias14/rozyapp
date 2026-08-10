@@ -61,6 +61,7 @@ export default function AgendaScreen({ profile }) {
   const streamRef = useRef(null);
   const [onBehalfOfProfile, setOnBehalfOfProfile] = useState(null);
   const [behalfSearchText, setBehalfSearchText] = useState('');
+  const [participantSearchText, setParticipantSearchText] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -419,6 +420,106 @@ export default function AgendaScreen({ profile }) {
                 <div style={{ fontSize: 10, color: 'var(--ink2)', textTransform: 'uppercase' }}>👥 Presentes</div>
                 <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4 }}>{selectedMeetingDetails.attendees_count || 0}</div>
               </div>
+            </div>
+
+            {/* Participantes do Evento */}
+            <div style={{ marginBottom: 14, borderTop: '1px solid var(--line)', paddingTop: 14 }}>
+              <label className="lbl">Membros Participantes</label>
+              
+              {/* Se a lista estiver vazia */}
+              {(!selectedMeetingDetails.presence_list || selectedMeetingDetails.presence_list.length === 0) ? (
+                <div style={{ fontSize: 12.5, color: 'var(--ink3)', marginBottom: 8 }}>Nenhum membro marcado neste evento.</div>
+              ) : (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                  {(selectedMeetingDetails.presence_list || []).map((userObj) => (
+                    <span 
+                      key={userObj.id} 
+                      style={{ 
+                        display: 'inline-flex', 
+                        alignItems: 'center', 
+                        gap: 6, 
+                        background: 'var(--panel2)', 
+                        border: '1px solid var(--line)', 
+                        borderRadius: 20, 
+                        padding: '4px 10px', 
+                        fontSize: 12, 
+                        color: 'var(--ink1)' 
+                      }}
+                    >
+                      @{userObj.username}
+                      
+                      {/* Se o usuário for o criador do evento ou admin, ele pode remover participantes */}
+                      {(profile.role === 'admin' || selectedMeetingDetails.created_by === profile.id) && (
+                        <span 
+                          onClick={async () => {
+                            const updated = (selectedMeetingDetails.presence_list || []).filter(u => u.id !== userObj.id);
+                            try {
+                              await updateMeeting(selectedMeetingDetails.id, { presence_list: updated });
+                              setSelectedMeetingDetails(prev => ({ ...prev, presence_list: updated }));
+                              await load();
+                            } catch (err) {
+                              alert('Erro ao remover participante: ' + err.message);
+                            }
+                          }}
+                          style={{ color: 'var(--warn)', fontWeight: 'bold', cursor: 'pointer', marginLeft: 4 }}
+                          title="Remover"
+                        >
+                          ✕
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Se o usuário for o criador do evento ou admin, ele pode adicionar novos participantes */}
+              {(profile.role === 'admin' || selectedMeetingDetails.created_by === profile.id) && (
+                <div style={{ position: 'relative', marginTop: 8 }}>
+                  <input 
+                    placeholder="Pesquisar participante por usuário..." 
+                    value={participantSearchText} 
+                    onChange={(e) => setParticipantSearchText(e.target.value)} 
+                    style={{ fontSize: 12, padding: '6px 10px' }}
+                  />
+                  {participantSearchText.trim().length >= 3 && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, zIndex: 1000, maxHeight: 120, overflowY: 'auto', marginTop: 4 }}>
+                      {profiles
+                        .filter(p => p.username?.toLowerCase().includes(participantSearchText.toLowerCase()) || p.name?.toLowerCase().includes(participantSearchText.toLowerCase()))
+                        // Não mostrar usuários que já estão na lista
+                        .filter(p => !(selectedMeetingDetails.presence_list || []).some(existing => existing.id === p.id))
+                        .slice(0, 5)
+                        .map(p => (
+                          <div 
+                            key={p.id} 
+                            onClick={async () => {
+                              const updated = [...(selectedMeetingDetails.presence_list || []), { id: p.id, username: p.username, name: p.name }];
+                              try {
+                                await updateMeeting(selectedMeetingDetails.id, { presence_list: updated });
+                                setSelectedMeetingDetails(prev => ({ ...prev, presence_list: updated }));
+                                setParticipantSearchText('');
+                                await load();
+                              } catch (err) {
+                                alert('Erro ao adicionar participante: ' + err.message);
+                              }
+                            }}
+                            style={{ padding: '6px 10px', cursor: 'pointer', borderBottom: '1px solid var(--line)', color: 'var(--ink1)', fontSize: 12.5 }}
+                            onMouseEnter={(e) => e.target.style.backgroundColor = 'var(--panel2)'}
+                            onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+                          >
+                            <strong>@{p.username}</strong> - {p.name}
+                          </div>
+                        ))
+                      }
+                      {profiles
+                        .filter(p => p.username?.toLowerCase().includes(participantSearchText.toLowerCase()) || p.name?.toLowerCase().includes(participantSearchText.toLowerCase()))
+                        .filter(p => !(selectedMeetingDetails.presence_list || []).some(existing => existing.id === p.id))
+                        .length === 0 && (
+                          <div style={{ padding: '6px 10px', color: 'var(--ink3)', fontSize: 12 }}>Nenhum membro disponível.</div>
+                        )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Fotos registradas */}
