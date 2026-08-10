@@ -52,8 +52,9 @@ export async function fetchMeetings() {
   return data;
 }
 export async function createMeeting(meeting) {
-  const { error } = await supabase.from('meetings').insert(meeting);
+  const { data, error } = await supabase.from('meetings').insert(meeting).select('*');
   if (error) throw error;
+  return data?.[0] || data;
 }
 export async function deleteMeeting(id) {
   const { error } = await supabase.from('meetings').delete().eq('id', id);

@@ -30,42 +30,19 @@ export default function AgendaScreen({ profile }) {
   const [location, setLocation] = useState('');
   const [coords, setCoords] = useState(null); 
   const [capturing, setCapturing] = useState(false);
-
-  // Controle de Live
-  const [activeLive, setActiveLive] = useState(null); // reunião ativa
-  const [liveMode, setLiveMode] = useState(null); // 'host' | 'viewer'
-  const [cameraPermission, setCameraPermission] = useState(null);
-  const [liveComments, setLiveComments] = useState([]);
-  const [commentText, setCommentText] = useState('');
-  const [viewerCount, setViewerCount] = useState(12);
-  const [liveTimer, setLiveTimer] = useState('00:00');
-  const [liveElapsed, setLiveElapsed] = useState(0);
-  
-  // Controle de Encerramento/Registro Manual
-  const [completionModalOpen, setCompletionModalOpen] = useState(false);
-  const [completingMeeting, setCompletingMeeting] = useState(null);
   const [durationHours, setDurationHours] = useState('2');
   const [attendeesCount, setAttendeesCount] = useState('15');
   const [searchMember, setSearchMember] = useState('');
   const [presentMembers, setPresentMembers] = useState([]); // Array de perfis selecionados
   const [presencePhoto, setPresencePhoto] = useState(null); // uri local da foto da lista fisica
-  const [meetingPhotos, setMeetingPhotos] = useState([]); // uuris locais das fotos da reuniao
+  const [meetingPhotos, setMeetingPhotos] = useState([]); // uris locais das fotos da reuniao
   const [savingCompletion, setSavingCompletion] = useState(false);
-  const [completionLocation, setCompletionLocation] = useState('');
 
   // Controle de Visualização de Detalhes
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedMeetingDetails, setSelectedMeetingDetails] = useState(null);
 
-  const cameraRef = useRef(null);
-  const commentScrollRef = useRef(null);
-  const commentCache = useRef({});
-  const timerIntervalRef = useRef(null);
-  const printIntervalRef = useRef(null);
-  const viewerIntervalRef = useRef(null);
-
-  const canAdd = true;
-  const hasLivePermission = profile.live_enabled !== false;
+  const canAdd = true; // Qualquer usuário logado pode registrar eventos
 
   const load = useCallback(async () => {
     try {
@@ -81,13 +58,6 @@ export default function AgendaScreen({ profile }) {
   useEffect(() => { load(); }, [load]);
 
   async function onRefresh() { setRefreshing(true); await load(); setRefreshing(false); }
-
-  async function notify(m) {
-    await Notifications.scheduleNotificationAsync({
-      content: { title: m.title, body: `${new Date(m.date).toLocaleDateString('pt-BR')} às ${m.time} — ${m.location}` },
-      trigger: null,
-    });
-  }
 
   async function captureLocation() {
     setCapturing(true);
@@ -109,216 +79,84 @@ export default function AgendaScreen({ profile }) {
   }
 
   async function handleSave() {
-    if (!title.trim() || !date.trim()) { Alert.alert('Preencha título e data'); return; }
+    if (!title.trim() || !date.trim() || !location.trim()) { 
+      Alert.alert('Preencha os campos obrigatórios', 'Por favor, preencha o título, a data e o local do evento.'); 
+      return; 
+    }
+    setSavingCompletion(true);
     try {
-      await createMeeting({
-        title: title.trim(), date, time: time || '—', location: location || 'A definir',
-        lat: coords?.lat ?? null, lng: coords?.lng ?? null,
-        created_by: profile.id, status: 'agendada'
+      // 1. Criar o evento no banco de dados com status 'realizada'
+      const newMeet = await createMeeting({
+        title: title.trim(),
+        date,
+        time: time || '—',
+        location: location.trim(),
+        lat: coords?.lat ?? null,
+        lng: coords?.lng ?? null,
+        created_by: profile.id,
+        status: 'realizada',
+        duration_minutes: parseInt(durationHours) * 60,
+        attendees_count: parseInt(attendeesCount),
+        presence_list: presentMembers.map(m => ({ id: m.id, name: m.name }))
       });
+
+      const meetId = newMeet.id;
+      let finalPresencePhotoUrl = null;
+      let finalPhotos = [];
+
+      // 2. Upload de foto da lista física
+      if (presencePhoto) {
+        const response = await fetch(presencePhoto);
+        const blob = await response.blob();
+        const filename = `meeting_${meetId}/presence_list.jpg`;
+        const { error: uploadError } = await supabase.storage.from('meetings').upload(filename, blob, { upsert: true });
+        if (uploadError) throw uploadError;
+        const { data: pub } = supabase.storage.from('meetings').getPublicUrl(filename);
+        finalPresencePhotoUrl = pub.publicUrl;
+      }
+
+      // 3. Upload de fotos da reunião
+      for (const uri of meetingPhotos) {
+        if (finalPhotos.length >= 3) break;
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        const filename = `meeting_${meetId}/photo_${Date.now()}_${Math.floor(Math.random()*1000)}.jpg`;
+        const { error: uploadError } = await supabase.storage.from('meetings').upload(filename, blob, { upsert: true });
+        if (uploadError) throw uploadError;
+        const { data: pub } = supabase.storage.from('meetings').getPublicUrl(filename);
+        finalPhotos.push(pub.publicUrl);
+      }
+
+      // 4. Salvar as URLs no registro do evento
+      if (finalPresencePhotoUrl || finalPhotos.length > 0) {
+        await updateMeeting(meetId, {
+          presence_photo_url: finalPresencePhotoUrl,
+          photos: finalPhotos
+        });
+      }
+
+      Alert.alert('Sucesso ✅', 'Evento registrado e publicado com sucesso!');
       setModalOpen(false);
+
+      // Limpar formulário
       setTitle(''); setDate(''); setTime(''); setLocation(''); setCoords(null);
+      setDurationHours('2'); setAttendeesCount('15');
+      setPresentMembers([]); setPresencePhoto(null); setMeetingPhotos([]);
       await load();
-      await Notifications.scheduleNotificationAsync({ content: { title: 'Nova reunião agendada!', body: title }, trigger: null });
     } catch (e) {
-      Alert.alert('Erro ao agendar', e.message);
+      Alert.alert('Erro ao cadastrar evento', e.message);
+    } finally {
+      setSavingCompletion(false);
     }
   }
 
   async function handleDelete(id) {
-    Alert.alert('Excluir reunião', 'Deseja excluir esta reunião?', [
+    Alert.alert('Excluir evento', 'Deseja excluir este evento permanentemente?', [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Excluir', style: 'destructive', onPress: async () => {
           try { await deleteMeeting(id); await load(); } catch (e) { Alert.alert('Erro', e.message); }
       }}
     ]);
-  }
-
-  // --- CONTROLE DE REUNIÕES AO VIVO (LIVE) ---
-
-  async function requestCamera() {
-    const { status } = await Camera.requestCameraPermissionsAsync();
-    setCameraPermission(status === 'granted');
-    return status === 'granted';
-  }
-
-  async function startLive(m) {
-    if (!hasLivePermission) {
-      Alert.alert('Permissão negada 🚨', 'Você foi penalizado e a função de Live está desativada. Entre em contato com o administrador.');
-      return;
-    }
-    const hasCam = await requestCamera();
-    if (!hasCam) {
-      Alert.alert('Câmera necessária', 'Precisamos de acesso à câmera para transmitir.');
-      return;
-    }
-
-    try {
-      // Atualiza banco para live
-      await updateMeeting(m.id, { status: 'em_andamento', live_started_at: new Date().toISOString() });
-      const updatedM = { ...m, status: 'em_andamento', live_started_at: new Date().toISOString() };
-      
-      setActiveLive(updatedM);
-      setLiveMode('host');
-      setLiveElapsed(0);
-      setLiveTimer('00:00');
-      setViewerCount(Math.floor(Math.random() * 5) + 12);
-      
-      // Carrega comentários iniciais
-      const comments = await fetchLiveComments(m.id);
-      setLiveComments(comments || []);
-
-      // Inicia loops de tempo, visualizadores e print automático
-      startLiveIntervals(m.id);
-    } catch (e) {
-      Alert.alert('Erro ao iniciar Live', e.message);
-    }
-  }
-
-  async function joinLive(m) {
-    setActiveLive(m);
-    setLiveMode('viewer');
-    setLiveElapsed(0);
-    setLiveTimer('00:00');
-    setViewerCount(Math.floor(Math.random() * 10) + 15);
-    
-    // Carrega comentários iniciais
-    const comments = await fetchLiveComments(m.id);
-    setLiveComments(comments || []);
-
-    startLiveIntervals(m.id);
-  }
-
-  function startLiveIntervals(meetingId) {
-    // Timer
-    let elapsed = 0;
-    timerIntervalRef.current = setInterval(() => {
-      elapsed += 1;
-      setLiveElapsed(elapsed);
-      const min = String(Math.floor(elapsed / 60)).padStart(2, '0');
-      const sec = String(elapsed % 60).padStart(2, '0');
-      setLiveTimer(`${min}:${sec}`);
-    }, 1000);
-
-    // Espectadores dinâmicos
-    viewerIntervalRef.current = setInterval(() => {
-      setViewerCount(prev => {
-        const delta = Math.floor(Math.random() * 3) - 1; // -1, 0, 1
-        return Math.max(1, prev + delta);
-      });
-    }, 5000);
-
-    // Prints automáticos (a cada 10 min = 600000ms)
-    if (liveMode === 'host' || profile.role === 'admin' || profile.role === 'coord') {
-      printIntervalRef.current = setInterval(() => {
-        triggerAutoPrint(meetingId);
-      }, 600000);
-    }
-
-    // Inscrição Realtime no Supabase
-    const channel = supabase.channel(`live-comments-${meetingId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_comments', filter: `meeting_id=eq.${meetingId}` }, async (payload) => {
-        const profileId = payload.new.profile_id;
-        let senderName = commentCache.current[profileId];
-        if (!senderName) {
-          const sender = await fetchProfileById(profileId);
-          senderName = sender?.name || 'Membro';
-          commentCache.current[profileId] = senderName;
-        }
-        const comment = { ...payload.new, profiles: { name: senderName } };
-        setLiveComments(prev => [...prev, comment]);
-        setTimeout(() => commentScrollRef.current?.scrollToEnd({ animated: true }), 100);
-      })
-      .subscribe();
-
-    activeLiveChannelRef.current = channel;
-  }
-
-  const activeLiveChannelRef = useRef(null);
-
-  function stopLiveIntervals() {
-    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-    if (printIntervalRef.current) clearInterval(printIntervalRef.current);
-    if (viewerIntervalRef.current) clearInterval(viewerIntervalRef.current);
-    if (activeLiveChannelRef.current) {
-      supabase.removeChannel(activeLiveChannelRef.current);
-    }
-  }
-
-  async function triggerAutoPrint(meetingId) {
-    if (!cameraRef.current) return;
-    try {
-      const pic = await cameraRef.current.takePictureAsync({ quality: 0.6 });
-      if (!pic) return;
-
-      const response = await fetch(pic.uri);
-      const blob = await response.blob();
-      const path = `meeting_${meetingId}/auto_print_${Date.now()}.jpg`;
-
-      // Upload no storage meetings
-      const { error: uploadError } = await supabase.storage.from('meetings').upload(path, blob, { contentType: 'image/jpeg' });
-      if (uploadError) throw uploadError;
-
-      const { data: pub } = supabase.storage.from('meetings').getPublicUrl(path);
-      const url = pub.publicUrl;
-
-      // Adiciona nos arrays de fotos do meeting
-      const { data: m } = await supabase.from('meetings').select('photos').eq('id', meetingId).single();
-      const currentPhotos = m?.photos || [];
-      if (currentPhotos.length < 3) {
-        const updatedPhotos = [...currentPhotos, url];
-        await supabase.from('meetings').update({ photos: updatedPhotos }).eq('id', meetingId);
-      }
-    } catch (e) {
-      console.log('Erro no auto print:', e);
-    }
-  }
-
-  async function sendComment() {
-    if (!commentText.trim() || !activeLive) return;
-    try {
-      await createLiveComment(activeLive.id, profile.id, commentText.trim());
-      setCommentText('');
-    } catch (e) {
-      Alert.alert('Erro ao enviar', e.message);
-    }
-  }
-
-  function leaveLive() {
-    stopLiveIntervals();
-    setActiveLive(null);
-    setLiveMode(null);
-    load();
-  }
-
-  async function closeLiveAsHost() {
-    const meetId = activeLive.id;
-    stopLiveIntervals();
-    setActiveLive(null);
-    setLiveMode(null);
-    
-    // Abre tela de finalização para registrar dados de fechamento
-    setCompletingMeeting(meetings.find(m => m.id === meetId) || activeLive);
-    setDurationHours('2');
-    setAttendeesCount('15');
-    setPresentMembers([]);
-    setPresencePhoto(null);
-    setMeetingPhotos([]);
-    setCompletionLocation(m.location || '');
-    setCompletionModalOpen(true);
-  }
-
-  // --- FINALIZAÇÃO E REGISTRO MANUAL DE REUNIÕES ---
-
-  function openManualCompletion(m) {
-    setCompletingMeeting(m);
-    setDurationHours('2');
-    setAttendeesCount('15');
-    setCompletionLocation(m.location || '');
-    setPresentMembers([]);
-    setPresencePhoto(null);
-    setMeetingPhotos([]);
-    setCompletionModalOpen(true);
   }
 
   async function handlePickPresencePhoto() {
@@ -340,13 +178,13 @@ export default function AgendaScreen({ profile }) {
 
   async function handleAddMeetingPhoto() {
     if (meetingPhotos.length >= 3) {
-      Alert.alert('Limite máximo', 'Você pode anexar no máximo 3 fotos por reunião.');
+      Alert.alert('Limite máximo', 'Você pode anexar no máximo 3 fotos por evento.');
       return;
     }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) { Alert.alert('Acesso negado', 'Precisamos de acesso.'); return; }
     
-    Alert.alert('Foto da Reunião', 'Selecione a fonte da foto:', [
+    Alert.alert('Foto do Evento', 'Selecione a fonte da foto:', [
       { text: 'Tirar Foto', onPress: async () => {
           const res = await ImagePicker.launchCameraAsync({ quality: 0.8 });
           if (!res.canceled) setMeetingPhotos(prev => [...prev, res.assets[0].uri]);
@@ -359,64 +197,7 @@ export default function AgendaScreen({ profile }) {
     ]);
   }
 
-  async function saveCompletion() {
-    if (!durationHours.trim() || !attendeesCount.trim()) {
-      Alert.alert('Preencha os campos obrigatórios');
-      return;
-    }
-    setSavingCompletion(true);
-    try {
-      const meetId = completingMeeting.id;
-      let finalPresencePhotoUrl = completingMeeting.presence_photo_url || null;
-      let finalPhotos = completingMeeting.photos || [];
-
-      // 1. Upload de foto da lista física
-      if (presencePhoto) {
-        const response = await fetch(presencePhoto);
-        const blob = await response.blob();
-        const filename = `meeting_${meetId}/presence_list.jpg`;
-        const { error: uploadError } = await supabase.storage.from('meetings').upload(filename, blob, { upsert: true });
-        if (uploadError) throw uploadError;
-        const { data: pub } = supabase.storage.from('meetings').getPublicUrl(filename);
-        finalPresencePhotoUrl = pub.publicUrl;
-      }
-
-      // 2. Upload de fotos da reunião
-      for (const uri of meetingPhotos) {
-        if (finalPhotos.length >= 3) break;
-        const response = await fetch(uri);
-        const blob = await response.blob();
-        const filename = `meeting_${meetId}/photo_${Date.now()}_${Math.floor(Math.random()*1000)}.jpg`;
-        const { error: uploadError } = await supabase.storage.from('meetings').upload(filename, blob, { upsert: true });
-        if (uploadError) throw uploadError;
-        const { data: pub } = supabase.storage.from('meetings').getPublicUrl(filename);
-        finalPhotos.push(pub.publicUrl);
-      }
-
-      // 3. Salva no banco de dados
-      const payload = {
-        status: 'realizada',
-        location: completionLocation.trim() || completingMeeting.location || 'A definir',
-        duration_minutes: parseInt(durationHours) * 60,
-        attendees_count: parseInt(attendeesCount),
-        presence_list: presentMembers.map(m => ({ id: m.id, name: m.name })),
-        presence_photo_url: finalPresencePhotoUrl,
-        photos: finalPhotos
-      };
-
-      await updateMeeting(meetId, payload);
-      Alert.alert('Sucesso ✅', 'Reunião concluída e registrada de forma transparente.');
-      setCompletionModalOpen(false);
-      setCompletingMeeting(null);
-      await load();
-    } catch (e) {
-      Alert.alert('Erro ao finalizar', e.message);
-    } finally {
-      setSavingCompletion(false);
-    }
-  }
-
-  // Estatísticas de reuniões realizadas
+  // Estatísticas de eventos realizados
   const completedMeetings = meetings.filter(m => m.status === 'realizada');
   const totalHours = completedMeetings.reduce((acc, m) => acc + (m.duration_minutes || 0) / 60, 0);
   const totalAttendees = completedMeetings.reduce((acc, m) => acc + (m.attendees_count || 0), 0);
@@ -445,36 +226,23 @@ export default function AgendaScreen({ profile }) {
           </View>
         </View>
 
-        <View style={S.rowBetween}>
+        <View style={[S.rowBetween, { marginBottom: 10 }]}>
           <Text style={{ color: COLORS.ink1, fontSize: 17, fontWeight: '700', marginVertical: 8 }}>Eventos</Text>
-          {canAdd && (
-            <TouchableOpacity style={[S.btn, S.btnViolet, { marginBottom: 0, paddingHorizontal: 14 }]} onPress={() => setModalOpen(true)}>
-              <Text style={S.btnTextLight}>+ Novo Evento</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity style={[S.btn, S.btnViolet, { width: 'auto', marginBottom: 0, paddingVertical: 8, paddingHorizontal: 16 }]} onPress={() => setModalOpen(true)}>
+            <Text style={S.btnTextLight}>+ Novo Evento</Text>
+          </TouchableOpacity>
         </View>
 
-        {!canAdd && (
-          <View style={styles.infoBanner}>
-            <Text style={{ color: '#9AFAE0', fontSize: 12 }}>Apenas admin e coordenadores podem agendar eventos.</Text>
-          </View>
-        )}
-
-        {meetings.length === 0 && <Text style={[S.muted, { textAlign: 'center', padding: 20 }]}>Nenhum evento marcado.</Text>}
+        {meetings.length === 0 && <Text style={[S.muted, { textAlign: 'center', padding: 20 }]}>Nenhum evento registrado.</Text>}
         {meetings.map((m) => {
           const isOwnerHost = m.created_by === profile.id || profile.role === 'admin' || profile.role === 'coord';
           return (
-            <View key={m.id} style={[S.card, styles.meetCard, m.status === 'em_andamento' && styles.meetCardLive]}>
+            <View key={m.id} style={[S.card, styles.meetCard, { borderLeftColor: COLORS.teal, borderLeftWidth: 3, paddingVertical: 14 }]}>
               <View style={S.rowBetween}>
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                     <Text style={{ color: COLORS.ink1, fontWeight: '600', fontSize: 13.5 }}>{m.title}</Text>
-                    {m.status === 'em_andamento' && (
-                      <View style={styles.liveBadge}><Text style={styles.liveBadgeText}>● AO VIVO</Text></View>
-                    )}
-                    {m.status === 'realizada' && (
-                      <View style={styles.doneBadge}><Text style={styles.doneBadgeText}>✓ CONCLUÍDA</Text></View>
-                    )}
+                    <View style={styles.doneBadge}><Text style={styles.doneBadgeText}>✓ CONCLUÍDO</Text></View>
                   </View>
                   <Text style={S.muted}>📍 {m.location}</Text>
                   <Text style={[S.muted, { fontSize: 10.5, marginTop: 3 }]}>👤 Criado por: {m.profiles?.name || 'Membro'}</Text>
@@ -485,278 +253,139 @@ export default function AgendaScreen({ profile }) {
                 </View>
               </View>
 
-              {/* Botões do Host ou Membro com base no status da reunião */}
-              {m.status === 'agendada' && (
-                <View style={{ flexDirection: 'row', gap: 6, marginTop: 10 }}>
-                  {isOwnerHost && (
-                    <TouchableOpacity style={[S.btn, S.btnTeal, { flex: 1, marginBottom: 0, paddingVertical: 8 }]} onPress={() => startLive(m)}>
-                      <Text style={S.btnTextDark}>📹 Iniciar Live</Text>
-                    </TouchableOpacity>
-                  )}
-                  {isOwnerHost && (
-                    <TouchableOpacity style={[S.btn, S.btnGhost, { flex: 1, marginBottom: 0, paddingVertical: 8 }]} onPress={() => openManualCompletion(m)}>
-                      <Text style={S.btnTextGhost}>✓ Fechar sem Live</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
+              <TouchableOpacity style={[S.btn, S.btnGhost, { marginTop: 12, marginBottom: 0, paddingVertical: 8 }]} onPress={() => { setSelectedMeetingDetails(m); setDetailsModalOpen(true); }}>
+                <Text style={S.btnTextGhost}>📊 Ver Detalhes e Lista</Text>
+              </TouchableOpacity>
 
-              {m.status === 'em_andamento' && (
-                <TouchableOpacity style={[S.btn, S.btnWarn, { marginTop: 10, marginBottom: 0, paddingVertical: 9 }]} onPress={() => isOwnerHost ? joinLive(m) : joinLive(m)}>
-                  <Text style={S.btnTextWarn}>📺 Entrar na Live</Text>
+              {isOwnerHost && (
+                <TouchableOpacity style={[S.btn, S.btnWarn, { marginTop: 8, marginBottom: 0, paddingVertical: 8 }]} onPress={() => handleDelete(m.id)}>
+                  <Text style={S.btnTextWarn}>Excluir</Text>
                 </TouchableOpacity>
               )}
-
-              {m.status === 'realizada' && (
-                <View style={{ flexDirection: 'row', gap: 6, marginTop: 10 }}>
-                  <TouchableOpacity style={[S.btn, S.btnGhost, { flex: 1, marginBottom: 0, paddingVertical: 8 }]} onPress={() => { setSelectedMeetingDetails(m); setDetailsModalOpen(true); }}>
-                    <Text style={S.btnTextGhost}>📊 Ver Detalhes e Lista</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {m.lat != null && m.lng != null && m.status !== 'realizada' && (
-                <TouchableOpacity
-                  style={[S.btn, S.btnGhost, { marginTop: 10, marginBottom: 0, paddingVertical: 7 }]}
-                  onPress={() => Linking.openURL(mapsUrl(m.lat, m.lng))}
-                >
-                  <Text style={[S.btnTextGhost, { fontSize: 11 }]}>📍 Abrir no Google Maps</Text>
-                </TouchableOpacity>
-              )}
-
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-                {canAdd && m.status !== 'realizada' && (
-                  <TouchableOpacity style={[S.btn, S.btnGhost, { flex: 1, marginBottom: 0, paddingVertical: 6 }]} onPress={() => notify(m)}>
-                    <Text style={[S.btnTextGhost, { fontSize: 11 }]}>🔔 Notificar</Text>
-                  </TouchableOpacity>
-                )}
-                {canAdd && (
-                  <TouchableOpacity style={[S.btn, S.btnWarn, { marginBottom: 0, paddingVertical: 6, paddingHorizontal: 12 }]} onPress={() => handleDelete(m.id)}>
-                    <Text style={[S.btnTextWarn, { fontSize: 11 }]}>Excluir</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
             </View>
           );
         })}
         <View style={{ height: 20 }} />
       </ScrollView>
 
-      {/* MODAL DE CRIAÇÃO DE EVENTO */}
+      {/* MODAL DE CRIAÇÃO E REGISTRO DIRETO DE EVENTO */}
       <Modal visible={modalOpen} animationType="slide" transparent onRequestClose={() => setModalOpen(false)}>
         <View style={styles.overlay}>
           <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setModalOpen(false)} />
-          <View style={styles.sheet}>
-            <View style={styles.handle} />
-            <Text style={{ color: COLORS.ink1, fontSize: 16, fontWeight: '700', marginBottom: 14 }}>Novo Evento</Text>
-            <Text style={S.label}>Título</Text>
-            <TextInput style={S.input} placeholder="Ex: Grande encontro" placeholderTextColor={COLORS.ink3} value={title} onChangeText={setTitle} />
-            <Text style={S.label}>Data (AAAA-MM-DD)</Text>
-            <TextInput style={S.input} placeholder="2026-08-01" placeholderTextColor={COLORS.ink3} value={date} onChangeText={setDate} />
-            <Text style={S.label}>Horário</Text>
-            <TextInput style={S.input} placeholder="19:00" placeholderTextColor={COLORS.ink3} value={time} onChangeText={setTime} />
-            <Text style={S.label}>Local (endereço em texto)</Text>
-            <TextInput style={S.input} placeholder="Endereço ou link online" placeholderTextColor={COLORS.ink3} value={location} onChangeText={setLocation} />
-
-            <Text style={S.label}>Localização exata (opcional)</Text>
-            {coords ? (
-              <View style={styles.coordBox}>
-                <Text style={{ color: COLORS.teal, fontSize: 12.5, flex: 1 }}>📍 Localização capturada ✅</Text>
-                <TouchableOpacity onPress={() => Linking.openURL(mapsUrl(coords.lat, coords.lng))}>
-                  <Text style={{ color: COLORS.violet, fontSize: 12, fontWeight: '700' }}>Ver no mapa</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setCoords(null)} style={{ marginLeft: 12 }}>
-                  <Text style={{ color: COLORS.warn, fontSize: 12, fontWeight: '700' }}>Remover</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity style={[S.btn, S.btnGhost]} onPress={captureLocation} disabled={capturing}>
-                <Text style={S.btnTextGhost}>{capturing ? 'Obtendo localização...' : '📍 Usar minha localização atual'}</Text>
-              </TouchableOpacity>
-            )}
-            
-            <TouchableOpacity style={[S.btn, S.btnViolet]} onPress={handleSave}>
-              <Text style={S.btnTextLight}>Agendar e notificar rede</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* INTERFACE DE REUNIÃO AO VIVO (FULL-SCREEN MODAL) */}
-      <Modal visible={!!activeLive} animationType="fade" transparent={false} onRequestClose={leaveLive}>
-        <View style={styles.liveContainer}>
-          {/* Header */}
-          <View style={styles.liveHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.liveTitle} numberOfLines={1}>{activeLive?.title}</Text>
-              <Text style={styles.liveTimerText}>⏱️ {liveTimer} • 👥 {viewerCount} visualizando</Text>
-            </View>
-            <TouchableOpacity style={styles.liveLeaveBtn} onPress={liveMode === 'host' ? closeLiveAsHost : leaveLive}>
-              <Text style={styles.liveLeaveBtnText}>{liveMode === 'host' ? 'Encerrar' : 'Sair'}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Player de Video / Camera Preview */}
-          <View style={styles.livePlayerContainer}>
-            {liveMode === 'host' && cameraPermission ? (
-              <Camera style={styles.liveCamera} type="front" ref={cameraRef}>
-                <View style={styles.liveBadgeFloat}>
-                  <Text style={styles.liveBadgeFloatText}>● AO VIVO</Text>
-                </View>
-                {/* Botão de teste rápido de Print automático */}
-                <TouchableOpacity style={styles.btnTestPrint} onPress={() => triggerAutoPrint(activeLive.id).then(() => Alert.alert('Print teste efetuado!'))}>
-                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>📸 Tirar Print (Testar)</Text>
-                </TouchableOpacity>
-              </Camera>
-            ) : (
-              <View style={styles.liveViewerPlaceholder}>
-                <View style={styles.liveAuraPulse}>
-                  <Text style={{ fontSize: 50 }}>📺</Text>
-                </View>
-                <Text style={styles.livePlaceholderText}>Você está assistindo à Live</Text>
-                <Text style={{ color: COLORS.ink3, fontSize: 12, marginTop: 4 }}>Transmissão não gravada no servidor</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Chat de Comentários */}
-          <View style={styles.liveChatContainer}>
-            <Text style={styles.liveChatTitle}>Comentários da reunião</Text>
-            <ScrollView 
-              ref={commentScrollRef} 
-              style={{ flex: 1, paddingVertical: 10 }}
-              onContentSizeChange={() => commentScrollRef.current?.scrollToEnd({ animated: true })}
-            >
-              {liveComments.length === 0 && (
-                <Text style={{ color: COLORS.ink3, textAlign: 'center', marginVertical: 20 }}>Nenhum comentário enviado ainda.</Text>
-              )}
-              {liveComments.map((c) => (
-                <View key={c.id} style={styles.liveCommentBubble}>
-                  <Text style={styles.liveCommentAuthor}>{c.profiles?.name || 'Membro'}</Text>
-                  <Text style={styles.liveCommentText}>{c.text}</Text>
-                </View>
-              ))}
-            </ScrollView>
-
-            {/* Input de Chat */}
-            <View style={styles.liveChatInputBar}>
-              <TextInput 
-                style={styles.liveChatInput} 
-                placeholder="Escreva um comentário..." 
-                placeholderTextColor={COLORS.ink3} 
-                value={commentText} 
-                onChangeText={setCommentText} 
-              />
-              <TouchableOpacity style={styles.liveChatSendBtn} onPress={sendComment}>
-                <Text style={styles.liveChatSendText}>Enviar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* MODAL DE ENCERRAMENTO DE LIVE / REGISTRO MANUAL */}
-      <Modal visible={completionModalOpen} animationType="slide" transparent onRequestClose={() => setCompletionModalOpen(false)}>
-        <View style={styles.overlay}>
-          <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setCompletionModalOpen(false)} />
           <View style={[styles.sheet, { maxHeight: '90%' }]}>
             <View style={styles.handle} />
-            <Text style={{ color: COLORS.ink1, fontSize: 16, fontWeight: '700', marginBottom: 12 }}>Finalizar Evento</Text>
-            <Text style={{ color: COLORS.teal, fontSize: 12, marginBottom: 14 }}>{completingMeeting?.title}</Text>
-
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
+            <Text style={{ color: COLORS.ink1, fontSize: 16, fontWeight: '700', marginBottom: 14 }}>Cadastrar Evento</Text>
+            
+            <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }}>
+              <Text style={S.label}>Título</Text>
+              <TextInput style={S.input} placeholder="Ex: Grande reunião" placeholderTextColor={COLORS.ink3} value={title} onChangeText={setTitle} />
+              
+              <Text style={S.label}>Data (AAAA-MM-DD)</Text>
+              <TextInput style={S.input} placeholder="2026-08-01" placeholderTextColor={COLORS.ink3} value={date} onChangeText={setDate} />
+              
+              <Text style={S.label}>Horário</Text>
+              <TextInput style={S.input} placeholder="19:00" placeholderTextColor={COLORS.ink3} value={time} onChangeText={setTime} />
+              
               <Text style={S.label}>Onde foi feita a reunião (Local)</Text>
-              <TextInput style={S.input} placeholder="Ex: Chácara São José - DF" value={completionLocation} onChangeText={setCompletionLocation} placeholderTextColor={COLORS.ink3} />
+              <TextInput style={S.input} placeholder="Ex: Chácara São José - DF" placeholderTextColor={COLORS.ink3} value={location} onChangeText={setLocation} />
 
-              <Text style={S.label}>Duração (Horas)</Text>
-              <TextInput style={S.input} keyboardType="numeric" value={durationHours} onChangeText={setDurationHours} />
-
-              <Text style={S.label}>Quantidade de Pessoas Presentes</Text>
-              <TextInput style={S.input} keyboardType="numeric" value={attendeesCount} onChangeText={setAttendeesCount} />
-
-              {/* Anexar Fotos da Reunião */}
-              <Text style={S.label}>Fotos do Evento (Anexar 2 fotos)</Text>
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-                {meetingPhotos.map((p, i) => (
-                  <View key={i} style={styles.previewThumbContainer}>
-                    <Image source={{ uri: p }} style={styles.previewThumb} />
-                    <TouchableOpacity style={styles.thumbRemove} onPress={() => setMeetingPhotos(prev => prev.filter((_, idx) => idx !== i))}>
-                      <Text style={{ color: '#fff', fontSize: 10 }}>×</Text>
-                    </TouchableOpacity>
-                  </View>
-                ))}
-                {meetingPhotos.length < 3 && (
-                  <TouchableOpacity style={styles.btnAddPhotoBox} onPress={handleAddMeetingPhoto}>
-                    <Text style={{ color: COLORS.teal, fontSize: 20 }}>+</Text>
-                    <Text style={{ color: COLORS.teal, fontSize: 9 }}>Tirar Foto</Text>
+              <Text style={S.label}>Localização exata (opcional)</Text>
+              {coords ? (
+                <View style={styles.coordBox}>
+                  <Text style={{ color: COLORS.teal, fontSize: 12.5, flex: 1 }}>📍 Localização capturada ✅</Text>
+                  <TouchableOpacity onPress={() => Linking.openURL(mapsUrl(coords.lat, coords.lng))}>
+                    <Text style={{ color: COLORS.violet, fontSize: 12, fontWeight: '700' }}>Ver no mapa</Text>
                   </TouchableOpacity>
-                )}
-              </View>
-
-              {/* Anexar Lista de Presentes Física */}
-              <Text style={S.label}>Foto da Lista de Presentes (Nome e Telefone)</Text>
-              {presencePhoto ? (
-                <View style={[styles.coordBox, { marginBottom: 12 }]}>
-                  <Image source={{ uri: presencePhoto }} style={{ width: 40, height: 40, borderRadius: 6, marginRight: 10 }} />
-                  <Text style={{ color: COLORS.teal, fontSize: 12, flex: 1 }}>Lista física anexada ✓</Text>
-                  <TouchableOpacity onPress={() => setPresencePhoto(null)}>
+                  <TouchableOpacity onPress={() => setCoords(null)} style={{ marginLeft: 12 }}>
                     <Text style={{ color: COLORS.warn, fontSize: 12, fontWeight: '700' }}>Remover</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
-                <TouchableOpacity style={[S.btn, S.btnGhost, { marginBottom: 12 }]} onPress={handlePickPresencePhoto}>
-                  <Text style={S.btnTextGhost}>📷 Bater Foto da Lista Física</Text>
+                <TouchableOpacity style={[S.btn, S.btnGhost]} onPress={captureLocation} disabled={capturing}>
+                  <Text style={S.btnTextGhost}>{capturing ? 'Obtendo localização...' : '📍 Usar minha localização atual'}</Text>
                 </TouchableOpacity>
               )}
 
-              {/* Criar Lista Digital de Presentes */}
-              <Text style={S.label}>Lista de Presentes Digital (Adicionar Membros)</Text>
-              <TextInput 
-                style={S.input} 
-                placeholder="Pesquisar por nome..." 
-                placeholderTextColor={COLORS.ink3} 
-                value={searchMember} 
-                onChangeText={setSearchMember} 
-              />
+              <Text style={S.label}>Duração (Horas)</Text>
+              <TextInput style={S.input} placeholder="2" keyboardType="numeric" placeholderTextColor={COLORS.ink3} value={durationHours} onChangeText={setDurationHours} />
+
+              <Text style={S.label}>Quantidade de Pessoas Presentes</Text>
+              <TextInput style={S.input} placeholder="15" keyboardType="numeric" placeholderTextColor={COLORS.ink3} value={attendeesCount} onChangeText={setAttendeesCount} />
+
+              {/* Fotos do Evento */}
+              <Text style={S.label}>Fotos do Evento (Anexar até 3 fotos)</Text>
+              <TouchableOpacity style={[S.btn, S.btnGhost, { marginBottom: 12 }]} onPress={handleAddMeetingPhoto}>
+                <Text style={S.btnTextGhost}>📸 Anexar Foto ({meetingPhotos.length}/3)</Text>
+              </TouchableOpacity>
               
-              <View style={styles.profilesChecklist}>
-                {profiles
-                  .filter(p => p.name.toLowerCase().includes(searchMember.toLowerCase()))
-                  .slice(0, 5)
-                  .map(p => {
-                    const isChecked = presentMembers.some(x => x.id === p.id);
-                    return (
-                      <TouchableOpacity 
-                        key={p.id} 
-                        style={[styles.profileCheckRow, isChecked && styles.profileCheckRowOn]}
-                        onPress={() => {
+              {meetingPhotos.length > 0 && (
+                <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                  {meetingPhotos.map((uri, idx) => (
+                    <View key={idx} style={{ position: 'relative' }}>
+                      <Image source={{ uri }} style={{ width: 60, height: 60, borderRadius: 8 }} />
+                      <TouchableOpacity style={{ position: 'absolute', top: -4, right: -4, backgroundColor: COLORS.warn, borderRadius: 10, width: 20, height: 20, justifyContent: 'center', alignItems: 'center' }} onPress={() => setMeetingPhotos(prev => prev.filter((_, i) => i !== idx))}>
+                        <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>X</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Foto da Lista Física */}
+              <Text style={S.label}>Foto da Lista de Presentes (Nome e Telefone)</Text>
+              <TouchableOpacity style={[S.btn, S.btnGhost, { marginBottom: 12 }]} onPress={handlePickPresencePhoto}>
+                <Text style={S.btnTextGhost}>{presencePhoto ? '✅ Foto Anexada (Clique para Alterar)' : '📸 Anexar Foto da Lista'}</Text>
+              </TouchableOpacity>
+              
+              {presencePhoto && (
+                <View style={{ position: 'relative', alignSelf: 'flex-start', marginBottom: 12 }}>
+                  <Image source={{ uri: presencePhoto }} style={{ width: 100, height: 100, borderRadius: 8 }} />
+                  <TouchableOpacity style={{ position: 'absolute', top: -4, right: -4, backgroundColor: COLORS.warn, borderRadius: 10, width: 20, height: 20, justifyContent: 'center', alignItems: 'center' }} onPress={() => setPresencePhoto(null)}>
+                    <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>X</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Lista Digital */}
+              <Text style={S.label}>Marcar Perfis Presentes (Lista Digital)</Text>
+              <TextInput style={S.input} placeholder="Filtrar membros..." placeholderTextColor={COLORS.ink3} value={searchMember} onChangeText={setSearchMember} />
+              
+              <View style={{ maxHeight: 110, backgroundColor: COLORS.panel2, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 12 }}>
+                <ScrollView nestedScrollEnabled showsVerticalScrollIndicator>
+                  {profiles
+                    .filter(p => p.name.toLowerCase().includes(searchMember.toLowerCase()))
+                    .slice(0, 5)
+                    .map(p => {
+                      const isChecked = presentMembers.some(x => x.id === p.id);
+                      return (
+                        <TouchableOpacity key={p.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: COLORS.line }} onPress={() => {
                           if (isChecked) {
                             setPresentMembers(prev => prev.filter(x => x.id !== p.id));
                           } else {
                             setPresentMembers(prev => [...prev, p]);
                           }
-                        }}
-                      >
-                        <Text style={{ color: isChecked ? '#000' : COLORS.ink1, fontSize: 12.5 }}>{p.name}</Text>
-                        <Text style={{ color: isChecked ? '#000' : COLORS.teal, fontSize: 11 }}>{isChecked ? 'Selecionado ✓' : '+ Adicionar'}</Text>
-                      </TouchableOpacity>
-                    );
-                  })
-                }
+                        }}>
+                          <View style={{ width: 16, height: 16, borderRadius: 4, borderWidth: 1, borderColor: COLORS.teal, backgroundColor: isChecked ? COLORS.teal : 'transparent', justifyContent: 'center', alignItems: 'center' }}>
+                            {isChecked && <Text style={{ color: COLORS.bg, fontSize: 10, fontWeight: '900' }}>✓</Text>}
+                          </View>
+                          <Text style={{ color: COLORS.ink1, fontSize: 12.5 }}>{p.name}</Text>
+                        </TouchableOpacity>
+                      );
+                    })
+                  }
+                </ScrollView>
               </View>
 
-              <Text style={[S.muted, { marginVertical: 10 }]}>
-                Selecionados: {presentMembers.length} membros.
-              </Text>
-            </ScrollView>
+              <Text style={[S.muted, { marginBottom: 14 }]}>Selecionados: {presentMembers.length} membros.</Text>
 
-            <TouchableOpacity style={[S.btn, S.btnViolet, { marginTop: 12 }]} onPress={saveCompletion} disabled={savingCompletion}>
-              {savingCompletion ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={S.btnTextLight}>Registrar Reunião</Text>
-              )}
-            </TouchableOpacity>
+              <TouchableOpacity style={[S.btn, S.btnViolet, { marginBottom: 20 }]} onPress={handleSave} disabled={savingCompletion}>
+                {savingCompletion ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={S.btnTextLight}>Registrar Evento</Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>

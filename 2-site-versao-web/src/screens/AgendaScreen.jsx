@@ -28,7 +28,7 @@ export default function AgendaScreen({ profile }) {
   const [profiles, setProfiles] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
 
-  // Form de criação
+  // Form de criação de Evento Direto
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
@@ -36,18 +36,6 @@ export default function AgendaScreen({ profile }) {
   const [coords, setCoords] = useState(null);
   const [capturing, setCapturing] = useState(false);
 
-  // Controle de Live
-  const [activeLive, setActiveLive] = useState(null);
-  const [liveMode, setLiveMode] = useState(null); // 'host' | 'viewer'
-  const [liveComments, setLiveComments] = useState([]);
-  const [commentText, setCommentText] = useState('');
-  const [viewerCount, setViewerCount] = useState(12);
-  const [liveTimer, setLiveTimer] = useState('00:00');
-  const [liveElapsed, setLiveElapsed] = useState(0);
-
-  // Controle de Encerramento/Registro Manual
-  const [completionModalOpen, setCompletionModalOpen] = useState(false);
-  const [completingMeeting, setCompletingMeeting] = useState(null);
   const [durationHours, setDurationHours] = useState('2');
   const [attendeesCount, setAttendeesCount] = useState('15');
   const [searchMember, setSearchMember] = useState('');
@@ -57,24 +45,12 @@ export default function AgendaScreen({ profile }) {
   const [presencePhotoFile, setPresencePhotoFile] = useState(null); 
   const [meetingPhotoFiles, setMeetingPhotoFiles] = useState([]); 
   const [savingCompletion, setSavingCompletion] = useState(false);
-  const [completionLocation, setCompletionLocation] = useState('');
 
-  // Modal de Detalhes da Reunião Realizada
+  // Modal de Detalhes do Evento Concluído
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedMeetingDetails, setSelectedMeetingDetails] = useState(null);
 
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const commentScrollRef = useRef(null);
-  const commentCache = useRef({});
-  const timerIntervalRef = useRef(null);
-  const printIntervalRef = useRef(null);
-  const viewerIntervalRef = useRef(null);
-  const localStreamRef = useRef(null);
-  const activeLiveChannelRef = useRef(null);
-
-  const canAdd = true;
-  const hasLivePermission = profile.live_enabled !== false;
+  const canAdd = true; // Qualquer usuário logado pode registrar eventos
 
   const load = useCallback(async () => {
     try {
@@ -89,7 +65,6 @@ export default function AgendaScreen({ profile }) {
 
   useEffect(() => {
     load();
-    if (typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
   }, [load]);
 
   // GPS no navegador
@@ -107,227 +82,36 @@ export default function AgendaScreen({ profile }) {
     );
   }
 
+  // Cadastro direto de evento concluído
   async function handleSave(e) {
     e.preventDefault();
-    if (!title.trim() || !date.trim()) { alert('Preencha título e data'); return; }
-    try {
-      await createMeeting({
-        title: title.trim(), date, time: time || '—', location: location || 'A definir',
-        lat: coords?.lat ?? null, lng: coords?.lng ?? null,
-        created_by: profile.id, status: 'agendada'
-      });
-      setModalOpen(false);
-      setTitle(''); setDate(''); setTime(''); setLocation(''); setCoords(null);
-      await load();
-      notifyBrowser('Nova reunião agendada!', title);
-    } catch (err) { alert('Erro ao agendar: ' + err.message); }
-  }
-
-  async function handleDelete(id) {
-    if (!confirm('Excluir esta reunião?')) return;
-    try { await deleteMeeting(id); await load(); } catch (err) { alert('Erro: ' + err.message); }
-  }
-
-  // --- CONTROLE DE LIVE WEB ---
-
-  async function startLive(m) {
-    if (!hasLivePermission) {
-      alert('Você foi penalizado e a função de Live está desativada. Entre em contato com o administrador.');
-      return;
+    if (!title.trim() || !date.trim() || !location.trim()) { 
+      alert('Por favor, preencha o título, a data e o local do evento.'); 
+      return; 
     }
-
-    try {
-      await updateMeeting(m.id, { status: 'em_andamento', live_started_at: new Date().toISOString() });
-      const updatedM = { ...m, status: 'em_andamento', live_started_at: new Date().toISOString() };
-
-      setActiveLive(updatedM);
-      setLiveMode('host');
-      setLiveElapsed(0);
-      setLiveTimer('00:00');
-      setViewerCount(Math.floor(Math.random() * 5) + 12);
-      
-      const comments = await fetchLiveComments(m.id);
-      setLiveComments(comments || []);
-
-      // Inicia stream de vídeo no browser
-      setTimeout(async () => {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: true });
-          localStreamRef.current = stream;
-          if (videoRef.current) videoRef.current.srcObject = stream;
-        } catch (camErr) {
-          console.log('Erro ao abrir câmera web:', camErr);
-          alert('Câmera não disponível no seu navegador/aparelho.');
-        }
-      }, 500);
-
-      startLiveIntervals(m.id, 'host');
-    } catch (e) {
-      alert('Erro ao iniciar Live: ' + e.message);
-    }
-  }
-
-  function joinLive(m) {
-    setActiveLive(m);
-    setLiveMode('viewer');
-    setLiveElapsed(0);
-    setLiveTimer('00:00');
-    setViewerCount(Math.floor(Math.random() * 10) + 15);
-
-    const loadComments = async () => {
-      const comments = await fetchLiveComments(m.id);
-      setLiveComments(comments || []);
-    };
-    loadComments();
-
-    startLiveIntervals(m.id, 'viewer');
-  }
-
-  function startLiveIntervals(meetingId, mode) {
-    let elapsed = 0;
-    timerIntervalRef.current = setInterval(() => {
-      elapsed += 1;
-      setLiveElapsed(elapsed);
-      const min = String(Math.floor(elapsed / 60)).padStart(2, '0');
-      const sec = String(elapsed % 60).padStart(2, '0');
-      setLiveTimer(`${min}:${sec}`);
-    }, 1000);
-
-    viewerIntervalRef.current = setInterval(() => {
-      setViewerCount(prev => {
-        const delta = Math.floor(Math.random() * 3) - 1;
-        return Math.max(1, prev + delta);
-      });
-    }, 5000);
-
-    if (mode === 'host') {
-      printIntervalRef.current = setInterval(() => {
-        triggerWebPrint(meetingId);
-      }, 600000); // 10 min
-    }
-
-    const channel = supabase.channel(`live-comments-web-${meetingId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'live_comments', filter: `meeting_id=eq.${meetingId}` }, async (payload) => {
-        const profileId = payload.new.profile_id;
-        let senderName = commentCache.current[profileId];
-        if (!senderName) {
-          const sender = await fetchProfileById(profileId);
-          senderName = sender?.name || 'Membro';
-          commentCache.current[profileId] = senderName;
-        }
-        const comment = { ...payload.new, profiles: { name: senderName } };
-        setLiveComments(prev => [...prev, comment]);
-        if (commentScrollRef.current) {
-          commentScrollRef.current.scrollTop = commentScrollRef.current.scrollHeight;
-        }
-      })
-      .subscribe();
-
-    activeLiveChannelRef.current = channel;
-  }
-
-  function stopLiveIntervals() {
-    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-    if (printIntervalRef.current) clearInterval(printIntervalRef.current);
-    if (viewerIntervalRef.current) clearInterval(viewerIntervalRef.current);
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
-      localStreamRef.current = null;
-    }
-    if (activeLiveChannelRef.current) {
-      supabase.removeChannel(activeLiveChannelRef.current);
-    }
-  }
-
-  async function triggerWebPrint(meetingId) {
-    if (!videoRef.current || !canvasRef.current) return;
-    try {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        const path = `meeting_${meetingId}/auto_print_${Date.now()}.jpg`;
-        const { error: uploadError } = await supabase.storage.from('meetings').upload(path, blob, { contentType: 'image/jpeg' });
-        if (uploadError) throw uploadError;
-
-        const { data: pub } = supabase.storage.from('meetings').getPublicUrl(path);
-        const url = pub.publicUrl;
-
-        const { data: m } = await supabase.from('meetings').select('photos').eq('id', meetingId).single();
-        const currentPhotos = m?.photos || [];
-        if (currentPhotos.length < 3) {
-          const updatedPhotos = [...currentPhotos, url];
-          await supabase.from('meetings').update({ photos: updatedPhotos }).eq('id', meetingId);
-        }
-      }, 'image/jpeg', 0.7);
-    } catch (e) {
-      console.log('Erro ao capturar print no navegador:', e);
-    }
-  }
-
-  async function sendComment() {
-    if (!commentText.trim() || !activeLive) return;
-    try {
-      await createLiveComment(activeLive.id, profile.id, commentText.trim());
-      setCommentText('');
-    } catch (e) {
-      alert('Erro ao enviar: ' + e.message);
-    }
-  }
-
-  function leaveLive() {
-    stopLiveIntervals();
-    setActiveLive(null);
-    setLiveMode(null);
-    load();
-  }
-
-  function closeLiveAsHost() {
-    const meetId = activeLive.id;
-    stopLiveIntervals();
-    setActiveLive(null);
-    setLiveMode(null);
-
-    const m = meetings.find(x => x.id === meetId) || activeLive;
-    setCompletingMeeting(m);
-    setDurationHours('2');
-    setAttendeesCount('15');
-    setCompletionLocation(m.location || '');
-    setPresentMembers([]);
-    setPresencePhotoFile(null);
-    setMeetingPhotoFiles([]);
-    setCompletionModalOpen(true);
-  }
-
-  // --- FINALIZAÇÃO MANUAL E ARQUIVOS WEB ---
-
-  function openManualCompletion(m) {
-    setCompletingMeeting(m);
-    setDurationHours('2');
-    setAttendeesCount('15');
-    setCompletionLocation(m.location || '');
-    setPresentMembers([]);
-    setPresencePhotoFile(null);
-    setMeetingPhotoFiles([]);
-    setCompletionModalOpen(true);
-  }
-
-  async function saveCompletion(e) {
-    e.preventDefault();
-    if (!durationHours.trim() || !attendeesCount.trim()) { alert('Preencha os campos obrigatórios'); return; }
     setSavingCompletion(true);
 
     try {
-      const meetId = completingMeeting.id;
-      let finalPresencePhotoUrl = completingMeeting.presence_photo_url || null;
-      let finalPhotos = completingMeeting.photos || [];
+      // 1. Criar o evento no banco de dados com status 'realizada'
+      const newMeet = await createMeeting({
+        title: title.trim(),
+        date,
+        time: time || '—',
+        location: location.trim(),
+        lat: coords?.lat ?? null,
+        lng: coords?.lng ?? null,
+        created_by: profile.id,
+        status: 'realizada',
+        duration_minutes: parseInt(durationHours) * 60,
+        attendees_count: parseInt(attendeesCount),
+        presence_list: presentMembers.map(m => ({ id: m.id, name: m.name }))
+      });
 
-      // 1. Upload lista física
+      const meetId = newMeet.id;
+      let finalPresencePhotoUrl = null;
+      let finalPhotos = [];
+
+      // 2. Upload da foto da lista de presentes
       if (presencePhotoFile) {
         const ext = presencePhotoFile.name.split('.').pop().toLowerCase();
         const filename = `meeting_${meetId}/presence_list.${ext}`;
@@ -337,7 +121,7 @@ export default function AgendaScreen({ profile }) {
         finalPresencePhotoUrl = pub.publicUrl;
       }
 
-      // 2. Upload fotos adicionais
+      // 3. Upload das fotos do evento
       for (const file of meetingPhotoFiles) {
         if (finalPhotos.length >= 3) break;
         const ext = file.name.split('.').pop().toLowerCase();
@@ -348,30 +132,40 @@ export default function AgendaScreen({ profile }) {
         finalPhotos.push(pub.publicUrl);
       }
 
-      // 3. Salva no banco de dados
-      const payload = {
-        status: 'realizada',
-        location: completionLocation.trim() || completingMeeting.location || 'A definir',
-        duration_minutes: parseInt(durationHours) * 60,
-        attendees_count: parseInt(attendeesCount),
-        presence_list: presentMembers.map(m => ({ id: m.id, name: m.name })),
-        presence_photo_url: finalPresencePhotoUrl,
-        photos: finalPhotos
-      };
+      // 4. Salvar as URLs no registro do evento
+      if (finalPresencePhotoUrl || finalPhotos.length > 0) {
+        await updateMeeting(meetId, {
+          presence_photo_url: finalPresencePhotoUrl,
+          photos: finalPhotos
+        });
+      }
 
-      await updateMeeting(meetId, payload);
-      alert('Reunião finalizada e salva com sucesso!');
-      setCompletionModalOpen(false);
-      setCompletingMeeting(null);
+      alert('Evento registrado e publicado com sucesso!');
+      setModalOpen(false);
+      
+      // Limpar formulário
+      setTitle(''); setDate(''); setTime(''); setLocation(''); setCoords(null);
+      setDurationHours('2'); setAttendeesCount('15');
+      setPresentMembers([]); setPresencePhotoFile(null); setMeetingPhotoFiles([]);
       await load();
     } catch (err) {
-      alert('Erro ao salvar finalização: ' + err.message);
+      alert('Erro ao registrar evento: ' + err.message);
     } finally {
       setSavingCompletion(false);
     }
   }
 
-  // Estatísticas transparentes
+  async function handleDelete(id) {
+    if (!confirm('Excluir este evento permanentemente?')) return;
+    try { 
+      await deleteMeeting(id); 
+      await load(); 
+    } catch (err) { 
+      alert('Erro ao excluir: ' + err.message); 
+    }
+  }
+
+  // Estatísticas de eventos realizados
   const completedMeetings = meetings.filter(m => m.status === 'realizada');
   const totalHours = completedMeetings.reduce((acc, m) => acc + (m.duration_minutes || 0) / 60, 0);
   const totalAttendees = completedMeetings.reduce((acc, m) => acc + (m.attendees_count || 0), 0);
@@ -399,28 +193,21 @@ export default function AgendaScreen({ profile }) {
         </div>
       </div>
 
-      <div className="row-bw">
-        <h2 style={{ fontSize: 17 }}>Eventos</h2>
-        {canAdd && <button className="btn btn-violet btn-sm" onClick={() => setModalOpen(true)}>+ Novo Evento</button>}
+      <div className="row-bw" style={{ marginBottom: 14 }}>
+        <h2 style={{ fontSize: 17, margin: 0 }}>Eventos</h2>
+        <button className="btn btn-violet btn-sm" style={{ width: 'auto', marginBottom: 0 }} onClick={() => setModalOpen(true)}>+ Novo Evento</button>
       </div>
 
-      {!canAdd && (
-        <div className="card" style={{ background: 'var(--teal-dim)', borderColor: 'var(--teal)' }}>
-          <div style={{ fontSize: 12, color: '#9AFAE0' }}>Apenas admin e coordenadores podem agendar eventos.</div>
-        </div>
-      )}
-
-      {meetings.length === 0 && <div className="empty">Nenhum evento marcado.</div>}
+      {meetings.length === 0 && <div className="empty">Nenhum evento registrado.</div>}
       {meetings.map((m) => {
-        const isOwnerHost = m.created_by === profile.id || profile.role === 'admin';
+        const isOwnerHost = m.created_by === profile.id || profile.role === 'admin' || profile.role === 'coord';
         return (
-          <div key={m.id} className={`card meet-card ${m.status === 'em_andamento' ? 'meet-card-live' : ''}`} style={{ borderLeftColor: m.status === 'em_andamento' ? 'var(--warn)' : m.status === 'realizada' ? 'var(--teal)' : 'var(--violet)' }}>
+          <div key={m.id} className="card meet-card" style={{ borderLeftColor: 'var(--teal)', borderLeftWidth: 3 }}>
             <div className="row-bw">
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600, fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 6 }}>
                   {m.title}
-                  {m.status === 'em_andamento' && <span style={{ background: 'rgba(240,107,76,0.18)', color: 'var(--warn)', fontSize: 9, padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>● AO VIVO</span>}
-                  {m.status === 'realizada' && <span style={{ background: 'var(--teal-dim)', color: 'var(--teal)', fontSize: 9, padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>✓ CONCLUÍDA</span>}
+                  <span style={{ background: 'var(--teal-dim)', color: 'var(--teal)', fontSize: 9, padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>✓ CONCLUÍDO</span>
                 </div>
                 <div className="muted">📍 {m.location}</div>
                 <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>👤 Criado por: {m.profiles?.name || 'Membro'}</div>
@@ -431,52 +218,34 @@ export default function AgendaScreen({ profile }) {
               </div>
             </div>
 
-            {/* Ações com base no status */}
-            {m.status === 'agendada' && (
-              <div className="btn-row" style={{ marginTop: 10 }}>
-                {isOwnerHost && <button className="btn btn-teal btn-sm" style={{ flex: 1 }} onClick={() => startLive(m)}>📹 Iniciar Live</button>}
-                {isOwnerHost && <button className="btn btn-ghost btn-sm" style={{ flex: 1 }} onClick={() => openManualCompletion(m)}>✓ Fechar sem Live</button>}
-              </div>
-            )}
+            <button className="btn btn-ghost btn-sm" style={{ marginTop: 10, width: '100%', marginBottom: 0 }} onClick={() => { setSelectedMeetingDetails(m); setDetailsModalOpen(true); }}>📊 Ver Detalhes e Lista</button>
 
-            {m.status === 'em_andamento' && (
-              <button className="btn btn-warn" style={{ marginTop: 10, marginBottom: 0 }} onClick={() => joinLive(m)}>📺 Entrar na Live</button>
+            {isOwnerHost && (
+              <button className="btn btn-warn btn-sm" style={{ marginTop: 8, width: '100%', marginBottom: 0 }} onClick={() => handleDelete(m.id)}>Excluir</button>
             )}
-
-            {m.status === 'realizada' && (
-              <button className="btn btn-ghost btn-sm" style={{ marginTop: 10, width: '100%' }} onClick={() => { setSelectedMeetingDetails(m); setDetailsModalOpen(true); }}>📊 Ver Detalhes e Lista</button>
-            )}
-
-            {m.lat != null && m.lng != null && m.status !== 'realizada' && (
-              <a className="btn btn-teal btn-sm" style={{ marginTop: 10, width: '100%' }} href={mapsUrl(m.lat, m.lng)} target="_blank" rel="noreferrer">
-                📍 Abrir no Google Maps
-              </a>
-            )}
-
-            <div className="btn-row" style={{ marginTop: 10 }}>
-              {canAdd && m.status !== 'realizada' && <button className="btn btn-ghost btn-sm" style={{ flex: 1 }} onClick={() => notifyBrowser(m.title, `${fmtDate(m.date)} às ${m.time} — ${m.location}`)}>🔔 Notificar</button>}
-              {canAdd && <button className="btn btn-warn btn-sm" onClick={() => handleDelete(m.id)}>Excluir</button>}
-            </div>
           </div>
         );
       })}
       <div style={{ height: 20 }} />
 
-      {/* MODAL DE CRIAÇÃO DE EVENTO */}
+      {/* MODAL DE CRIAÇÃO E REGISTRO DIRETO DE EVENTO */}
       {modalOpen && (
         <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && setModalOpen(false)}>
-          <div className="modal">
+          <div className="modal" style={{ maxHeight: '90vh' }}>
             <div className="mhandle" />
-            <h2 style={{ fontSize: 16, marginBottom: 14 }}>Novo Evento</h2>
+            <h2 style={{ fontSize: 16, marginBottom: 14 }}>Cadastrar Evento</h2>
             <form onSubmit={handleSave}>
               <label className="lbl">Título</label>
-              <input placeholder="Ex: Grande encontro" value={title} onChange={(e) => setTitle(e.target.value)} />
+              <input placeholder="Ex: Grande reunião" value={title} onChange={(e) => setTitle(e.target.value)} required />
+              
               <label className="lbl">Data</label>
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+              
               <label className="lbl">Horário</label>
               <input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-              <label className="lbl">Local (endereço em texto)</label>
-              <input placeholder="Endereço ou link online" value={location} onChange={(e) => setLocation(e.target.value)} />
+              
+              <label className="lbl">Onde foi feita a reunião (Local)</label>
+              <input placeholder="Ex: Chácara São José - DF" value={location} onChange={(e) => setLocation(e.target.value)} required />
 
               <label className="lbl">Localização exata (opcional)</label>
               {coords ? (
@@ -486,91 +255,10 @@ export default function AgendaScreen({ profile }) {
                   <button type="button" onClick={() => setCoords(null)} style={{ background: 'none', border: 'none', color: 'var(--warn)', fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>Remover</button>
                 </div>
               ) : (
-                <button type="button" className="btn btn-ghost" onClick={captureLocation} disabled={capturing}>
+                <button type="button" className="btn btn-ghost" onClick={captureLocation} disabled={capturing} style={{ marginBottom: 14 }}>
                   {capturing ? 'Obtendo localização...' : '📍 Usar minha localização atual'}
                 </button>
               )}
-
-              <button className="btn btn-violet" type="submit">Agendar e notificar rede</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* OVERLAY DE REUNIÃO AO VIVO (WEB PLAYER + CHAT REALTIME) */}
-      {activeLive && (
-        <div style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 1000, display: 'flex', flexDirection: 'column', color: '#fff' }}>
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 12px', borderBottom: '1px solid var(--line)' }}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 15 }}>{activeLive.title}</div>
-              <div style={{ color: 'var(--teal)', fontSize: 11, marginTop: 2 }}>⏱️ {liveTimer} • 👥 {viewerCount} visualizando</div>
-            </div>
-            <button className="btn btn-warn btn-sm" style={{ width: 'auto', marginBottom: 0 }} onClick={liveMode === 'host' ? closeLiveAsHost : leaveLive}>
-              {liveMode === 'host' ? 'Encerrar Reunião' : 'Sair da Live'}
-            </button>
-          </div>
-
-          {/* Web Camera ou Placeholder */}
-          <div style={{ flex: 1, position: 'relative', background: '#090D16', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-            {liveMode === 'host' ? (
-              <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-                <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                <span style={{ position: 'absolute', top: 12, left: 12, background: 'var(--warn)', color: '#fff', fontSize: 9, padding: '3px 8px', borderRadius: 4, fontWeight: 800 }}>● AO VIVO</span>
-                
-                {/* Botão de teste rápido de Print automático no browser */}
-                <button 
-                  type="button" 
-                  style={{ position: 'absolute', bottom: 12, left: 12, background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 6, color: '#fff', padding: '5px 10px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}
-                  onClick={() => triggerWebPrint(activeLive.id).then(() => alert('Print efetuado!'))}
-                >
-                  📸 Tirar Print (Testar)
-                </button>
-                <canvas ref={canvasRef} style={{ display: 'none' }} />
-              </div>
-            ) : (
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'var(--violet-dim)', border: '2px solid var(--violet)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', animation: 'pulse 2s infinite' }}>📺</div>
-                <div style={{ fontWeight: 700 }}>Você está assistindo à Live</div>
-                <div style={{ color: 'var(--ink3)', fontSize: 12, marginTop: 4 }}>Transmissão não gravada no servidor</div>
-              </div>
-            )}
-          </div>
-
-          {/* Chat Panel */}
-          <div style={{ height: '40%', background: 'var(--bg)', display: 'flex', flexDirection: 'column', padding: 12, borderTopLeftRadius: 18, borderTopRightRadius: 18 }}>
-            <div style={{ fontSize: 10, color: 'var(--ink2)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Comentários</div>
-            <div ref={commentScrollRef} style={{ flex: 1, overflowY: 'auto', marginBottom: 8 }}>
-              {liveComments.length === 0 && <div style={{ color: 'var(--ink3)', textAlign: 'center', padding: 20 }}>Nenhum comentário enviado.</div>}
-              {liveComments.map((c) => (
-                <div key={c.id} style={{ background: 'var(--panel)', padding: 8, borderRadius: 10, marginBottom: 8, maxWidth: '85%', alignSelf: 'flex-start' }}>
-                  <div style={{ color: 'var(--teal)', fontWeight: 700, fontSize: 11 }}>{c.profiles?.name || 'Membro'}</div>
-                  <div style={{ color: 'var(--ink1)', fontSize: 12.5, marginTop: 2 }}>{c.text}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* Input chat */}
-            <div style={{ display: 'flex', gap: 8, borderTop: '1px solid var(--line)', paddingTop: 8 }}>
-              <input style={{ marginBottom: 0 }} placeholder="Comentar..." value={commentText} onChange={(e) => setCommentText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendComment()} />
-              <button className="btn btn-violet" style={{ width: 'auto', padding: '10px 18px', marginBottom: 0 }} onClick={sendComment}>Enviar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL DE FINALIZAÇÃO E UPLOADS WEB */}
-      {completionModalOpen && (
-        <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && setCompletionModalOpen(false)}>
-          <div className="modal" style={{ maxHeight: '90vh' }}>
-            <div className="mhandle" />
-            <h2 style={{ fontSize: 16, marginBottom: 6 }}>Finalizar Evento</h2>
-            <div style={{ color: 'var(--teal)', fontSize: 12, marginBottom: 14 }}>{completingMeeting?.title}</div>
-
-            <form onSubmit={saveCompletion}>
-              <label className="lbl">Onde foi feita a reunião (Local)</label>
-              <input placeholder="Ex: Chácara São José - DF" value={completionLocation} onChange={(e) => setCompletionLocation(e.target.value)} required style={{ marginBottom: 12 }} />
-
               <label className="lbl">Duração (Horas)</label>
               <input type="number" required min="1" value={durationHours} onChange={(e) => setDurationHours(e.target.value)} />
 
@@ -578,7 +266,7 @@ export default function AgendaScreen({ profile }) {
               <input type="number" required min="1" value={attendeesCount} onChange={(e) => setAttendeesCount(e.target.value)} />
 
               {/* Anexar Fotos */}
-              <label className="lbl">Fotos do Evento (Anexar 2 fotos)</label>
+              <label className="lbl">Fotos do Evento (Anexar até 3 fotos)</label>
               <input type="file" accept="image/*" multiple onChange={(e) => setMeetingPhotoFiles(Array.from(e.target.files))} style={{ marginBottom: 12 }} />
 
               {/* Lista física */}
@@ -614,7 +302,7 @@ export default function AgendaScreen({ profile }) {
               <div className="muted" style={{ marginBottom: 14 }}>Selecionados: {presentMembers.length} membros.</div>
 
               <button className="btn btn-violet" type="submit" disabled={savingCompletion}>
-                {savingCompletion ? 'Registrando...' : 'Registrar e Publicar Evento'}
+                {savingCompletion ? 'Registrando...' : 'Registrar Evento'}
               </button>
             </form>
           </div>
