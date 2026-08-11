@@ -58,7 +58,7 @@ export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
           <View style={S.rowBetween}>
             <View style={{ flex: 1 }}>
               <Text style={{ color: COLORS.ink1, fontWeight: '700', fontSize: 13.5 }}>⚙️ Painel {profile.role === 'admin' ? 'Admin' : 'Coordenador'}</Text>
-              <Text style={S.muted}>Cadastros, reuniões, mensagens{profile.role === 'admin' ? ' e o Dr. Candido' : ''}</Text>
+              <Text style={S.muted}>Cadastros, eventos, mensagens{profile.role === 'admin' ? ' e o Dr. Candido' : ''}</Text>
             </View>
             <View style={[S.btn, S.btnViolet, { marginBottom: 0, paddingHorizontal: 16 }]}>
               <Text style={S.btnTextLight}>Abrir</Text>
@@ -69,53 +69,55 @@ export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
 
       {/* Estatísticas da Rede */}
       <View style={styles.statsRow}>
-        <View style={[S.card, styles.statBox]}>
-          <Text style={S.cardTitle}>Rede direta</Text>
+        <View style={[S.card, styles.statBox, { borderColor: 'rgba(61, 217, 179, 0.15)' }]}>
+          <Text style={styles.statLabel}>👥 Rede direta</Text>
           <Text style={[styles.statNum, { color: COLORS.teal }]}>{directCount}</Text>
+          <Text style={styles.statSubText}>Indicados por você</Text>
         </View>
-        <View style={[S.card, styles.statBox]}>
-          <Text style={S.cardTitle}>Total sistema</Text>
+        <View style={[S.card, styles.statBox, { borderColor: 'rgba(123, 108, 244, 0.15)' }]}>
+          <Text style={styles.statLabel}>🌐 Total sistema</Text>
           <Text style={[styles.statNum, { color: COLORS.violet }]}>{totalUsers}</Text>
+          <Text style={styles.statSubText}>Usuários ativos</Text>
         </View>
       </View>
 
-      {/* Estatísticas de Reuniões Realizadas */}
+      {/* Estatísticas de Eventos Realizados */}
       <View style={styles.statsRow}>
-        <View style={[S.card, styles.statBox]}>
-          <Text style={S.cardTitle}>Reuniões Realizadas</Text>
+        <View style={[S.card, styles.statBox, { borderColor: 'rgba(235, 94, 40, 0.15)' }]}>
+          <Text style={styles.statLabel}>🏆 Eventos Realizados</Text>
           <Text style={[styles.statNum, { color: COLORS.gold }]}>{completedM.length}</Text>
-          <Text style={{ color: COLORS.ink2, fontSize: 11, marginTop: 4 }}>⏱️ {totalHours.toFixed(1)}h acumuladas</Text>
+          <Text style={styles.statSubText}>⏱️ {totalHours.toFixed(1)}h acumuladas</Text>
         </View>
-        <View style={[S.card, styles.statBox]}>
-          <Text style={S.cardTitle}>Pessoas Presentes</Text>
+        <View style={[S.card, styles.statBox, { borderColor: 'rgba(61, 217, 179, 0.15)' }]}>
+          <Text style={styles.statLabel}>👥 Pessoas Presentes</Text>
           <Text style={[styles.statNum, { color: COLORS.teal }]}>{totalAttendees}</Text>
-          <Text style={{ color: COLORS.ink2, fontSize: 11, marginTop: 4 }}>👥 presentes no total</Text>
+          <Text style={styles.statSubText}>Presenças confirmadas</Text>
         </View>
       </View>
 
-      {messages.length > 0 && <Text style={S.cardTitle}>Mensagens da coordenação</Text>}
+      {messages.length > 0 && <Text style={[S.cardTitle, { marginTop: 16 }]}>Mensagens da Coordenação</Text>}
       {messages.map((m) => (
         <View key={m.id} style={[S.card, styles.msgBubble]}>
-          <Text style={{ color: COLORS.ink1, fontSize: 13, lineHeight: 19 }}>{m.text}</Text>
+          <Text style={{ color: COLORS.ink1, fontSize: 13.5, lineHeight: 20 }}>{m.text}</Text>
           <Text style={styles.msgMeta}>📣 {m.profiles?.name || 'Coordenação'} · {new Date(m.created_at).toLocaleDateString('pt-BR')}</Text>
         </View>
       ))}
 
-      <View style={S.rowBetween}>
-        <Text style={S.cardTitle}>Próximas reuniões</Text>
-        <TouchableOpacity onPress={onGoToAgenda}><Text style={{ color: COLORS.violet, fontSize: 11 }}>ver tudo</Text></TouchableOpacity>
+      <View style={[S.rowBetween, { marginTop: 16 }]}>
+        <Text style={S.cardTitle}>Próximos Eventos</Text>
+        <TouchableOpacity onPress={onGoToAgenda}><Text style={{ color: COLORS.violet, fontSize: 12, fontWeight: '700' }}>ver tudo</Text></TouchableOpacity>
       </View>
-      {meetings.filter(m => m.status !== 'realizada').length === 0 && <Text style={[S.muted, { textAlign: 'center', padding: 20 }]}>Nenhuma reunião próxima.</Text>}
+      {meetings.filter(m => m.status !== 'realizada').length === 0 && <Text style={[S.muted, { textAlign: 'center', padding: 20 }]}>Nenhum evento próximo.</Text>}
       {meetings.filter(m => m.status !== 'realizada').slice(0, 2).map((m) => (
         <View key={m.id} style={[S.card, styles.meetCard]}>
           <View style={S.rowBetween}>
-            <View>
-              <Text style={{ color: COLORS.ink1, fontWeight: '600', fontSize: 13.5 }}>{m.title}</Text>
-              <Text style={S.muted}>📍 {m.location}</Text>
+            <View style={{ flex: 1, paddingRight: 8 }}>
+              <Text style={{ color: COLORS.ink1, fontWeight: '700', fontSize: 13.5 }}>{m.title}</Text>
+              <Text style={[S.muted, { fontSize: 11, marginTop: 2 }]}>📍 {m.location}</Text>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
-              <Text style={{ color: COLORS.teal, fontFamily: 'monospace', fontSize: 11 }}>{new Date(m.date).toLocaleDateString('pt-BR')}</Text>
-              <Text style={S.muted}>{m.time}</Text>
+              <Text style={{ color: COLORS.teal, fontFamily: 'monospace', fontSize: 11, fontWeight: '700' }}>{new Date(m.date + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</Text>
+              <Text style={[S.muted, { fontSize: 11, marginTop: 2 }]}>{m.time}</Text>
             </View>
           </View>
         </View>
@@ -126,11 +128,13 @@ export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
 }
 
 const styles = StyleSheet.create({
-  adminCard: { backgroundColor: COLORS.violetDim, borderColor: COLORS.violet },
-  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
-  statBox: { flex: 1 },
-  statNum: { fontSize: 24, fontWeight: '700' },
-  msgBubble: { borderLeftWidth: 3, borderLeftColor: COLORS.violet },
-  msgMeta: { fontSize: 10.5, color: COLORS.ink3, marginTop: 6 },
-  meetCard: { borderLeftWidth: 3, borderLeftColor: COLORS.violet },
+  adminCard: { backgroundColor: COLORS.violetDim, borderColor: COLORS.violet, borderRadius: 16 },
+  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  statBox: { flex: 1, padding: 14, borderRadius: 16, backgroundColor: COLORS.panel2 },
+  statLabel: { fontSize: 9.5, color: COLORS.ink2, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4, fontWeight: '700' },
+  statNum: { fontSize: 26, fontWeight: '800', marginVertical: 2 },
+  statSubText: { fontSize: 9, color: COLORS.ink3, marginTop: 2 },
+  msgBubble: { borderLeftWidth: 4, borderLeftColor: COLORS.violet, borderRadius: 16, padding: 14, backgroundColor: COLORS.panel2, marginBottom: 8 },
+  msgMeta: { fontSize: 10, color: COLORS.ink3, marginTop: 6 },
+  meetCard: { borderLeftWidth: 4, borderLeftColor: COLORS.teal, borderRadius: 16, padding: 14, backgroundColor: COLORS.panel2, marginBottom: 8 },
 });

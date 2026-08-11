@@ -350,4 +350,43 @@ label.lbl { font-size: 10.5px; color: var(--ink2); margin: 0 0 4px 2px; display:
   color: #051A14;
 }
 
+/* Premium dashboard styling */
+.stat-card-premium {
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+}
+.stat-card-premium:hover {
+  transform: translateY(-4px);
+  border-color: rgba(0, 242, 254, 0.45) !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45), 0 0 25px rgba(0, 242, 254, 0.18) !important;
+}
+
+.msg-bubble-premium {
+  background: linear-gradient(135deg, rgba(22, 28, 44, 0.95), rgba(13, 17, 28, 0.98));
+  border: 1.5px solid rgba(138, 43, 226, 0.2);
+  border-left: 4px solid var(--violet);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3), inset 0 1px 2px rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(8px);
+  transition: all 0.3s ease;
+}
+.msg-bubble-premium:hover {
+  border-color: rgba(138, 43, 226, 0.4);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), 0 0 15px rgba(138, 43, 226, 0.05);
+}
+
+.meet-card-premium {
+  background: linear-gradient(135deg, rgba(22, 28, 44, 0.95), rgba(13, 17, 28, 0.98)) !important;
+  border: 1.5px solid rgba(0, 242, 254, 0.15) !important;
+  border-left: 4px solid var(--teal) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3) !important;
+  transition: all 0.3s ease !important;
+}
+.meet-card-premium:hover {
+  transform: translateX(4px);
+  border-color: rgba(0, 242, 254, 0.4) !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4) !important;
+}
+
 
