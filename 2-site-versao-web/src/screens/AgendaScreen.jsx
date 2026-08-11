@@ -3,7 +3,7 @@ import TopBar from '../components/TopBar';
 import { supabase, compressImageWeb } from '../lib/supabase';
 import { 
   fetchAllProfiles, fetchMeetings, createMeeting, deleteMeeting, 
-  updateMeeting, createLiveComment, fetchLiveComments, fetchProfileById 
+  updateMeeting, fetchProfileById 
 } from '../lib/api';
 
 function fmtDate(d) {

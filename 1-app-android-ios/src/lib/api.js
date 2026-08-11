@@ -144,19 +144,5 @@ export async function incrementProfileRedirects() {
   if (error) throw error;
 }
 
-export async function createLiveComment(meetingId, profileId, text) {
-  const { data, error } = await supabase.from('live_comments').insert({ meeting_id: meetingId, profile_id: profileId, text }).select('*');
-  if (error) throw error;
-  return data?.[0] || null;
-}
 
-export async function fetchLiveComments(meetingId) {
-  const { data, error } = await supabase
-    .from('live_comments')
-    .select('*, profiles(name)')
-    .eq('meeting_id', meetingId)
-    .order('created_at', { ascending: true });
-  if (error) throw error;
-  return data;
-}
 

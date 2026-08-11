@@ -132,7 +132,6 @@ function UserDetail({ user, sponsor, coord, placementParent, isAdmin, onBack, on
   const rows = [
     ['E-mail', user.email], ['Telefone', user.phone || '-'], ['Nascimento', user.birth || '-'],
     ['Instagram', user.instagram || '-'], ['Facebook', user.facebook || '-'], ['TikTok', user.tiktok || '-'], ['WhatsApp', user.whatsapp || '-'],
-    ['Permissão de Live', user.live_enabled !== false ? '✅ Permitida' : '🚨 Bloqueada (Penalidade)'],
     ['Coordenador', coord ? `${coord.name} (#${coord.id})` : '-'],
     ['Indicado por', sponsor ? `${sponsor.name} (#${sponsor.id})` : '-'],
     ['Posicionado abaixo de', placementParent ? `${placementParent.name} (#${placementParent.id})` : '-'],
@@ -195,14 +194,13 @@ function EditUserForm({ user, onCancel, onSaved }) {
   const [facebook, setFacebook] = useState(user.facebook || '');
   const [tiktok, setTiktok] = useState(user.tiktok || '');
   const [whatsapp, setWhatsapp] = useState(user.whatsapp || '');
-  const [liveEnabled, setLiveEnabled] = useState(user.live_enabled !== false);
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
 
   async function save() {
     setSaving(true);
     try {
-      await updateProfile(user.id, { name, email, phone, birth, instagram, facebook, tiktok, whatsapp, live_enabled: liveEnabled });
+      await updateProfile(user.id, { name, email, phone, birth, instagram, facebook, tiktok, whatsapp });
       if (newPassword.trim()) {
         if (newPassword.length < 6) { alert('Senha muito curta (mínimo 6 caracteres)'); setSaving(false); return; }
         if (user.role === 'admin') await changeOwnPassword(newPassword);
@@ -224,16 +222,6 @@ function EditUserForm({ user, onCancel, onSaved }) {
       <label className="lbl">Facebook</label><input value={facebook} onChange={(e) => setFacebook(e.target.value)} />
       <label className="lbl">TikTok</label><input value={tiktok} onChange={(e) => setTiktok(e.target.value)} />
       <label className="lbl">WhatsApp</label><input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} />
-      
-      <label className="lbl">Permissão de Live</label>
-      <button 
-        type="button" 
-        className={`btn ${liveEnabled ? 'btn-teal' : 'btn-warn'}`} 
-        style={{ marginBottom: 12 }} 
-        onClick={() => setLiveEnabled(!liveEnabled)}
-      >
-        {liveEnabled ? '✅ LIVE PERMITIDA' : '🚨 LIVE BLOQUEADA (PENALIDADE)'}
-      </button>
 
       <div className="sep" />
       <label className="lbl">Nova senha (deixe em branco para não alterar)</label>

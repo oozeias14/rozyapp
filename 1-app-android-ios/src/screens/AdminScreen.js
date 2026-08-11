@@ -156,7 +156,6 @@ function UserDetail({ user, sponsor, coord, placementParent, isAdmin, onBack, on
   const rows = [
     ['E-mail', user.email], ['Telefone', user.phone || '-'], ['Nascimento', user.birth || '-'],
     ['Instagram', user.instagram || '-'], ['Facebook', user.facebook || '-'], ['TikTok', user.tiktok || '-'], ['WhatsApp', user.whatsapp || '-'],
-    ['Permissão de Live', user.live_enabled !== false ? '✅ Permitida' : '🚨 Bloqueada (Penalidade)'],
     ['Coordenador', coord ? `${coord.name} (#${coord.id})` : '-'],
     ['Indicado por', sponsor ? `${sponsor.name} (#${sponsor.id})` : '-'],
     ['Posicionado abaixo de', placementParent ? `${placementParent.name} (#${placementParent.id})` : '-'],
@@ -229,14 +228,13 @@ function EditUserForm({ user, onCancel, onSaved }) {
   const [facebook, setFacebook] = useState(user.facebook || '');
   const [tiktok, setTiktok] = useState(user.tiktok || '');
   const [whatsapp, setWhatsapp] = useState(user.whatsapp || '');
-  const [liveEnabled, setLiveEnabled] = useState(user.live_enabled !== false);
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
 
   async function save() {
     setSaving(true);
     try {
-      await updateProfile(user.id, { name, email, phone, birth, instagram, facebook, tiktok, whatsapp, live_enabled: liveEnabled });
+      await updateProfile(user.id, { name, email, phone, birth, instagram, facebook, tiktok, whatsapp });
       if (newPassword.trim()) {
         if (newPassword.length < 6) { Alert.alert('Senha muito curta', 'Use ao menos 6 caracteres.'); setSaving(false); return; }
         if (user.role === 'admin') {
@@ -265,16 +263,6 @@ function EditUserForm({ user, onCancel, onSaved }) {
       <Text style={S.label}>Facebook</Text><TextInput style={S.input} value={facebook} onChangeText={setFacebook} />
       <Text style={S.label}>TikTok</Text><TextInput style={S.input} value={tiktok} onChangeText={setTiktok} />
       <Text style={S.label}>WhatsApp</Text><TextInput style={S.input} value={whatsapp} onChangeText={setWhatsapp} />
-      
-      <Text style={S.label}>Permissão de Live</Text>
-      <TouchableOpacity 
-        style={[S.btn, liveEnabled ? S.btnTeal : S.btnWarn, { marginBottom: 12 }]} 
-        onPress={() => setLiveEnabled(!liveEnabled)}
-      >
-        <Text style={liveEnabled ? S.btnTextDark : S.btnTextWarn}>
-          {liveEnabled ? '✅ LIVE PERMITIDA' : '🚨 LIVE BLOQUEADA (PENALIDADE)'}
-        </Text>
-      </TouchableOpacity>
 
       <View style={styles.sep} />
       <Text style={S.label}>Nova senha (deixe em branco para nao alterar)</Text>
