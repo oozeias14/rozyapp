@@ -16,12 +16,12 @@ export const COLORS = {
 
 export const S = {
   screen: { flex: 1, backgroundColor: COLORS.bg, paddingTop: 50, paddingHorizontal: 16 },
-  card: { backgroundColor: COLORS.panel, borderWidth: 1, borderColor: COLORS.line, borderRadius: 18, padding: 14, marginBottom: 12 },
+  card: { backgroundColor: COLORS.panel, borderWidth: 1.5, borderColor: 'rgba(255, 255, 255, 0.06)', borderRadius: 18, padding: 16, marginBottom: 12 },
   cardTitle: { fontSize: 11, color: COLORS.ink2, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8, fontWeight: '700' },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   muted: { color: COLORS.ink2, fontSize: 12.5, lineHeight: 18 },
   label: { color: COLORS.ink2, fontSize: 11, marginBottom: 4, marginLeft: 2, textTransform: 'uppercase' },
-  input: { backgroundColor: COLORS.panel2, borderWidth: 1, borderColor: COLORS.line, color: COLORS.ink1, padding: 12, borderRadius: 12, marginBottom: 12 },
+  input: { backgroundColor: COLORS.panel2, borderWidth: 1.5, borderColor: 'rgba(255, 255, 255, 0.08)', color: COLORS.ink1, padding: 12, borderRadius: 12, marginBottom: 12 },
   btn: { padding: 13, borderRadius: 12, alignItems: 'center', marginBottom: 8 },
   btnTeal: { backgroundColor: COLORS.teal },
   btnViolet: { backgroundColor: COLORS.violet },

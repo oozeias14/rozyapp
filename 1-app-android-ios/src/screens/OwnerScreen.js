@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
   },
-  socialRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 11, backgroundColor: COLORS.panel2, borderRadius: 12, marginBottom: 8 },
+  socialRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, backgroundColor: COLORS.panel2, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(0, 242, 254, 0.1)', marginBottom: 10 },
   socialIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
 });
 

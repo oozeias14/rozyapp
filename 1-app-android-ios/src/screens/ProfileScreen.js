@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
   hint: { color: COLORS.ink3, fontSize: 10, marginBottom: 8, textAlign: 'center' },
   name: { color: COLORS.ink1, fontSize: 17, fontWeight: '700' },
   bigCode: { fontFamily: 'monospace', fontSize: 34, fontWeight: '700', color: COLORS.teal, letterSpacing: 1 },
-  linkBox: { backgroundColor: COLORS.panel2, borderWidth: 1, borderColor: COLORS.line, borderRadius: 12, padding: 10, marginBottom: 8 },
+  linkBox: { backgroundColor: 'rgba(0, 242, 254, 0.03)', borderWidth: 1.5, borderColor: 'rgba(0, 242, 254, 0.25)', borderRadius: 12, padding: 12, marginBottom: 8 },
   linkText: { color: COLORS.teal, fontFamily: 'monospace', fontSize: 11.5 },
   inputRow: {
     position: 'relative',

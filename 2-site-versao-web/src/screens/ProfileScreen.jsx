@@ -120,25 +120,25 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
     <div className="screen">
       <TopBar totalUsers={totalUsers} />
 
-      <div className="card" style={{ textAlign: 'center' }}>
-        <div className="photo-ring" onClick={() => fileInputRef.current?.click()}>
+      <div className="card" style={{ textAlign: 'center', background: 'linear-gradient(135deg, rgba(22, 28, 44, 0.95), rgba(13, 17, 28, 0.98))', border: '1.5px solid rgba(138, 43, 226, 0.15)', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)', borderRadius: 16 }}>
+        <div className="photo-ring" onClick={() => fileInputRef.current?.click()} style={{ margin: '0 auto 10px', transition: 'all 0.3s ease', cursor: 'pointer' }}>
           {uploading ? '...' : profile.photo_url ? <img src={profile.photo_url} alt="" /> : '📷'}
         </div>
         <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
-        <div className="muted" style={{ fontSize: 10, marginBottom: 8 }}>Toque para escolher uma foto (máx. 200 KB)</div>
-        <h2 style={{ fontSize: 17, marginBottom: 2 }}>{profile.name}</h2>
-        <div style={{ fontSize: 12, color: 'var(--teal)', fontWeight: 600, marginBottom: 4 }}>@{profile.username || 'sem_usuario'}</div>
-        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 5 }}>
+        <div className="muted" style={{ fontSize: 10, marginBottom: 12 }}>Toque para escolher uma foto (máx. 200 KB)</div>
+        <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 2, color: 'var(--ink1)' }}>{profile.name}</h2>
+        <div style={{ fontSize: 12, color: 'var(--teal)', fontWeight: 700, marginBottom: 6 }}>@{profile.username || 'sem_usuario'}</div>
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 6 }}>
           <span className="id-badge">#{profile.id}</span>
           <span className={`role-badge ${profile.role === 'admin' ? 'role-admin' : profile.role === 'coord' ? 'role-coord' : 'role-user'}`}>
             {profile.role === 'admin' ? 'Admin' : profile.role === 'coord' ? 'Coord' : 'Membro'}
           </span>
         </div>
-        <div className="muted" style={{ marginTop: 8 }}>{profile.email}</div>
+        <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>{profile.email}</div>
       </div>
 
-      <div className="card-title">Editar redes sociais</div>
-      <div className="card">
+      <div className="card-title" style={{ marginTop: 20 }}>Editar redes sociais</div>
+      <div className="card" style={{ background: 'linear-gradient(135deg, rgba(22, 28, 44, 0.95), rgba(13, 17, 28, 0.98))', border: '1.5px solid rgba(0, 242, 254, 0.12)', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)', borderRadius: 16 }}>
         <label className="lbl">Instagram</label>
         <div className="social-input-wrapper">
           <input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@usuario" style={{ paddingRight: '12px' }} />
@@ -158,17 +158,18 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
         <button className="btn btn-teal" onClick={saveSocials}>Salvar redes sociais</button>
       </div>
 
-      <div className="card-title">Link de indicação</div>
-      <div className="card" style={{ padding: '16px' }}>
+      <div className="card-title" style={{ marginTop: 20 }}>Link de indicação</div>
+      <div className="card" style={{ padding: '16px', background: 'linear-gradient(135deg, rgba(22, 28, 44, 0.95), rgba(13, 17, 28, 0.98))', border: '1.5px solid rgba(0, 242, 254, 0.12)', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)', borderRadius: 16 }}>
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          background: 'var(--panel2)',
-          border: '1px solid var(--line)',
+          background: 'rgba(0, 242, 254, 0.03)',
+          border: '1.5px solid rgba(0, 242, 254, 0.25)',
           borderRadius: '12px',
           padding: '12px 16px',
           cursor: 'pointer',
-          width: '100%'
+          width: '100%',
+          transition: 'all 0.3s ease'
         }} onClick={async () => { await navigator.clipboard.writeText(referralLink); alert('Link de indicação copiado!'); }}>
           <span style={{
             flex: 1,
@@ -194,8 +195,8 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
         <div className="muted" style={{ marginTop: '10px' }}>Toque no link acima para copiar o seu endereço de indicação direta.</div>
       </div>
 
-      <div className="card-title">Alterar minha senha</div>
-      <div className="card">
+      <div className="card-title" style={{ marginTop: 20 }}>Alterar minha senha</div>
+      <div className="card" style={{ background: 'linear-gradient(135deg, rgba(22, 28, 44, 0.95), rgba(13, 17, 28, 0.98))', border: '1.5px solid rgba(138, 43, 226, 0.12)', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)', borderRadius: 16 }}>
         <form onSubmit={handleChangePassword}>
           <label className="lbl">Nova senha</label>
           <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Mínimo 6 caracteres" />
