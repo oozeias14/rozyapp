@@ -3,7 +3,7 @@ import TopBar from '../components/TopBar';
 import PersonModal from '../components/PersonModal';
 import { fetchTotalUsersCount, fetchDirectReferrals, fetchMatrixChildren, fetchProfileById } from '../lib/api';
 
-const ORBIT_SIZE = 230, R = 95, CX = ORBIT_SIZE / 2, CY = ORBIT_SIZE / 2;
+const ORBIT_SIZE = 250, R = 100, CX = ORBIT_SIZE / 2, CY = ORBIT_SIZE / 2;
 function initials(name) { return (name || '?').split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase(); }
 
 function Avatar({ person, size }) {
@@ -53,22 +53,44 @@ export default function NetworkScreen({ profile }) {
       <TopBar totalUsers={totalUsers} />
 
       {coord && (
-        <div className="card">
-          <div className="card-title">Seu Coordenador / Patrocinador</div>
-          <div className="prow" style={{ borderBottom: 'none', cursor: 'pointer' }} onClick={() => openPerson(coord)}>
-            <Avatar person={coord} size={36} />
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 13.5 }}>{coord.name}</div>
-              <div className="muted">{coord.role === 'admin' ? 'Admin' : 'Coordenador'}</div>
+        <div className="card" style={{ 
+          background: 'linear-gradient(135deg, rgba(22, 28, 44, 0.95), rgba(13, 17, 28, 0.98))',
+          border: '1.5px solid rgba(138, 43, 226, 0.25)',
+          boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37), 0 0 15px rgba(138, 43, 226, 0.05)',
+          backdropFilter: 'blur(8px)',
+          transition: 'all 0.3s ease',
+          padding: '16px 20px'
+        }}>
+          <div className="card-title" style={{ color: 'var(--ink2)', letterSpacing: '0.05em', textTransform: 'uppercase', fontSize: 10, fontWeight: 700, marginBottom: 12 }}>Seu Coordenador / Patrocinador</div>
+          <div className="prow" style={{ borderBottom: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }} onClick={() => openPerson(coord)}>
+            <Avatar person={coord} size={42} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink1)' }}>{coord.name}</div>
+              <div className="role-badge" style={{ 
+                display: 'inline-block',
+                marginTop: 4,
+                padding: '2px 8px',
+                borderRadius: 6,
+                fontSize: 10,
+                fontWeight: 700,
+                background: coord.role === 'admin' ? 'rgba(138, 43, 226, 0.15)' : 'rgba(0, 242, 254, 0.1)',
+                color: coord.role === 'admin' ? 'var(--violet)' : 'var(--teal)',
+                border: coord.role === 'admin' ? '1px solid rgba(138, 43, 226, 0.3)' : '1px solid rgba(0, 242, 254, 0.3)'
+              }}>
+                {coord.role === 'admin' ? 'Administrador' : 'Coordenador'}
+              </div>
             </div>
+            <div style={{ color: 'var(--teal)', fontSize: 12, fontWeight: 600 }}>Ver Perfil ➡️</div>
           </div>
         </div>
       )}
 
-      <div className="card-title">Seus 10 slots diretos</div>
+      <div className="card-title" style={{ marginTop: 20 }}>Seus 10 slots diretos</div>
       <div className="orbit-wrap">
         <div className="orbit">
+          <div className="orbit-ring-outer" />
           <div className="orbit-ring" />
+          <div className="orbit-ring-inner" />
           {slots.map((s, i) => {
             const ang = (Math.PI * 2 / 10) * i - Math.PI / 2;
             const x = CX + R * Math.cos(ang), y = CY + R * Math.sin(ang);
@@ -86,7 +108,7 @@ export default function NetworkScreen({ profile }) {
           })}
           <div className="orbit-center mono">#{profile.id}</div>
         </div>
-        <div className="muted" style={{ marginTop: 6 }}>{Math.min(matrixChildren.length, 10)}/10 slots preenchidos</div>
+        <div className="muted" style={{ marginTop: 12, fontWeight: 500, color: 'var(--ink2)' }}>{Math.min(matrixChildren.length, 10)}/10 slots preenchidos</div>
       </div>
 
       <div style={{ marginTop: 16, marginBottom: 12 }}>
@@ -117,8 +139,19 @@ export default function NetworkScreen({ profile }) {
         </div>
       )}
 
-      <div className="card" style={{ background: 'var(--violet-dim)', borderColor: 'var(--violet)' }}>
-        <div style={{ fontSize: 12, color: '#CFC9FA' }}>11º indicado em diante entra automaticamente na primeira vaga livre da rede (spillover automático).</div>
+      <div className="card" style={{ 
+        background: 'linear-gradient(135deg, rgba(138, 43, 226, 0.08), rgba(0, 242, 254, 0.03))', 
+        borderColor: 'rgba(138, 43, 226, 0.3)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '16px',
+        marginBottom: 10
+      }}>
+        <div style={{ fontSize: 20, flexShrink: 0 }}>💡</div>
+        <div style={{ fontSize: 12.5, color: '#D5CFFE', lineHeight: 1.5, fontWeight: 500 }}>
+          O <strong>11º indicado em diante</strong> entra automaticamente na primeira vaga livre da rede (spillover automático).
+        </div>
       </div>
       <div style={{ height: 20 }} />
 

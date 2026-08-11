@@ -109,13 +109,133 @@ label.lbl { font-size: 10.5px; color: var(--ink2); margin: 0 0 4px 2px; display:
 .prow:last-child { border-bottom: none; }
 .data-row { display: flex; align-items: center; gap: 10px; padding: 10px; background: var(--panel); border-radius: 12px; margin-bottom: 8px; cursor: pointer; }
 
-.orbit-wrap { display: flex; flex-direction: column; align-items: center; padding: 8px 0; }
-.orbit { position: relative; width: 230px; height: 230px; }
-.orbit-ring { position: absolute; inset: 0; border: 1.5px dashed var(--line); border-radius: 50%; }
-.orbit-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 58px; height: 58px; border-radius: 50%; background: var(--violet); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; color: #fff; }
-.orbit-slot { position: absolute; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 700; cursor: pointer; transform: translate(-50%,-50%); }
-.slot-f { background: var(--teal-dim); border: 1.5px solid var(--teal); color: var(--teal); }
-.slot-e { background: transparent; border: 1.5px dashed var(--ink3); color: var(--ink3); }
+.orbit-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 0;
+}
+.orbit {
+  position: relative;
+  width: 250px;
+  height: 250px;
+  margin: 10px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.orbit-ring-outer {
+  position: absolute;
+  inset: -15px;
+  border: 1px dashed rgba(138, 43, 226, 0.12);
+  border-radius: 50%;
+  animation: rotate-reverse 80s linear infinite;
+  pointer-events: none;
+}
+.orbit-ring {
+  position: absolute;
+  inset: 0;
+  border: 1.5px dashed rgba(0, 242, 254, 0.25);
+  border-radius: 50%;
+  box-shadow: inset 0 0 20px rgba(0, 242, 254, 0.03), 0 0 20px rgba(0, 242, 254, 0.03);
+  animation: rotate-forward 120s linear infinite;
+  pointer-events: none;
+}
+.orbit-ring-inner {
+  position: absolute;
+  inset: 40px;
+  border: 1px dotted rgba(138, 43, 226, 0.15);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.orbit-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--violet), var(--teal));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 15px;
+  color: #fff;
+  box-shadow: 0 0 25px rgba(138, 43, 226, 0.4), inset 0 2px 4px rgba(255, 255, 255, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  z-index: 5;
+  animation: pulse-glow 3s infinite alternate;
+}
+.orbit-center::after {
+  content: 'VOCÊ';
+  font-size: 8px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.08em;
+  margin-top: 1px;
+}
+.orbit-slot {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  z-index: 10;
+}
+.slot-f {
+  background: var(--teal-dim);
+  border: 2px solid var(--teal);
+  color: var(--teal);
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.2);
+}
+.slot-f:hover {
+  transform: translate(-50%, -50%) scale(1.18);
+  box-shadow: 0 0 20px rgba(0, 242, 254, 0.5);
+  border-color: #fff;
+  z-index: 15;
+}
+.slot-e {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1.5px dashed rgba(255, 255, 255, 0.15);
+  color: var(--ink3);
+  backdrop-filter: blur(4px);
+}
+.slot-e:hover {
+  transform: translate(-50%, -50%) scale(1.15);
+  border: 1.5px dashed var(--teal);
+  color: var(--teal);
+  background: rgba(0, 242, 254, 0.03);
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.3);
+}
+
+@keyframes rotate-forward {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes rotate-reverse {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+@keyframes pulse-glow {
+  0% {
+    box-shadow: 0 0 15px rgba(138, 43, 226, 0.35), inset 0 2px 4px rgba(255, 255, 255, 0.2);
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    box-shadow: 0 0 25px rgba(0, 242, 254, 0.5), inset 0 2px 4px rgba(255, 255, 255, 0.3);
+    transform: translate(-50%, -50%) scale(1.02);
+  }
+}
 
 .meet-card { border-left: 3px solid var(--violet); }
 .meet-date { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--teal); }
