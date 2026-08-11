@@ -33,7 +33,7 @@ export default function App() {
       return;
     }
     const isStaff = profile.role === 'admin' || profile.role === 'coord';
-    const limitSeconds = isStaff ? 30 * 60 : 5 * 60;
+    const limitSeconds = isStaff ? 30 * 60 : 10 * 60;
 
     let active = true;
 
