@@ -1,6 +1,7 @@
 import React from 'react';
 import { Modal, View, Text, Image, TouchableOpacity, Linking, StyleSheet } from 'react-native';
 import { COLORS, S, roleLabel, roleStyle } from '../theme';
+import { FontAwesome } from '@expo/vector-icons';
 
 export default function PersonModal({ visible, person, sponsor, onClose }) {
   if (!person) return null;
@@ -9,7 +10,7 @@ export default function PersonModal({ visible, person, sponsor, onClose }) {
     person.instagram && { key: 'instagram', label: 'Instagram', value: person.instagram, icon: '📸', url: `https://instagram.com/${person.instagram.replace('@', '')}` },
     person.facebook && { key: 'facebook', label: 'Facebook', value: person.facebook, icon: '📘', url: `https://facebook.com/${encodeURIComponent(person.facebook)}` },
     person.tiktok && { key: 'tiktok', label: 'TikTok', value: person.tiktok, icon: '🎵', url: `https://tiktok.com/${person.tiktok}` },
-    person.whatsapp && { key: 'whatsapp', label: 'WhatsApp', value: 'Conversar', icon: '💬', url: `https://wa.me/${person.whatsapp}` },
+    person.whatsapp && { key: 'whatsapp', label: 'WhatsApp', value: 'Conversar', icon: <FontAwesome name="whatsapp" size={18} color="#25D366" />, url: `https://wa.me/${person.whatsapp}` },
   ].filter(Boolean);
 
   return (
@@ -41,7 +42,9 @@ export default function PersonModal({ visible, person, sponsor, onClose }) {
           {socials.length === 0 && <Text style={S.muted}>Este membro ainda não cadastrou redes sociais.</Text>}
           {socials.map((s) => (
             <TouchableOpacity key={s.key} style={styles.socialRow} onPress={() => Linking.openURL(s.url)}>
-              <View style={styles.socialIcon}><Text>{s.icon}</Text></View>
+              <View style={styles.socialIcon}>
+                {typeof s.icon === 'string' ? <Text style={{ fontSize: 15 }}>{s.icon}</Text> : s.icon}
+              </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 10, color: COLORS.ink2 }}>{s.label}</Text>
                 <Text style={{ fontWeight: '700', color: COLORS.ink1 }}>{s.value}</Text>
