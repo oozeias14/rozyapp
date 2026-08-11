@@ -207,7 +207,19 @@ export default function AuthScreen({ onLoggedIn }) {
       }
     }
 
-    const isFirstUser = finalUsername === 'rozycosta';
+    // O primeiro usuário cadastrado no sistema é o Administrador Raiz
+    let isFirstUser = false;
+    try {
+      const { data: existingProfiles } = await supabase
+        .from('profiles')
+        .select('id')
+        .limit(1);
+      if (!existingProfiles || existingProfiles.length === 0) {
+        isFirstUser = true;
+      }
+    } catch (err) {
+      console.log('Erro ao verificar perfis existentes:', err);
+    }
 
     let refUserId = null;
     let refUser = null;
@@ -215,7 +227,17 @@ export default function AuthScreen({ onLoggedIn }) {
     if (!isFirstUser) {
       let parsedRef = cleanedRefCode;
       if (!parsedRef) {
-        parsedRef = 'rozycosta';
+        try {
+          const { data: adminProfile } = await supabase
+            .from('profiles')
+            .select('username')
+            .eq('role', 'admin')
+            .limit(1)
+            .maybeSingle();
+          parsedRef = adminProfile?.username || 'admin';
+        } catch (e) {
+          parsedRef = 'admin';
+        }
       }
 
       if (/^\d+$/.test(parsedRef)) {
@@ -294,7 +316,8 @@ export default function AuthScreen({ onLoggedIn }) {
         const { data: adminProfile } = await supabase
           .from('profiles')
           .select('phone')
-          .eq('username', 'rozycosta')
+          .eq('role', 'admin')
+          .limit(1)
           .maybeSingle();
         if (adminProfile && adminProfile.phone) {
           adminPhone = adminProfile.phone;

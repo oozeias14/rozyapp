@@ -13,7 +13,7 @@ const realClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // --- SEED DE DADOS MOCK (Para testes 100% locais offline) ---
 const initialProfiles = [
-  { id: 1, auth_id: 'admin-uid', name: 'Rozy Costa', email: 'oozeias2024@gmail.com', username: 'rozycosta', role: 'admin', live_enabled: true },
+  { id: 1, auth_id: 'admin-uid', name: 'Túlio Admin', email: 'oozeias2024@gmail.com', username: 'tulio', role: 'admin', live_enabled: true },
   { id: 2, auth_id: 'coord-uid-1', name: 'Coord Roberto', email: 'roberto@gmail.com', username: 'roberto', role: 'coord', live_enabled: true },
   { id: 3, auth_id: 'user-uid-1', name: 'Membro Alice', email: 'alice@gmail.com', username: 'alice', role: 'user', live_enabled: true }
 ];
@@ -94,12 +94,12 @@ class LocalDataStore {
         const adminIndex = this.profiles.findIndex(p => p.id === 1);
         if (adminIndex !== -1) {
           let dirty = false;
-          if (this.profiles[adminIndex].username !== 'rozycosta') {
-            this.profiles[adminIndex].username = 'rozycosta';
+          if (this.profiles[adminIndex].username !== 'tulio') {
+            this.profiles[adminIndex].username = 'tulio';
             dirty = true;
           }
-          if (this.profiles[adminIndex].name !== 'Rozy Costa') {
-            this.profiles[adminIndex].name = 'Rozy Costa';
+          if (this.profiles[adminIndex].name !== 'Túlio Admin') {
+            this.profiles[adminIndex].name = 'Túlio Admin';
             dirty = true;
           }
           if (dirty) this.save();
