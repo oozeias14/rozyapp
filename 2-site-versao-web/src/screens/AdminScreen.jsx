@@ -43,7 +43,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
   useEffect(() => { load(); }, [load]);
 
   const tabs = [
-    ['users', '👥 Cadastros'], ['meetings', '📅 Reuniões'], ['messages', '📣 Mensagens'],
+    ['users', '👥 Cadastros'], ['messages', '📣 Mensagens'],
     ...(isAdmin ? [['owner', '👨‍⚕️ Dr. Candido'], ['stats', '📊 Stats'], ['settings', '⚙️ Conta']] : []),
   ];
 
@@ -63,7 +63,6 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
       <div style={{ flex: 1 }}>
         {loading && <div style={{ fontSize: 12, color: 'var(--teal)', textAlign: 'center', margin: '8px 0' }}>⏳ Carregando dados...</div>}
         {tab === 'users' && <UsersTab users={users} isAdmin={isAdmin} reload={load} />}
-        {tab === 'meetings' && <MeetingsTab meetings={meetings} reload={load} />}
         {tab === 'messages' && <MessagesTab messages={messages} profile={profile} reload={load} />}
         {tab === 'owner' && isAdmin && owner && <OwnerTab owner={owner} reload={load} />}
         {tab === 'stats' && isAdmin && <StatsTab users={users} meetings={meetings} messages={messages} />}
@@ -232,98 +231,6 @@ function EditUserForm({ user, onCancel, onSaved }) {
   );
 }
 
-/* ===== REUNIÕES ===== */
-function mapsUrl(lat, lng) {
-  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
-}
-
-function MeetingsTab({ meetings, reload }) {
-  const [adding, setAdding] = useState(false);
-  const [title, setTitle] = useState(''); const [date, setDate] = useState(''); const [time, setTime] = useState(''); const [location, setLocation] = useState('');
-  const [coords, setCoords] = useState(null);
-  const [capturing, setCapturing] = useState(false);
-
-  function captureLocation() {
-    if (!navigator.geolocation) { alert('Seu navegador não suporta localização.'); return; }
-    setCapturing(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => { setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude }); setCapturing(false); alert('Localização capturada!'); },
-      (err) => { setCapturing(false); alert('Erro: ' + err.message); },
-      { enableHighAccuracy: true, timeout: 15000 }
-    );
-  }
-
-  async function save() {
-    if (!title.trim() || !date.trim()) { alert('Preencha título e data'); return; }
-    try {
-      await createMeeting({ title, date, time: time || '-', location: location || 'A definir', lat: coords?.lat ?? null, lng: coords?.lng ?? null });
-      notifyBrowser('Nova reunião!', title);
-      setAdding(false); setTitle(''); setDate(''); setTime(''); setLocation(''); setCoords(null);
-      reload();
-    } catch (e) { alert('Erro: ' + e.message); }
-  }
-  async function remove(id) {
-    if (!confirm('Excluir esta reunião?')) return;
-    try { await deleteMeeting(id); reload(); } catch (e) { alert('Erro: ' + e.message); }
-  }
-
-  if (adding) {
-    return (
-      <div className="card">
-        <h3 style={{ fontSize: 15, marginBottom: 12 }}>Agendar reunião</h3>
-        <label className="lbl">Título</label><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ex: Reunião mensal" />
-        <label className="lbl">Data</label><input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-        <label className="lbl">Horário</label><input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-        <label className="lbl">Local (endereço em texto)</label><input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Endereço ou link" />
-
-        <label className="lbl">Localização exata (opcional)</label>
-        {coords ? (
-          <div className="lbox" style={{ borderColor: 'var(--teal)' }}>
-            <span style={{ color: 'var(--teal)' }}>📍 Capturada ✅</span>
-            <a href={mapsUrl(coords.lat, coords.lng)} target="_blank" rel="noreferrer" style={{ color: 'var(--violet)', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>Ver no mapa</a>
-            <button type="button" onClick={() => setCoords(null)} style={{ background: 'none', border: 'none', color: 'var(--warn)', fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>Remover</button>
-          </div>
-        ) : (
-          <button className="btn btn-ghost" onClick={captureLocation} disabled={capturing}>{capturing ? 'Obtendo localização...' : '📍 Usar minha localização atual'}</button>
-        )}
-
-        <button className="btn btn-violet" onClick={save}>Agendar e notificar rede</button>
-        <button className="btn btn-ghost" onClick={() => setAdding(false)}>Cancelar</button>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className="row-bw" style={{ marginBottom: 10 }}>
-        <div className="card-title" style={{ marginBottom: 0 }}>Reuniões ({meetings.length})</div>
-        <button className="btn btn-violet btn-sm" onClick={() => setAdding(true)}>+ Agendar</button>
-      </div>
-      {meetings.length === 0 && <div className="empty">Nenhuma reunião agendada.</div>}
-      {meetings.map((m) => (
-        <div key={m.id} className="card meet-card">
-          <div className="row-bw">
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 13.5 }}>{m.title}</div>
-              <div className="muted">{m.location}</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div className="meet-date">{fmtDate(m.date)}</div>
-              <div className="muted">{m.time}</div>
-            </div>
-          </div>
-          {m.lat != null && m.lng != null && (
-            <a className="btn btn-teal" style={{ marginTop: 10, marginBottom: 0 }} href={mapsUrl(m.lat, m.lng)} target="_blank" rel="noreferrer">📍 Abrir no Google Maps</a>
-          )}
-          <div className="btn-row" style={{ marginTop: 10 }}>
-            <button className="btn btn-ghost btn-sm" style={{ flex: 1 }} onClick={() => notifyBrowser(m.title, `${fmtDate(m.date)} às ${m.time} - ${m.location}`)}>Notificar todos</button>
-            <button className="btn btn-warn btn-sm" onClick={() => remove(m.id)}>Excluir</button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 /* ===== MENSAGENS ===== */
 function MessagesTab({ messages, profile, reload }) {

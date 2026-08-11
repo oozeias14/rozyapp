@@ -50,7 +50,6 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
 
   const tabs = [
     ['users', '👥 Cadastros'],
-    ['meetings', '📅 Reuniões'],
     ['messages', '📣 Mensagens'],
     ...(isAdmin ? [['owner', '👨‍⚕️ Dr. Candido'], ['stats', '📊 Stats'], ['settings', '⚙️ Conta']] : []),
   ];
@@ -79,7 +78,6 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
 
       <ScrollView style={{ flex: 1 }} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.teal} />}>
         {tab === 'users' && <UsersTab users={users} isAdmin={isAdmin} reload={load} />}
-        {tab === 'meetings' && <MeetingsTab meetings={meetings} reload={load} />}
         {tab === 'messages' && <MessagesTab messages={messages} profile={profile} reload={load} />}
         {tab === 'owner' && isAdmin && owner ? <OwnerTab owner={owner} reload={load} /> : null}
         {tab === 'stats' && isAdmin && <StatsTab users={users} meetings={meetings} messages={messages} />}
@@ -280,124 +278,7 @@ function mapsUrl(lat, lng) {
   return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
 }
 
-function MeetingsTab({ meetings, reload }) {
-  const [adding, setAdding] = useState(false);
-  const [title, setTitle] = useState('');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
-  const [location, setLocation] = useState('');
-  const [coords, setCoords] = useState(null);
-  const [capturing, setCapturing] = useState(false);
 
-  async function captureLocation() {
-    setCapturing(true);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permissão necessária', 'Autorize o acesso à localização.');
-        setCapturing(false);
-        return;
-      }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-      Alert.alert('Localização capturada ✅', 'O ponto exato foi salvo.');
-    } catch (e) {
-      Alert.alert('Erro ao obter localização', e.message);
-    } finally {
-      setCapturing(false);
-    }
-  }
-
-  async function save() {
-    if (!title.trim() || !date.trim()) { Alert.alert('Preencha titulo e data'); return; }
-    try {
-      await createMeeting({ title, date, time: time || '-', location: location || 'A definir', lat: coords?.lat ?? null, lng: coords?.lng ?? null });
-      await Notifications.scheduleNotificationAsync({ content: { title: 'Nova reuniao!', body: title }, trigger: null });
-      setAdding(false); setTitle(''); setDate(''); setTime(''); setLocation(''); setCoords(null);
-      reload();
-    } catch (e) { Alert.alert('Erro', e.message); }
-  }
-  function remove(id) {
-    Alert.alert('Excluir reuniao', 'Tem certeza?', [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Excluir', style: 'destructive', onPress: async () => { try { await deleteMeeting(id); reload(); } catch (e) { Alert.alert('Erro', e.message); } } },
-    ]);
-  }
-  async function notifyAll(m) {
-    await Notifications.scheduleNotificationAsync({ content: { title: m.title, body: `${fmtDate(m.date)} as ${m.time} - ${m.location}` }, trigger: null });
-  }
-
-  if (adding) {
-    return (
-      <View style={S.card}>
-        <Text style={{ color: COLORS.ink1, fontWeight: '700', fontSize: 15, marginBottom: 12 }}>Agendar reuniao</Text>
-        <Text style={S.label}>Titulo</Text><TextInput style={S.input} value={title} onChangeText={setTitle} placeholder="Ex: Reuniao mensal" placeholderTextColor={COLORS.ink3} />
-        <Text style={S.label}>Data (AAAA-MM-DD)</Text><TextInput style={S.input} value={date} onChangeText={setDate} placeholder="2026-08-15" placeholderTextColor={COLORS.ink3} />
-        <Text style={S.label}>Horario</Text><TextInput style={S.input} value={time} onChangeText={setTime} placeholder="19:00" placeholderTextColor={COLORS.ink3} />
-        <Text style={S.label}>Local (endereço em texto)</Text><TextInput style={S.input} value={location} onChangeText={setLocation} placeholder="Endereco ou link" placeholderTextColor={COLORS.ink3} />
-
-        <Text style={S.label}>Localização exata (opcional)</Text>
-        {coords ? (
-          <View style={styles.coordBox}>
-            <Text style={{ color: COLORS.teal, fontSize: 12.5, flex: 1 }}>📍 Capturada ✅</Text>
-            <TouchableOpacity onPress={() => Linking.openURL(mapsUrl(coords.lat, coords.lng))}>
-              <Text style={{ color: COLORS.violet, fontSize: 12, fontWeight: '700' }}>Ver no mapa</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setCoords(null)} style={{ marginLeft: 12 }}>
-              <Text style={{ color: COLORS.warn, fontSize: 12, fontWeight: '700' }}>Remover</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <TouchableOpacity style={[S.btn, S.btnGhost]} onPress={captureLocation} disabled={capturing}>
-            <Text style={S.btnTextGhost}>{capturing ? 'Obtendo localização...' : '📍 Usar minha localização atual'}</Text>
-          </TouchableOpacity>
-        )}
-
-        <TouchableOpacity style={[S.btn, S.btnViolet]} onPress={save}><Text style={S.btnTextLight}>Agendar e notificar rede</Text></TouchableOpacity>
-        <TouchableOpacity style={[S.btn, S.btnGhost]} onPress={() => setAdding(false)}><Text style={S.btnTextGhost}>Cancelar</Text></TouchableOpacity>
-      </View>
-    );
-  }
-
-  return (
-    <View>
-      <View style={[S.rowBetween, { marginBottom: 10 }]}>
-        <Text style={[S.cardTitle, { marginBottom: 0 }]}>Reunioes ({meetings.length})</Text>
-        <TouchableOpacity style={[S.btn, S.btnViolet, { marginBottom: 0, paddingHorizontal: 14, paddingVertical: 8 }]} onPress={() => setAdding(true)}>
-          <Text style={S.btnTextLight}>+ Agendar</Text>
-        </TouchableOpacity>
-      </View>
-      {meetings.length === 0 && <Text style={[S.muted, { textAlign: 'center', padding: 20 }]}>Nenhuma reuniao agendada.</Text>}
-      {meetings.map((m) => (
-        <View key={m.id} style={[S.card, styles.meetCard]}>
-          <View style={S.rowBetween}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: '700', color: COLORS.ink1, fontSize: 13.5 }}>{m.title}</Text>
-              <Text style={S.muted}>{m.location}</Text>
-            </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={{ fontFamily: 'monospace', fontSize: 11, color: COLORS.teal }}>{fmtDate(m.date)}</Text>
-              <Text style={[S.muted, { fontFamily: 'monospace' }]}>{m.time}</Text>
-            </View>
-          </View>
-          {m.lat != null && m.lng != null && (
-            <TouchableOpacity style={[S.btn, S.btnTeal, { marginTop: 10, marginBottom: 0, paddingVertical: 9 }]} onPress={() => Linking.openURL(mapsUrl(m.lat, m.lng))}>
-              <Text style={S.btnTextDark}>📍 Abrir no Google Maps</Text>
-            </TouchableOpacity>
-          )}
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-            <TouchableOpacity style={[S.btn, S.btnGhost, { flex: 1, marginBottom: 0, paddingVertical: 8 }]} onPress={() => notifyAll(m)}>
-              <Text style={S.btnTextGhost}>Notificar todos</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[S.btn, S.btnWarn, { marginBottom: 0, paddingVertical: 8, paddingHorizontal: 14 }]} onPress={() => remove(m.id)}>
-              <Text style={S.btnTextWarn}>Excluir</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-}
 
 /* ====== MENSAGENS ====== */
 function MessagesTab({ messages, profile, reload }) {
