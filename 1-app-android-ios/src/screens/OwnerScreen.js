@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, Image, TouchableOpacity, ScrollView, Linking, RefreshControl, StyleSheet, Share } from 'react-native';
+import { FontAwesome } from '@expo/vector-icons';
 import { COLORS, S } from '../theme';
 import TopBar from '../components/TopBar';
 import { fetchAllProfiles, fetchOwnerProfile, incrementInstagramRedirects, incrementProfileRedirects } from '../lib/api';
@@ -34,10 +35,10 @@ export default function OwnerScreen({ profile, onOpenAdminOwner }) {
   if (!owner) return null;
 
   const socials = [
-    owner.instagram && { key: 'instagram', label: 'Instagram', value: owner.instagram, icon: '📸', color: '#C13584', url: `https://instagram.com/${owner.instagram.replace('@', '')}` },
+    owner.instagram && { key: 'instagram', label: 'Instagram', value: owner.instagram, icon: <FontAwesome name="instagram" size={18} color="#fff" />, color: '#C13584', url: `https://instagram.com/${owner.instagram.replace('@', '')}` },
     owner.facebook && { key: 'facebook', label: 'Facebook', value: owner.facebook, icon: '📘', color: '#1877F2', url: `https://facebook.com/${encodeURIComponent(owner.facebook)}` },
     owner.tiktok && { key: 'tiktok', label: 'TikTok', value: owner.tiktok, icon: '🎵', color: '#010101', url: `https://tiktok.com/${owner.tiktok}` },
-    owner.whatsapp && { key: 'whatsapp', label: 'WhatsApp', value: `Falar com ${owner.name}`, icon: '💬', color: '#25D366', url: `https://wa.me/${owner.whatsapp}` },
+    owner.whatsapp && { key: 'whatsapp', label: 'WhatsApp', value: `Falar com ${owner.name}`, icon: <FontAwesome name="whatsapp" size={18} color="#fff" />, color: '#25D366', url: `https://wa.me/${owner.whatsapp}` },
     owner.youtube && { key: 'youtube', label: 'YouTube', value: 'Canal oficial', icon: '▶️', color: '#FF0000', url: owner.youtube },
   ].filter(Boolean);
 
@@ -75,7 +76,9 @@ export default function OwnerScreen({ profile, onOpenAdminOwner }) {
       {socials.length === 0 && <Text style={[S.muted, { textAlign: 'center', padding: 20 }]}>Redes sociais serão configuradas pelo Admin.</Text>}
       {socials.map((s) => (
         <TouchableOpacity key={s.key} style={styles.socialRow} onPress={() => handleSocialPress(s)}>
-          <View style={[styles.socialIcon, { backgroundColor: s.color }]}><Text>{s.icon}</Text></View>
+          <View style={[styles.socialIcon, { backgroundColor: s.color }]}>
+            {typeof s.icon === 'string' ? <Text>{s.icon}</Text> : s.icon}
+          </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 10, color: COLORS.ink2 }}>{s.label}</Text>
             <Text style={{ fontWeight: '700', color: COLORS.ink1 }}>{s.value}</Text>
