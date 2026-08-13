@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, Image, TouchableOpacity, TextInput, Alert, StyleSheet, ActivityIndicator, ScrollView, Share, Linking, Modal } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { FontAwesome } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase, MAX_PHOTO_BYTES } from '../lib/supabase';
 import { COLORS, S } from '../theme';
@@ -184,6 +185,21 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
     Alert.alert('Copiado', 'Link de indicação copiado.');
   }
 
+  async function shareWhatsApp() {
+    const msg = `Venha fazer parte do Amigos Dr. Cândido! Cadastre-se pelo meu link de indicação: ${referralLink}`;
+    const url = `whatsapp://send?text=${encodeURIComponent(msg)}`;
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+      } else {
+        await Linking.openURL(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`);
+      }
+    } catch (e) {
+      await Linking.openURL(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`);
+    }
+  }
+
   async function handleChangePassword() {
     if (newPassword.length < 6) { Alert.alert('Senha muito curta', 'Use ao menos 6 caracteres.'); return; }
     try {
@@ -250,10 +266,19 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
 
       <Text style={S.cardTitle}>Link de indicação</Text>
       <View style={S.card}>
-        <TouchableOpacity style={[styles.linkBox, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]} onPress={copyLink}>
-          <Text style={[styles.linkText, { flex: 1 }]} numberOfLines={1}>{referralLink}</Text>
-          <Text style={{ fontSize: 16, marginLeft: 8 }}>📋</Text>
-        </TouchableOpacity>
+        <View style={[styles.linkBox, { flexDirection: 'row', alignItems: 'center' }]}>
+          <TouchableOpacity style={{ flex: 1 }} onPress={copyLink}>
+            <Text style={styles.linkText} numberOfLines={1}>{referralLink}</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={{ paddingHorizontal: 10, paddingVertical: 4 }} onPress={shareWhatsApp}>
+            <FontAwesome name="whatsapp" size={20} color="#25D366" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={{ paddingLeft: 6, paddingVertical: 4 }} onPress={copyLink}>
+            <Text style={{ fontSize: 16 }}>📋</Text>
+          </TouchableOpacity>
+        </View>
         <Text style={S.muted}>Toque no link acima para copiar o seu endereço de indicação direta.</Text>
       </View>
 
