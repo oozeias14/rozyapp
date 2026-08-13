@@ -457,18 +457,18 @@ export default function AuthScreen({ onLoggedIn }) {
               className="btn btn-ghost btn-sm" 
               style={{ 
                 margin: '0 auto', 
-                fontSize: '11px', 
-                padding: '6px 12px', 
+                fontSize: '12.5px', 
+                padding: '8px 14px', 
                 width: 'auto', 
                 background: 'rgba(123, 108, 244, 0.06)', 
                 borderColor: 'rgba(123, 108, 244, 0.25)', 
                 color: 'var(--violet)',
-                gap: '8px',
+                gap: '9px',
                 borderRadius: '8px'
               }}
               onClick={installPwa}
             >
-              <img src="/icons/icon-192.png" alt="" style={{ width: '15px', height: '15px', borderRadius: '4px' }} />
+              <img src="/icons/icon-192.png" alt="" style={{ width: '18px', height: '18px', borderRadius: '4px' }} />
               Salvar na Tela do Celular (Web App)
             </button>
           </div>
