@@ -199,8 +199,9 @@ export default function AgendaScreen({ profile }) {
   async function handleSave(e) {
     e.preventDefault();
     const todayStr = new Date().toISOString().split('T')[0];
-    if (date < todayStr) {
-      alert('Não é possível cadastrar eventos com datas passadas.');
+    const isAdmin = profile.role === 'admin';
+    if (date < todayStr && !isAdmin) {
+      alert('Apenas o administrador pode cadastrar eventos com datas passadas.');
       return;
     }
     setSavingCompletion(true);
@@ -408,7 +409,7 @@ export default function AgendaScreen({ profile }) {
               <input placeholder="Ex: Grande reunião" value={title} onChange={(e) => setTitle(e.target.value)} required />
               
               <label className="lbl">Data</label>
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required min={new Date().toISOString().split('T')[0]} />
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required min={profile.role === 'admin' ? undefined : new Date().toISOString().split('T')[0]} />
               
               <label className="lbl">Onde foi feita a reunião (Local)</label>
               <input placeholder="Ex: Chácara São José - DF" value={location} onChange={(e) => setLocation(e.target.value)} required />

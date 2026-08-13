@@ -85,8 +85,9 @@ export default function AgendaScreen({ profile }) {
   }
   async function handleSave() {
     const todayStr = new Date().toISOString().split('T')[0];
-    if (date < todayStr) {
-      Alert.alert('Data inválida 🚨', 'Não é possível cadastrar eventos com datas passadas.');
+    const isAdmin = profile.role === 'admin';
+    if (date < todayStr && !isAdmin) {
+      Alert.alert('Data inválida 🚨', 'Apenas o administrador pode cadastrar eventos com datas passadas.');
       return;
     }
     setSavingCompletion(true);
