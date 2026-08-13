@@ -1,0 +1,28 @@
+{
+  "name": "Amigos Dr Candido",
+  "short_name": "Amigos Dr Candido",
+  "description": "Amigos Dr Candido — sua rede de indicações e eventos",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#05070B",
+  "theme_color": "#090C12",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    },
+    {
+      "src": "/icons/apple-touch-icon.png",
+      "type": "image/png",
+      "sizes": "180x180",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -71,6 +71,33 @@ export default function AuthScreen({ onLoggedIn }) {
   const [successData, setSuccessData] = useState(null);
 
   const [isUsernameManual, setIsUsernameManual] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+
+  useEffect(() => {
+    function handleBeforeInstallPrompt(e) {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    }
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  async function installPwa() {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    } else {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+      if (isIOS) {
+        alert("Para instalar no seu iPhone/iPad:\n1. Toque no ícone de Compartilhar 📤 (embaixo no Safari).\n2. Role para baixo e selecione 'Adicionar à Tela de Início'.");
+      } else {
+        alert("Para instalar no seu celular ou computador:\n1. Toque nos três pontinhos (menu) do seu navegador.\n2. Selecione a opção 'Adicionar à tela inicial' ou 'Instalar aplicativo'.");
+      }
+    }
+  }
 
   function generateBaseUsername(fullName) {
     const parts = fullName.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -417,11 +444,35 @@ export default function AuthScreen({ onLoggedIn }) {
       </form>
 
       {mode === 'login' && !forgotOpen && (
-        <div style={{ textAlign: 'center', marginTop: 4 }}>
-          <span className="muted" style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => setForgotOpen(true)}>
-            Esqueceu a senha?
-          </span>
-        </div>
+        <>
+          <div style={{ textAlign: 'center', marginTop: 4 }}>
+            <span className="muted" style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => setForgotOpen(true)}>
+              Esqueceu a senha?
+            </span>
+          </div>
+
+          <div style={{ textAlign: 'center', marginTop: '20px' }}>
+            <button 
+              type="button" 
+              className="btn btn-ghost btn-sm" 
+              style={{ 
+                margin: '0 auto', 
+                fontSize: '11px', 
+                padding: '6px 12px', 
+                width: 'auto', 
+                background: 'rgba(123, 108, 244, 0.06)', 
+                borderColor: 'rgba(123, 108, 244, 0.25)', 
+                color: 'var(--violet)',
+                gap: '8px',
+                borderRadius: '8px'
+              }}
+              onClick={installPwa}
+            >
+              <img src="/icons/icon-192.png" alt="" style={{ width: '15px', height: '15px', borderRadius: '4px' }} />
+              Salvar na Tela do Celular (Web App)
+            </button>
+          </div>
+        </>
       )}
 
       {mode === 'login' && forgotOpen && (
