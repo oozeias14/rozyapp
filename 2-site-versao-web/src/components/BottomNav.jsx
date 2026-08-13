@@ -4,20 +4,31 @@ const ICONS = {
   agenda: <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>,
   profile: <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M4.5 20c1.6-3.5 4.5-5.3 7.5-5.3s5.9 1.8 7.5 5.3"/></svg>,
   owner: <svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>,
+  mass_signup: (
+    <svg viewBox="0 0 24 24">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <line x1="19" y1="8" x2="19" y2="14" />
+      <line x1="22" y1="11" x2="16" y2="11" />
+    </svg>
+  ),
 };
 
-const TABS = [
-  { key: 'owner', label: 'Dr. Candido' },
-  { key: 'home', label: 'Mural' },
-  { key: 'network', label: 'Rede' },
-  { key: 'agenda', label: 'Eventos' },
-  { key: 'profile', label: 'Perfil' },
-];
+export default function BottomNav({ active, onChange, profile }) {
+  const isStaff = profile?.role === 'admin' || profile?.role === 'coord';
 
-export default function BottomNav({ active, onChange }) {
+  const tabs = [
+    { key: 'owner', label: 'Dr. Candido' },
+    { key: 'home', label: 'Mural' },
+    { key: 'network', label: 'Rede' },
+    { key: 'agenda', label: 'Eventos' },
+    isStaff && { key: 'mass_signup', label: 'Cadastro' },
+    { key: 'profile', label: 'Perfil' },
+  ].filter(Boolean);
+
   return (
     <div className="bnav">
-      {TABS.map((t) => (
+      {tabs.map((t) => (
         <button key={t.key} className={`ni${active === t.key ? ' on' : ''}`} onClick={() => onChange(t.key)}>
           {ICONS[t.key]}
           <span>{t.label}</span>

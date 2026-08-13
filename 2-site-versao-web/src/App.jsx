@@ -8,6 +8,7 @@ import AgendaScreen from './screens/AgendaScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import OwnerScreen from './screens/OwnerScreen';
 import AdminScreen from './screens/AdminScreen';
+import MassSignupScreen from './screens/MassSignupScreen';
 import BottomNav from './components/BottomNav';
 
 export default function App() {
@@ -178,8 +179,9 @@ export default function App() {
           {tab === 'profile' && (
             <ProfileScreen profile={profile} onProfileUpdated={setProfile} onOpenAdmin={() => openAdmin('users')} onLogout={handleLogout} />
           )}
+          {tab === 'mass_signup' && <MassSignupScreen profile={profile} />}
           {tab === 'owner' && <OwnerScreen profile={profile} onOpenAdminOwner={() => openAdmin('owner')} />}
-          <BottomNav active={tab} onChange={setTab} />
+          <BottomNav active={tab} onChange={setTab} profile={profile} />
         </>
       )}
     </div>

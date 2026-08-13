@@ -12,6 +12,7 @@ import AgendaScreen from './src/screens/AgendaScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import OwnerScreen from './src/screens/OwnerScreen';
 import AdminScreen from './src/screens/AdminScreen';
+import MassSignupScreen from './src/screens/MassSignupScreen';
 import BottomNav from './src/components/BottomNav';
 
 Notifications.setNotificationHandler({
@@ -164,15 +165,11 @@ export default function App() {
           {tab === 'network' && <NetworkScreen profile={profile} />}
           {tab === 'agenda' && <AgendaScreen profile={profile} />}
           {tab === 'profile' && (
-            <ProfileScreen
-              profile={profile}
-              onProfileUpdated={(p) => setProfile(p)}
-              onOpenAdmin={() => openAdmin('users')}
-              onLogout={handleLogout}
-            />
+            <ProfileScreen profile={profile} onProfileUpdated={setProfile} onOpenAdmin={() => openAdmin('users')} onLogout={handleLogout} />
           )}
+          {tab === 'mass_signup' && <MassSignupScreen profile={profile} />}
           {tab === 'owner' && <OwnerScreen profile={profile} onOpenAdminOwner={() => openAdmin('owner')} />}
-          <BottomNav active={tab} onChange={setTab} />
+          <BottomNav active={tab} onChange={setTab} profile={profile} />
         </>
       )}
     </View>

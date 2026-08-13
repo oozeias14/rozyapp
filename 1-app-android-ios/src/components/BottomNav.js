@@ -2,18 +2,21 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { COLORS } from '../theme';
 
-const TABS = [
-  { key: 'owner', label: 'Dr. Candido', icon: '📋' },
-  { key: 'home', label: 'Mural', icon: '🏠' },
-  { key: 'network', label: 'Rede', icon: '🔗' },
-  { key: 'agenda', label: 'Eventos', icon: '📅' },
-  { key: 'profile', label: 'Perfil', icon: '👤' },
-];
+export default function BottomNav({ active, onChange, profile }) {
+  const isStaff = profile?.role === 'admin' || profile?.role === 'coord';
 
-export default function BottomNav({ active, onChange }) {
+  const tabs = [
+    { key: 'owner', label: 'Dr. Candido', icon: '📋' },
+    { key: 'home', label: 'Mural', icon: '🏠' },
+    { key: 'network', label: 'Rede', icon: '🔗' },
+    { key: 'agenda', label: 'Eventos', icon: '📅' },
+    isStaff && { key: 'mass_signup', label: 'Cadastro', icon: '➕' },
+    { key: 'profile', label: 'Perfil', icon: '👤' },
+  ].filter(Boolean);
+
   return (
     <View style={styles.bar}>
-      {TABS.map((t) => (
+      {tabs.map((t) => (
         <TouchableOpacity key={t.key} style={styles.item} onPress={() => onChange(t.key)}>
           <Text style={{ fontSize: 17 }}>{t.icon}</Text>
           <Text style={[styles.label, active === t.key && styles.labelOn]}>{t.label}</Text>
