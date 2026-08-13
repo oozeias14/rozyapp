@@ -293,36 +293,43 @@ export default function AgendaScreen({ profile }) {
   const totalHours = completedMeetings.reduce((acc, m) => acc + (m.duration_minutes || 0) / 60, 0);
   const totalAttendees = completedMeetings.reduce((acc, m) => acc + (m.attendees_count || 0), 0);
 
+  const todayStr = new Date().toISOString().split('T')[0];
+  const visibleMeetings = profile.role === 'admin'
+    ? meetings
+    : meetings.filter(m => m.date >= todayStr);
+
   return (
     <div className="screen">
       <TopBar totalUsers={totalUsers} />
 
-      {/* Histórico Transparente de Eventos */}
-      <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-        <div className="card-title" style={{ color: 'var(--teal)' }}>📊 Histórico de Eventos</div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
-          <div style={{ textAlign: 'center', flex: 1 }}>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>{completedMeetings.length}</div>
-            <div style={{ fontSize: 9, color: 'var(--ink2)', textTransform: 'uppercase', marginTop: 2 }}>Realizados</div>
-          </div>
-          <div style={{ textAlign: 'center', flex: 1, borderLeft: '1px solid var(--line)', borderRight: '1px solid var(--line)' }}>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>{totalHours.toFixed(1)}h</div>
-            <div style={{ fontSize: 9, color: 'var(--ink2)', textTransform: 'uppercase', marginTop: 2 }}>Duração</div>
-          </div>
-          <div style={{ textAlign: 'center', flex: 1 }}>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>{totalAttendees}</div>
-            <div style={{ fontSize: 9, color: 'var(--ink2)', textTransform: 'uppercase', marginTop: 2 }}>Presenças</div>
+      {/* Histórico Transparente de Eventos - Apenas para Admin */}
+      {profile.role === 'admin' && (
+        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <div className="card-title" style={{ color: 'var(--teal)' }}>📊 Histórico de Eventos</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
+            <div style={{ textAlign: 'center', flex: 1 }}>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>{completedMeetings.length}</div>
+              <div style={{ fontSize: 9, color: 'var(--ink2)', textTransform: 'uppercase', marginTop: 2 }}>Realizados</div>
+            </div>
+            <div style={{ textAlign: 'center', flex: 1, borderLeft: '1px solid var(--line)', borderRight: '1px solid var(--line)' }}>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>{totalHours.toFixed(1)}h</div>
+              <div style={{ fontSize: 9, color: 'var(--ink2)', textTransform: 'uppercase', marginTop: 2 }}>Duração</div>
+            </div>
+            <div style={{ textAlign: 'center', flex: 1 }}>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>{totalAttendees}</div>
+              <div style={{ fontSize: 9, color: 'var(--ink2)', textTransform: 'uppercase', marginTop: 2 }}>Presenças</div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="row-bw" style={{ marginBottom: 14 }}>
         <h2 style={{ fontSize: 17, margin: 0 }}>Eventos</h2>
         <button className="btn btn-violet btn-sm" style={{ width: 'auto', marginBottom: 0 }} onClick={() => setModalOpen(true)}>+ Novo Evento</button>
       </div>
 
-      {meetings.length === 0 && <div className="empty">Nenhum evento registrado.</div>}
-      {meetings.map((m) => {
+      {visibleMeetings.length === 0 && <div className="empty">Nenhum evento registrado.</div>}
+      {visibleMeetings.map((m) => {
         return (
           <div key={m.id} className="card meet-card" style={{ borderLeftColor: 'var(--teal)', borderLeftWidth: 3 }}>
             <div className="row-bw">

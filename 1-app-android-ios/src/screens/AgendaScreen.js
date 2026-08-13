@@ -316,29 +316,36 @@ export default function AgendaScreen({ profile }) {
   const totalHours = completedMeetings.reduce((acc, m) => acc + (m.duration_minutes || 0) / 60, 0);
   const totalAttendees = completedMeetings.reduce((acc, m) => acc + (m.attendees_count || 0), 0);
 
+  const todayStr = new Date().toISOString().split('T')[0];
+  const visibleMeetings = profile.role === 'admin'
+    ? meetings
+    : meetings.filter(m => m.date >= todayStr);
+
   return (
     <View style={S.screen}>
       <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.teal} />}>
         <TopBar totalUsers={totalUsers} />
         
-        {/* Painel de Histórico e Estatísticas Transparentes */}
-        <View style={styles.statsPanel}>
-          <Text style={styles.statsPanelTitle}>📊 Histórico de Eventos</Text>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
-            <View style={styles.statMiniBox}>
-              <Text style={styles.statMiniNum}>{completedMeetings.length}</Text>
-              <Text style={styles.statMiniLabel}>Realizados</Text>
-            </View>
-            <View style={styles.statMiniBox}>
-              <Text style={styles.statMiniNum}>{totalHours.toFixed(1)}h</Text>
-              <Text style={styles.statMiniLabel}>Duração</Text>
-            </View>
-            <View style={styles.statMiniBox}>
-              <Text style={styles.statMiniNum}>{totalAttendees}</Text>
-              <Text style={styles.statMiniLabel}>Presentes</Text>
+        {/* Painel de Histórico e Estatísticas Transparentes - Apenas para Admin */}
+        {profile.role === 'admin' && (
+          <View style={styles.statsPanel}>
+            <Text style={styles.statsPanelTitle}>📊 Histórico de Eventos</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
+              <View style={styles.statMiniBox}>
+                <Text style={styles.statMiniNum}>{completedMeetings.length}</Text>
+                <Text style={styles.statMiniLabel}>Realizados</Text>
+              </View>
+              <View style={styles.statMiniBox}>
+                <Text style={styles.statMiniNum}>{totalHours.toFixed(1)}h</Text>
+                <Text style={styles.statMiniLabel}>Duração</Text>
+              </View>
+              <View style={styles.statMiniBox}>
+                <Text style={styles.statMiniNum}>{totalAttendees}</Text>
+                <Text style={styles.statMiniLabel}>Presentes</Text>
+              </View>
             </View>
           </View>
-        </View>
+        )}
 
         <View style={[S.rowBetween, { marginBottom: 10 }]}>
           <Text style={{ color: COLORS.ink1, fontSize: 17, fontWeight: '700', marginVertical: 8 }}>Eventos</Text>
@@ -347,8 +354,8 @@ export default function AgendaScreen({ profile }) {
           </TouchableOpacity>
         </View>
 
-        {meetings.length === 0 && <Text style={[S.muted, { textAlign: 'center', padding: 20 }]}>Nenhum evento registrado.</Text>}
-        {meetings.map((m) => {
+        {visibleMeetings.length === 0 && <Text style={[S.muted, { textAlign: 'center', padding: 20 }]}>Nenhum evento registrado.</Text>}
+        {visibleMeetings.map((m) => {
           return (
             <View key={m.id} style={[S.card, styles.meetCard, { borderLeftColor: COLORS.teal, borderLeftWidth: 3, paddingVertical: 14 }]}>
               <View style={S.rowBetween}>
