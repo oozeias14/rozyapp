@@ -185,6 +185,18 @@ export default function AuthScreen({ onLoggedIn }) {
       return;
     }
 
+    // 0) Verifica se o número de WhatsApp já está cadastrado
+    const { data: dupPhone } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('whatsapp', cleanedPhone)
+      .maybeSingle();
+
+    if (dupPhone) {
+      alert('Este número de WhatsApp já está sendo usado por outra conta.');
+      return;
+    }
+
     setLoading(true);
 
     // 1) Encontra uma versão sequencial do username livre no banco
