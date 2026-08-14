@@ -402,6 +402,9 @@ export default function AuthScreen({ onLoggedIn }) {
     setForgotEmail('');
   }
 
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const showButton = isIOS || !!deferredPrompt;
+
   return (
     <div className="screen" style={{ paddingTop: 0 }}>
       <div style={{ textAlign: 'center', marginTop: -45, marginBottom: -55 }}>
@@ -439,7 +442,7 @@ export default function AuthScreen({ onLoggedIn }) {
         </button>
       </form>
 
-      {mode === 'login' && !forgotOpen && deferredPrompt && (
+      {mode === 'login' && !forgotOpen && showButton && (
         <>
           <div style={{ textAlign: 'center', marginTop: 4 }}>
             <span className="muted" style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => setForgotOpen(true)}>
@@ -548,6 +551,51 @@ export default function AuthScreen({ onLoggedIn }) {
               }}
             >
               Acessar Aplicativo Direto
+            </button>
+          </div>
+        </div>
+      )}
+      {showInstallModal && (
+        <div className="modal-bg" style={{ zIndex: 10000 }}>
+          <div className="modal" style={{ maxWidth: 380, textAlign: 'center', padding: '24px' }}>
+            <div style={{ fontSize: '40px', marginBottom: '12px' }}>📱</div>
+            <h3 style={{ fontSize: '16.5px', color: 'var(--teal)', marginBottom: '16px', fontWeight: '700' }}>
+              Salvar na Tela do Celular
+            </h3>
+
+            {isIOS ? (
+              <div style={{ textAlign: 'left', color: 'var(--ink2)', fontSize: '13px', lineHeight: '1.6' }}>
+                <p style={{ marginBottom: '12px' }}>Siga os passos abaixo no **Safari**:</p>
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'center' }}>
+                  <div style={{ background: 'var(--panel2)', width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', color: 'var(--teal)', flexShrink: 0 }}>1</div>
+                  <div style={{ flex: 1 }}>Toque no botão de **Compartilhar** <span style={{ fontSize: '16px' }}>📤</span> (na barra de menu do Safari).</div>
+                </div>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <div style={{ background: 'var(--panel2)', width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', color: 'var(--teal)', flexShrink: 0 }}>2</div>
+                  <div style={{ flex: 1 }}>Role para baixo e toque em **"Adicionar à Tela de Início"** <span style={{ fontSize: '16px' }}>➕</span>.</div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'left', color: 'var(--ink2)', fontSize: '13px', lineHeight: '1.6' }}>
+                <p style={{ marginBottom: '12px' }}>Siga os passos abaixo no seu navegador:</p>
+                <div style={{ display: 'flex', gap: '10px', marginBottom: '12px', alignItems: 'center' }}>
+                  <div style={{ background: 'var(--panel2)', width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', color: 'var(--teal)', flexShrink: 0 }}>1</div>
+                  <div style={{ flex: 1 }}>Toque no **menu de 3 pontinhos** <span style={{ fontSize: '16px' }}>⋮</span> (no canto superior direito do seu navegador).</div>
+                </div>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <div style={{ background: 'var(--panel2)', width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', color: 'var(--teal)', flexShrink: 0 }}>2</div>
+                  <div style={{ flex: 1 }}>Selecione a opção **"Instalar aplicativo"** ou **"Adicionar à tela inicial"**.</div>
+                </div>
+              </div>
+            )}
+
+            <button 
+              type="button"
+              className="btn btn-teal" 
+              style={{ width: '100%', marginTop: '24px', marginBottom: '0' }} 
+              onClick={() => setShowInstallModal(false)}
+            >
+              Entendi
             </button>
           </div>
         </div>
