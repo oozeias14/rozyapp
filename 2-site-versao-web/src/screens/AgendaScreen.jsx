@@ -347,10 +347,6 @@ export default function AgendaScreen({ profile }) {
             </div>
 
             <button className="btn btn-ghost btn-sm" style={{ marginTop: 10, width: '100%', marginBottom: 0 }} onClick={() => { setSelectedMeetingDetails(m); setDetailsModalOpen(true); }}>📊 Ver Detalhes e Lista</button>
-
-            {profile.role === 'admin' && (
-              <button className="btn btn-warn btn-sm" style={{ marginTop: 8, width: '100%', marginBottom: 0 }} onClick={() => handleDelete(m.id)}>Excluir</button>
-            )}
           </div>
         );
       })}

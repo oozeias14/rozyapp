@@ -375,12 +375,6 @@ export default function AgendaScreen({ profile }) {
               <TouchableOpacity style={[S.btn, S.btnGhost, { marginTop: 12, marginBottom: 0, paddingVertical: 8 }]} onPress={() => { setSelectedMeetingDetails(m); setDetailsModalOpen(true); }}>
                 <Text style={S.btnTextGhost}>📊 Ver Detalhes e Lista</Text>
               </TouchableOpacity>
-
-              {profile.role === 'admin' && (
-                <TouchableOpacity style={[S.btn, S.btnWarn, { marginTop: 8, marginBottom: 0, paddingVertical: 8 }]} onPress={() => handleDelete(m.id)}>
-                  <Text style={S.btnTextWarn}>Excluir</Text>
-                </TouchableOpacity>
-              )}
             </View>
           );
         })}
