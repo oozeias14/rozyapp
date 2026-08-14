@@ -107,17 +107,13 @@ export async function changeOwnPassword(newPassword) {
   if (error) throw error;
 }
 
-// Admin resetando a senha de QUALQUER outro cadastro.
-// Isso NÃO pode ser feito direto do celular com a chave anon (por segurança) —
-// por isso chama a Edge Function 'admin-reset-password', que roda no servidor
-// do Supabase com a service_role key e confere se quem está pedindo é admin.
-// Veja: supabase/functions/admin-reset-password/index.ts
+// Redefine a senha do usuário utilizando a RPC segura admin_reset_password_rpc no banco de dados.
 export async function adminResetPassword(targetAuthId, newPassword) {
-  const { data, error } = await supabase.functions.invoke('admin-reset-password', {
-    body: { targetAuthId, newPassword },
+  const { data, error } = await supabase.rpc('admin_reset_password_rpc', {
+    target_auth_id: targetAuthId,
+    new_password: newPassword
   });
   if (error) throw error;
-  if (data && data.error) throw new Error(data.error);
   return data;
 }
 
