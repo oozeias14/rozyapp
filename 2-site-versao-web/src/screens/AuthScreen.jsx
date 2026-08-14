@@ -442,36 +442,36 @@ export default function AuthScreen({ onLoggedIn }) {
         </button>
       </form>
 
-      {mode === 'login' && !forgotOpen && showButton && (
-        <>
-          <div style={{ textAlign: 'center', marginTop: 4 }}>
-            <span className="muted" style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => setForgotOpen(true)}>
-              Esqueceu a senha?
-            </span>
-          </div>
+      {mode === 'login' && !forgotOpen && (
+        <div style={{ textAlign: 'center', marginTop: 4 }}>
+          <span className="muted" style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => setForgotOpen(true)}>
+            Esqueceu a senha?
+          </span>
+        </div>
+      )}
 
-          <div style={{ textAlign: 'center', marginTop: '20px' }}>
-            <button 
-              type="button" 
-              className="btn btn-ghost btn-sm" 
-              style={{ 
-                margin: '0 auto', 
-                fontSize: '12.5px', 
-                padding: '8px 14px', 
-                width: 'auto', 
-                background: 'rgba(123, 108, 244, 0.06)', 
-                borderColor: 'rgba(123, 108, 244, 0.25)', 
-                color: 'var(--violet)',
-                gap: '9px',
-                borderRadius: '8px'
-              }}
-              onClick={installPwa}
-            >
-              <img src="/icons/icon-192.png" alt="" style={{ width: '18px', height: '18px', borderRadius: '4px' }} />
-              Salvar na Tela do Celular (Web App)
-            </button>
-          </div>
-        </>
+      {mode === 'login' && !forgotOpen && showButton && (
+        <div style={{ textAlign: 'center', marginTop: '20px' }}>
+          <button 
+            type="button" 
+            className="btn btn-ghost btn-sm" 
+            style={{ 
+              margin: '0 auto', 
+              fontSize: '12.5px', 
+              padding: '8px 14px', 
+              width: 'auto', 
+              background: 'rgba(123, 108, 244, 0.06)', 
+              borderColor: 'rgba(123, 108, 244, 0.25)', 
+              color: 'var(--violet)',
+              gap: '9px',
+              borderRadius: '8px'
+            }}
+            onClick={installPwa}
+          >
+            <img src="/icons/icon-192.png" alt="" style={{ width: '18px', height: '18px', borderRadius: '4px' }} />
+            Salvar na Tela do Celular (Web App)
+          </button>
+        </div>
       )}
 
       {mode === 'login' && forgotOpen && (
