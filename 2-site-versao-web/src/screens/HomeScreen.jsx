@@ -25,6 +25,12 @@ export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
     setDirectCount(directs.length);
     setMeetings(mts);
     setMessages(msgs.slice(0, 2));
+
+    if (msgs && msgs.length > 0) {
+      const maxId = Math.max(...msgs.map(m => m.id));
+      localStorage.setItem('last_read_message_id', maxId.toString());
+      window.dispatchEvent(new Event('mural_messages_read'));
+    }
   }, [profile.id]);
 
   useEffect(() => { load(); }, [load]);

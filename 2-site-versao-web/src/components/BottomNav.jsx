@@ -14,7 +14,7 @@ const ICONS = {
   ),
 };
 
-export default function BottomNav({ active, onChange, profile }) {
+export default function BottomNav({ active, onChange, profile, hasNewMuralMessage }) {
   const isStaff = profile?.role === 'admin' || profile?.role === 'coord';
 
   const tabs = [
@@ -29,8 +29,20 @@ export default function BottomNav({ active, onChange, profile }) {
   return (
     <div className="bnav">
       {tabs.map((t) => (
-        <button key={t.key} className={`ni${active === t.key ? ' on' : ''}`} onClick={() => onChange(t.key)}>
+        <button key={t.key} className={`ni${active === t.key ? ' on' : ''}`} onClick={() => onChange(t.key)} style={{ position: 'relative' }}>
           {ICONS[t.key]}
+          {t.key === 'home' && hasNewMuralMessage && (
+            <span style={{
+              position: 'absolute',
+              top: '6px',
+              right: '32%',
+              width: '8px',
+              height: '8px',
+              backgroundColor: '#FF3B30',
+              borderRadius: '50%',
+              border: '1.5px solid #090c12'
+            }} />
+          )}
           <span>{t.label}</span>
         </button>
       ))}

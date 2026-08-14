@@ -20,6 +20,7 @@ export default function App() {
   const [adminInitialTab, setAdminInitialTab] = useState('users');
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [timeLeft, setTimeLeft] = useState(null);
+  const [hasNewMuralMessage, setHasNewMuralMessage] = useState(false);
 
   useEffect(() => {
     if (!profile) {
@@ -121,14 +122,44 @@ export default function App() {
       if (session) loadProfile(session.user.id);
       else { setProfile(null); setLoading(false); }
     });
-    return () => listener.subscription.unsubscribe();
+
+    function handleMessagesRead() {
+      setHasNewMuralMessage(false);
+    }
+    window.addEventListener('mural_messages_read', handleMessagesRead);
+
+    return () => {
+      listener.subscription.unsubscribe();
+      window.removeEventListener('mural_messages_read', handleMessagesRead);
+    };
   }, []);
+
+  async function checkForNewMessages() {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('id')
+        .order('id', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (!error && data) {
+        const lastRead = localStorage.getItem('last_read_message_id');
+        if (!lastRead || parseInt(lastRead, 10) < data.id) {
+          setHasNewMuralMessage(true);
+        }
+      }
+    } catch (e) {
+      console.log('Error checking messages:', e);
+    }
+  }
 
   async function loadProfile(authId) {
     const { data } = await supabase.from('profiles').select('*').eq('auth_id', authId).maybeSingle();
     setProfile(data);
     setTab('owner');
     setLoading(false);
+    checkForNewMessages();
   }
 
   async function handleLogout() {
@@ -188,7 +219,7 @@ export default function App() {
           )}
           {tab === 'mass_signup' && <MassSignupScreen profile={profile} />}
           {tab === 'owner' && <OwnerScreen profile={profile} onOpenAdminOwner={() => openAdmin('owner')} />}
-          <BottomNav active={tab} onChange={setTab} profile={profile} />
+          <BottomNav active={tab} onChange={setTab} profile={profile} hasNewMuralMessage={hasNewMuralMessage} />
         </>
       )}
     </div>
