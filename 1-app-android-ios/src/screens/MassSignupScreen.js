@@ -104,11 +104,7 @@ export default function MassSignupScreen({ profile }) {
       Alert.alert('Aviso', 'Preencha o WhatsApp.');
       return;
     }
-    const cleanedEmail = email.trim().toLowerCase().replace(/\s/g, '');
-    if (!cleanedEmail) {
-      Alert.alert('Aviso', 'Preencha o e-mail.');
-      return;
-    }
+    // Email is auto-generated below after username generation
 
     setLoading(true);
 
@@ -146,6 +142,8 @@ export default function MassSignupScreen({ profile }) {
           usernameTaken = false;
         }
       }
+
+      const cleanedEmail = `${finalUsername}@amigosdrcandido.com.br`;
 
       // 3) Supabase Signup using a temporary client with session persistence disabled
       const tempSupabase = createClient(supabase.supabaseUrl, supabase.supabaseKey, {
@@ -294,17 +292,7 @@ export default function MassSignupScreen({ profile }) {
           keyboardType="phone-pad"
         />
 
-        <Text style={S.label}>E-mail *</Text>
-        <TextInput
-          style={S.input}
-          placeholder="email@dominio.com"
-          placeholderTextColor={COLORS.ink3}
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
+        {/* Email input removed - auto-generated from username */}
 
         <TouchableOpacity style={[S.btn, S.btnTeal, { marginTop: 10 }]} onPress={handleCadastro} disabled={loading}>
           {loading ? (

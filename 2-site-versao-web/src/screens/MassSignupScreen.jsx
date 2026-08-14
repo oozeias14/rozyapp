@@ -101,11 +101,7 @@ export default function MassSignupScreen({ profile }) {
       alert('Preencha o WhatsApp.');
       return;
     }
-    const cleanedEmail = email.trim().toLowerCase().replace(/\s/g, '');
-    if (!cleanedEmail) {
-      alert('Preencha o e-mail.');
-      return;
-    }
+    // Email is auto-generated below after username generation
 
     setLoading(true);
 
@@ -143,6 +139,9 @@ export default function MassSignupScreen({ profile }) {
           usernameTaken = false;
         }
       }
+
+      // Generate email automatically from finalUsername
+      const cleanedEmail = `${finalUsername}@amigosdrcandido.com.br`;
 
       // 3) Supabase Signup using a temporary client with session persistence disabled
       const tempSupabase = createClient(supabase.supabaseUrl, supabase.supabaseKey, {
@@ -287,15 +286,7 @@ export default function MassSignupScreen({ profile }) {
             required 
           />
 
-          <label className="lbl">E-mail <span className="req">*</span></label>
-          <input 
-            type="email" 
-            placeholder="email@dominio.com" 
-            value={email} 
-            onChange={(e) => setEmail(e.target.value)} 
-            required 
-            autoCapitalize="none"
-          />
+          {/* Email input removed - auto-generated from username */}
 
           <button className="btn btn-teal" type="submit" disabled={loading} style={{ marginTop: 8 }}>
             {loading ? 'Cadastrando...' : 'Cadastrar Membro'}
