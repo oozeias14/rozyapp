@@ -232,7 +232,8 @@ function EditUserForm({ user, onCancel, onSaved }) {
   async function save() {
     setSaving(true);
     try {
-      await updateProfile(user.id, { name, email, phone, birth, instagram, facebook, tiktok, whatsapp });
+      const birthVal = birth && birth.trim() ? birth.trim() : null;
+      await updateProfile(user.id, { name, email, phone, birth: birthVal, instagram, facebook, tiktok, whatsapp });
       if (newPassword.trim()) {
         if (newPassword.length < 6) { Alert.alert('Senha muito curta', 'Use ao menos 6 caracteres.'); setSaving(false); return; }
         if (user.role === 'admin') {

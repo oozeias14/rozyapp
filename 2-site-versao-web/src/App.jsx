@@ -100,6 +100,13 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Detect password recovery in URL hash or search params (fallback)
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+    if (hash.includes('type=recovery') || search.includes('type=recovery') || hash.includes('error_code=')) {
+      setPasswordRecovery(true);
+    }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) loadProfile(session.user.id);
