@@ -69,8 +69,8 @@ export async function deleteMeeting(id) {
 export async function fetchMessages() {
   const { data, error } = await supabase
     .from('messages')
-    .select('*, profiles!messages_from_id_fkey(name)')
-    .order('created_at', { ascending: false });
+    .select('*, profiles!messages_from_id_fkey(name), message_likes(profile_id)')
+    .order('id', { ascending: false });
   if (error) throw error;
   return data;
 }
@@ -80,6 +80,14 @@ export async function createMessage(fromId, text) {
 }
 export async function deleteMessage(id) {
   const { error } = await supabase.from('messages').delete().eq('id', id);
+  if (error) throw error;
+}
+export async function likeMessage(messageId, profileId) {
+  const { error } = await supabase.from('message_likes').insert({ message_id: messageId, profile_id: profileId });
+  if (error) throw error;
+}
+export async function unlikeMessage(messageId, profileId) {
+  const { error } = await supabase.from('message_likes').delete().eq('message_id', messageId).eq('profile_id', profileId);
   if (error) throw error;
 }
 

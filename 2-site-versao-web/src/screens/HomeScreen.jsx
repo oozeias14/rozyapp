@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import TopBar from '../components/TopBar';
-import { fetchTotalUsersCount, fetchDirectReferrals, fetchMeetings, fetchMessages } from '../lib/api';
+import { fetchTotalUsersCount, fetchDirectReferrals, fetchMeetings, fetchMessages, likeMessage, unlikeMessage } from '../lib/api';
 
 function fmtDate(d) {
   if (!d) return '';
@@ -89,16 +89,58 @@ export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
       </div>
 
       {messages.length > 0 && <div className="card-title" style={{ marginTop: 20 }}>Mensagens da Coordenação</div>}
-      {messages.map((m) => (
-        <div key={m.id} className="msg-bubble-premium">
-          <div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--ink1)' }}>{m.text}</div>
-          <div className="msg-meta" style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 10.5, color: 'var(--ink3)' }}>
-            <span>📣 {m.profiles?.name || 'Coordenação'}</span>
-            <span>·</span>
-            <span>{new Date(m.created_at).toLocaleDateString('pt-BR')}</span>
+      {messages.map((m) => {
+        const likes = m.message_likes || [];
+        const isLiked = likes.some((like) => like.profile_id === profile.id);
+        const handleLikeToggle = async () => {
+          try {
+            if (isLiked) {
+              await unlikeMessage(m.id, profile.id);
+            } else {
+              await likeMessage(m.id, profile.id);
+            }
+            load();
+          } catch (err) {
+            console.log('Error toggling like:', err);
+          }
+        };
+
+        return (
+          <div key={m.id} className="msg-bubble-premium" style={{ position: 'relative' }}>
+            <div style={{ fontSize: 13.5, lineHeight: 1.6, color: 'var(--ink1)' }}>{m.text}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+              <div className="msg-meta" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, color: 'var(--ink3)' }}>
+                <span>📣 {m.profiles?.name || 'Coordenação'}</span>
+                <span>·</span>
+                <span>{new Date(m.created_at).toLocaleDateString('pt-BR')}</span>
+              </div>
+              <button 
+                type="button"
+                onClick={handleLikeToggle}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: isLiked ? '#FF3B30' : 'var(--ink3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  transition: 'color 0.2s ease, transform 0.1s ease',
+                  padding: '4px 8px',
+                  borderRadius: 6,
+                }}
+                onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
+                onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+              >
+                <span>{isLiked ? '❤️' : '🤍'}</span>
+                <span>{likes.length}</span>
+              </button>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       <div className="row-bw" style={{ marginTop: 20, marginBottom: 8 }}>
         <div className="card-title" style={{ marginBottom: 0 }}>Próximos Eventos</div>

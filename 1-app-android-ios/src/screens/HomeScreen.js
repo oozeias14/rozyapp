@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, RefreshControl, StyleSheet, D
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORS, S } from '../theme';
 import TopBar from '../components/TopBar';
-import { fetchTotalUsersCount, fetchDirectReferrals, fetchMeetings, fetchMessages } from '../lib/api';
+import { fetchTotalUsersCount, fetchDirectReferrals, fetchMeetings, fetchMessages, likeMessage, unlikeMessage } from '../lib/api';
 
 export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
   const [totalUsers, setTotalUsers] = useState(0);
@@ -103,12 +103,48 @@ export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
       </View>
 
       {messages.length > 0 && <Text style={[S.cardTitle, { marginTop: 16 }]}>Mensagens da Coordenação</Text>}
-      {messages.map((m) => (
-        <View key={m.id} style={[S.card, styles.msgBubble]}>
-          <Text style={{ color: COLORS.ink1, fontSize: 13.5, lineHeight: 20 }}>{m.text}</Text>
-          <Text style={styles.msgMeta}>📣 {m.profiles?.name || 'Coordenação'} · {new Date(m.created_at).toLocaleDateString('pt-BR')}</Text>
-        </View>
-      ))}
+      {messages.map((m) => {
+        const likes = m.message_likes || [];
+        const isLiked = likes.some((like) => like.profile_id === profile.id);
+        const handleLikeToggle = async () => {
+          try {
+            if (isLiked) {
+              await unlikeMessage(m.id, profile.id);
+            } else {
+              await likeMessage(m.id, profile.id);
+            }
+            load();
+          } catch (err) {
+            console.log('Error toggling like:', err);
+          }
+        };
+
+        return (
+          <View key={m.id} style={[S.card, styles.msgBubble]}>
+            <Text style={{ color: COLORS.ink1, fontSize: 13.5, lineHeight: 20 }}>{m.text}</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+              <Text style={[styles.msgMeta, { marginTop: 0 }]}>
+                📣 {m.profiles?.name || 'Coordenação'} · {new Date(m.created_at).toLocaleDateString('pt-BR')}
+              </Text>
+              <TouchableOpacity 
+                onPress={handleLikeToggle}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 4,
+                  paddingVertical: 4,
+                  paddingHorizontal: 8,
+                  borderRadius: 6,
+                  backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                }}
+              >
+                <Text style={{ fontSize: 13 }}>{isLiked ? '❤️' : '🤍'}</Text>
+                <Text style={{ color: isLiked ? '#FF3B30' : COLORS.ink3, fontSize: 11, fontWeight: '700' }}>{likes.length}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      })}
 
       <View style={[S.rowBetween, { marginTop: 16 }]}>
         <Text style={S.cardTitle}>Próximos Eventos</Text>
