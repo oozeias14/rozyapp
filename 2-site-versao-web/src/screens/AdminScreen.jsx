@@ -240,6 +240,18 @@ function RankingTab({ users, meetings, onSelect }) {
           const p = item.profile;
           const badgeStyle = getRankBadgeStyle(rank);
           
+          const borderStyle =
+            rank === 1 ? '1px solid #FFA751' :
+            rank === 2 ? '1px solid #94A3B8' :
+            rank === 3 ? '1px solid #D35400' :
+            '1px solid rgba(255, 255, 255, 0.04)';
+
+          const shadowStyle =
+            rank === 1 ? '0 0 10px rgba(255, 167, 81, 0.12)' :
+            rank === 2 ? '0 0 10px rgba(148, 163, 184, 0.08)' :
+            rank === 3 ? '0 0 10px rgba(211, 84, 0, 0.08)' :
+            'none';
+          
           return (
             <div 
               key={p.id} 
@@ -253,7 +265,8 @@ function RankingTab({ users, meetings, onSelect }) {
                 padding: '10px 14px',
                 borderRadius: 12,
                 backgroundColor: 'rgba(255, 255, 255, 0.02)',
-                border: '1px solid rgba(255, 255, 255, 0.04)',
+                border: borderStyle,
+                boxShadow: shadowStyle,
                 transition: 'background 0.2s',
               }}
             >
