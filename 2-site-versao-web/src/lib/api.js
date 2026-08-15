@@ -12,12 +12,12 @@ export async function fetchTotalUsersCount() {
   return count || 0;
 }
 export async function fetchDirectReferrals(referrerId) {
-  const { data, error } = await supabase.from('profiles').select('id, name, email, instagram, photo_url, referrer_id, parent_id, role').eq('referrer_id', referrerId).order('id');
+  const { data, error } = await supabase.from('profiles').select('*').eq('referrer_id', referrerId).order('id');
   if (error) throw error;
   return data;
 }
 export async function fetchMatrixChildren(parentId) {
-  const { data, error } = await supabase.from('profiles').select('id, name, email, instagram, photo_url, referrer_id, parent_id, role').eq('parent_id', parentId).order('id');
+  const { data, error } = await supabase.from('profiles').select('*').eq('parent_id', parentId).order('id');
   if (error) throw error;
   return data;
 }
