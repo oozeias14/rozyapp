@@ -3,23 +3,17 @@ import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import './index.css';
 
-// Limpa automaticamente caches e service workers travados do PWA de todas as sessões anteriores
+// Limpa automaticamente caches e service workers do PWA antigo sem forçar recarregamento infinito
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then((registrations) => {
-    if (registrations.length > 0) {
-      for (const registration of registrations) {
-        registration.unregister();
-      }
-      if ('caches' in window) {
-        caches.keys().then((keys) => {
-          Promise.all(keys.map((key) => caches.delete(key))).then(() => {
-            window.location.reload();
-          });
-        });
-      } else {
-        window.location.reload();
-      }
+    for (const registration of registrations) {
+      registration.unregister();
     }
+  });
+}
+if ('caches' in window) {
+  caches.keys().then((keys) => {
+    keys.map((key) => caches.delete(key));
   });
 }
 
