@@ -41,6 +41,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(null);
   const [modalPerson, setModalPerson] = useState(null);
+  const tabsRef = useRef(null);
 
   const load = useCallback(async () => {
     const [u, m, msg, o, s] = await Promise.all([
@@ -87,10 +88,60 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         <span className={`role-badge ${roleClass(profile.role)}`}>{roleLabel(profile.role)}</span>
       </div>
 
-      <div className="adm-tabs">
-        {tabs.map(([key, label]) => (
-          <button key={key} className={`adm-tab${tab === key ? ' on' : ''}`} onClick={() => setTab(key)}>{label}</button>
-        ))}
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+        <button 
+          onClick={() => tabsRef.current?.scrollBy({ left: -100, behavior: 'smooth' })}
+          style={{
+            background: 'rgba(255, 255, 255, 0.04)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            color: 'var(--ink1)',
+            borderRadius: '50%',
+            width: 28,
+            height: 28,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            flexShrink: 0,
+            marginRight: 6,
+            fontSize: 16,
+            lineHeight: 1,
+            transition: 'background 0.2s',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)'}
+        >
+          ‹
+        </button>
+        <div ref={tabsRef} className="adm-tabs" style={{ display: 'flex', gap: 6, overflowX: 'auto', flex: 1, scrollbarWidth: 'none', margin: 0, paddingBottom: 0 }}>
+          {tabs.map(([key, label]) => (
+            <button key={key} className={`adm-tab${tab === key ? ' on' : ''}`} style={{ flexShrink: 0 }} onClick={() => setTab(key)}>{label}</button>
+          ))}
+        </div>
+        <button 
+          onClick={() => tabsRef.current?.scrollBy({ left: 100, behavior: 'smooth' })}
+          style={{
+            background: 'rgba(255, 255, 255, 0.04)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            color: 'var(--ink1)',
+            borderRadius: '50%',
+            width: 28,
+            height: 28,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            flexShrink: 0,
+            marginLeft: 6,
+            fontSize: 16,
+            lineHeight: 1,
+            transition: 'background 0.2s',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
+          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)'}
+        >
+          ›
+        </button>
       </div>
 
       <button className="btn btn-ghost" style={{ marginTop: 10, marginBottom: 10, width: '100%' }} onClick={onBack}>← Voltar ao aplicativo</button>
@@ -446,6 +497,7 @@ function OwnerTab({ owner, reload }) {
   const [tiktok, setTiktok] = useState(owner?.tiktok || '');
   const [whatsapp, setWhatsapp] = useState(owner?.whatsapp || '');
   const [youtube, setYoutube] = useState(owner?.youtube || '');
+  const [videoUrl, setVideoUrl] = useState(owner?.video_url || '');
   const [photoUrl, setPhotoUrl] = useState(owner?.photo_url || null);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef(null);
@@ -467,7 +519,7 @@ function OwnerTab({ owner, reload }) {
   async function save() {
     setSaving(true);
     try {
-      await updateOwnerProfile({ name, photo_url: photoUrl, bio, instagram, facebook, tiktok, whatsapp, youtube });
+      await updateOwnerProfile({ name, photo_url: photoUrl, bio, instagram, facebook, tiktok, whatsapp, youtube, video_url: videoUrl });
       alert('Perfil de Dr. Candido salvo.');
       reload();
     } catch (e) { alert('Erro: ' + e.message); } finally { setSaving(false); }
@@ -503,6 +555,8 @@ function OwnerTab({ owner, reload }) {
       <label className="lbl">TikTok</label><input value={tiktok} onChange={(e) => setTiktok(e.target.value)} placeholder="@usuario" />
       <label className="lbl">WhatsApp</label><input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="5561999999999" />
       <label className="lbl">YouTube (URL)</label><input value={youtube} onChange={(e) => setYoutube(e.target.value)} placeholder="https://youtube.com/..." />
+      <label className="lbl">Vídeo de Hoje (Link do YouTube/Vimeo/etc.)</label>
+      <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..." />
       <button className="btn btn-teal" onClick={save} disabled={saving}>{saving ? 'Salvando...' : 'Salvar perfil de Dr. Candido'}</button>
     </div>
   );
