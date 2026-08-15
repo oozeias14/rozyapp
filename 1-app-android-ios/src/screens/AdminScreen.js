@@ -18,6 +18,9 @@ function initials(name) { return (name || '?').split(' ').map((p) => p[0]).slice
 function fmtDate(d) {
   if (!d) return '';
   try {
+    if (d.includes('T') || d.includes('Z')) {
+      return new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', weekday: 'short' });
+    }
     const dt = new Date(d + 'T00:00:00');
     return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', weekday: 'short' });
   } catch (e) {
@@ -315,7 +318,7 @@ function MessagesTab({ messages, profile, reload }) {
         <View key={m.id} style={styles.msgBubble}>
           <Text style={{ color: COLORS.ink1, fontSize: 12.5, lineHeight: 19 }}>{m.text}</Text>
           <View style={[S.rowBetween, { marginTop: 6 }]}>
-            <Text style={{ fontSize: 10.5, color: COLORS.ink3 }}>{m.profiles?.name || 'Coordenacao'} - {fmtDate(m.created_at ? m.created_at.slice(0, 10) : null)}</Text>
+            <Text style={{ fontSize: 10.5, color: COLORS.ink3 }}>{m.profiles?.name || 'Coordenacao'} - {fmtDate(m.created_at)}</Text>
             <TouchableOpacity onPress={() => remove(m.id)}><Text style={{ fontSize: 10.5, color: COLORS.warn }}>Excluir</Text></TouchableOpacity>
           </View>
         </View>

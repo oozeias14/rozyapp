@@ -14,8 +14,14 @@ function roleLabel(role) { return role === 'admin' ? 'Admin' : role === 'coord' 
 function roleClass(role) { return role === 'admin' ? 'role-admin' : role === 'coord' ? 'role-coord' : 'role-user'; }
 function fmtDate(d) {
   if (!d) return '';
-  try { return new Date(d + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', weekday: 'short' }); }
-  catch { return d; }
+  try {
+    if (d.includes('T') || d.includes('Z')) {
+      return new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', weekday: 'short' });
+    }
+    return new Date(d + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', weekday: 'short' });
+  } catch {
+    return d;
+  }
 }
 function notifyBrowser(title, body) {
   if (typeof Notification === 'undefined') return;
@@ -263,7 +269,7 @@ function MessagesTab({ messages, profile, reload }) {
         <div key={m.id} className="msg-bubble">
           <div style={{ fontSize: 12.5, lineHeight: 1.6 }}>{m.text}</div>
           <div className="row-bw" style={{ marginTop: 6 }}>
-            <span style={{ fontSize: 10.5, color: 'var(--ink3)' }}>{m.profiles?.name || 'Coordenação'} · {fmtDate(m.created_at ? m.created_at.slice(0, 10) : null)}</span>
+            <span style={{ fontSize: 10.5, color: 'var(--ink3)' }}>{m.profiles?.name || 'Coordenação'} · {fmtDate(m.created_at)}</span>
             <span style={{ fontSize: 10.5, color: 'var(--warn)', cursor: 'pointer' }} onClick={() => remove(m.id)}>Excluir</span>
           </div>
         </div>
