@@ -82,24 +82,29 @@ export default function OwnerScreen({ profile, onOpenAdminOwner }) {
       {isAdmin && <button className="btn btn-violet" style={{ marginBottom: 12 }} onClick={onOpenAdminOwner}>✏️ Editar esta página (Admin)</button>}
 
       {/* Cartão de Visita Digital Premium */}
-      <div className="card-gradient" style={{ padding: '16px 20px', borderRadius: 18 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div className="av" style={{ width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', border: '2.5px solid var(--teal)', flexShrink: 0 }}>
-            <img src={owner.photo_url || '/candido.jpg'} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      <div className="card-gradient" style={{ padding: '14px 16px', borderRadius: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          {/* Left Column: Photo + Name/Title */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', flexShrink: 0, width: 104 }}>
+            <div className="av" style={{ width: 62, height: 62, borderRadius: '50%', overflow: 'hidden', border: '2.5px solid var(--teal)', marginBottom: 6 }}>
+              <img src={owner.photo_url || '/candido.jpg'} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </div>
+            <div style={{ color: 'var(--teal)', fontSize: 7.5, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase' }}>⚖️ ADVOGADO</div>
+            <h2 style={{ fontSize: 13.5, fontWeight: 700, margin: '2px 0 0', color: 'var(--ink1)', lineHeight: 1.2 }}>{owner.name}</h2>
+            <div style={{ fontSize: 9, color: 'var(--ink2)', marginTop: 1, lineHeight: 1.2 }}>Especialista Fundiário</div>
           </div>
-          <div style={{ textAlign: 'left', flex: 1, minWidth: 0 }}>
-            <div style={{ color: 'var(--teal)', fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 2 }}>⚖️ ADVOGADO</div>
-            <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--ink1)' }}>{owner.name}</h2>
-            <div style={{ fontSize: 11.5, color: 'var(--ink2)', marginTop: 2 }}>Especialista Fundiário</div>
+
+          {/* Vertical Divider */}
+          <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--line)' }} />
+
+          {/* Right Column: Bio Bullet Points */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11, lineHeight: 1.35, color: 'var(--ink1)', textAlign: 'left' }}>
+            {owner.bio.split('\n').map((line, idx) => (
+              <div key={idx} style={{ display: 'flex', alignItems: 'flex-start' }}>
+                <span style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{line}</span>
+              </div>
+            ))}
           </div>
-        </div>
-
-        <div style={{ height: 1, background: 'var(--line)', margin: '14px 0 12px' }} />
-
-        <div style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--ink1)', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {owner.bio.split('\n').map((line, idx) => (
-            <div key={idx}>{line}</div>
-          ))}
         </div>
       </div>
 
