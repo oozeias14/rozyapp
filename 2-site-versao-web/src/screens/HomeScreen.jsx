@@ -134,6 +134,7 @@ export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
                 onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.92)'}
                 onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
               >
+                <span style={{ fontSize: '10.5px', color: 'var(--ink3)', fontWeight: 500, marginRight: 2 }}>Curtir</span>
                 <span>{isLiked ? '❤️' : '🤍'}</span>
                 <span>{likes.length}</span>
               </button>

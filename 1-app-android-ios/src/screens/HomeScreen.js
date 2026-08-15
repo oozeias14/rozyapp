@@ -138,6 +138,7 @@ export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
                   backgroundColor: 'rgba(255, 255, 255, 0.03)',
                 }}
               >
+                <Text style={{ color: COLORS.ink3, fontSize: 10.5, marginRight: 2 }}>Curtir</Text>
                 <Text style={{ fontSize: 13 }}>{isLiked ? '❤️' : '🤍'}</Text>
                 <Text style={{ color: isLiked ? '#FF3B30' : COLORS.ink3, fontSize: 11, fontWeight: '700' }}>{likes.length}</Text>
               </TouchableOpacity>
