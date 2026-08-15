@@ -24,6 +24,7 @@ export default function NetworkScreen({ profile }) {
   const [selectedSponsor, setSelectedSponsor] = useState(null);
   const [showAllList, setShowAllList] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
+  const [filter, setFilter] = useState('all');
 
   const load = useCallback(async () => {
     const [totalCount, directs, matrix, sps, crd, all] = await Promise.all([
@@ -62,6 +63,14 @@ export default function NetworkScreen({ profile }) {
     setSelectedPerson(p);
     setSelectedSponsor(p.referrer_id ? await fetchProfileById(p.referrer_id) : null);
   }
+
+  const activeDirectsCount = direct.filter((c) => getReferralNetworkCount(c.id) > 0).length;
+  const inactiveDirectsCount = direct.filter((c) => getReferralNetworkCount(c.id) === 0).length;
+
+  const filteredDirects = 
+    filter === 'active' ? direct.filter((c) => getReferralNetworkCount(c.id) > 0) : 
+    filter === 'inactive' ? direct.filter((c) => getReferralNetworkCount(c.id) === 0) : 
+    direct;
 
   const slots = Array.from({ length: 10 }, (_, i) => matrixChildren[i] || null);
 
@@ -153,18 +162,74 @@ export default function NetworkScreen({ profile }) {
 
       {showAllList && (
         <div className="card">
-          {direct.length === 0 && <div className="empty">Nenhum indicado ainda.<br />Compartilhe seu código em Perfil.</div>}
-          {direct.map((c, index) => (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12, borderBottom: '1px solid var(--line)', paddingBottom: 10 }}>
+            <button 
+              className="btn" 
+              style={{ 
+                flex: 1, 
+                fontSize: 10, 
+                padding: '6px 4px', 
+                borderRadius: 8, 
+                background: filter === 'all' ? 'var(--violet)' : 'rgba(255,255,255,0.03)', 
+                color: filter === 'all' ? '#fff' : 'var(--ink2)',
+                border: '1px solid ' + (filter === 'all' ? 'var(--violet)' : 'var(--line)')
+              }}
+              onClick={() => setFilter('all')}
+            >
+              Todos ({direct.length})
+            </button>
+            <button 
+              className="btn" 
+              style={{ 
+                flex: 1, 
+                fontSize: 10, 
+                padding: '6px 4px', 
+                borderRadius: 8, 
+                background: filter === 'active' ? 'var(--violet)' : 'rgba(255,255,255,0.03)', 
+                color: filter === 'active' ? '#fff' : 'var(--ink2)',
+                border: '1px solid ' + (filter === 'active' ? 'var(--violet)' : 'var(--line)')
+              }}
+              onClick={() => setFilter('active')}
+            >
+              Ativos ({activeDirectsCount})
+            </button>
+            <button 
+              className="btn" 
+              style={{ 
+                flex: 1, 
+                fontSize: 10, 
+                padding: '6px 4px', 
+                borderRadius: 8, 
+                background: filter === 'inactive' ? 'var(--violet)' : 'rgba(255,255,255,0.03)', 
+                color: filter === 'inactive' ? '#fff' : 'var(--ink2)',
+                border: '1px solid ' + (filter === 'inactive' ? 'var(--violet)' : 'var(--line)')
+              }}
+              onClick={() => setFilter('inactive')}
+            >
+              Sem Rede ({inactiveDirectsCount})
+            </button>
+          </div>
+
+          {filteredDirects.length === 0 && <div className="empty">Nenhum indicado nesta categoria.</div>}
+          {filteredDirects.map((c, index) => (
             <div key={c.id} className="prow" onClick={() => openPerson(c)}>
               <Avatar person={c} size={36} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 600, fontSize: 13 }}>
-                  {c.name} {index < 10 ? <span style={{ color: 'var(--teal)', fontSize: 11, fontWeight: 500 }}>(Slot {index + 1})</span> : <span style={{ color: 'var(--violet)', fontSize: 11, fontWeight: 500 }}>(Excedente)</span>}
+                  {c.name} {direct.indexOf(c) < 10 ? <span style={{ color: 'var(--teal)', fontSize: 11, fontWeight: 500 }}>(Slot {direct.indexOf(c) + 1})</span> : <span style={{ color: 'var(--violet)', fontSize: 11, fontWeight: 500 }}>(Excedente)</span>}
                 </div>
-                <div className="muted" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                <div className="muted" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
                   <span>🕸️ Rede: <strong style={{ color: 'var(--violet)' }}>{getReferralNetworkCount(c.id)}</strong></span>
                   <span>·</span>
-                  <span>{c.instagram || c.email}</span>
+                  {getReferralNetworkCount(c.id) > 0 ? (
+                    <span style={{ color: 'var(--teal)', fontSize: 9, fontWeight: 700, border: '1px solid rgba(0, 242, 254, 0.2)', padding: '1px 5px', borderRadius: 4, background: 'rgba(0, 242, 254, 0.05)' }}>
+                      📈 DANDO CONTINUIDADE
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--gold)', fontSize: 9, fontWeight: 700, border: '1px solid rgba(255, 215, 0, 0.2)', padding: '1px 5px', borderRadius: 4, background: 'rgba(255, 215, 0, 0.05)' }}>
+                      ⚠️ PRECISA DE AJUDA
+                    </span>
+                  )}
                 </div>
               </div>
               <span className="id-badge">#{c.id}</span>
