@@ -134,7 +134,7 @@ export default function App() {
     };
   }, []);
 
-  async function checkForNewMessages() {
+  async function checkForNewMessages(profileId) {
     try {
       const { data, error } = await supabase
         .from('messages')
@@ -144,7 +144,7 @@ export default function App() {
         .maybeSingle();
       
       if (!error && data) {
-        const lastRead = localStorage.getItem('last_read_message_id');
+        const lastRead = localStorage.getItem('last_read_message_id_' + profileId);
         if (!lastRead || parseInt(lastRead, 10) < data.id) {
           setHasNewMuralMessage(true);
         }
@@ -159,7 +159,9 @@ export default function App() {
     setProfile(data);
     setTab('owner');
     setLoading(false);
-    checkForNewMessages();
+    if (data) {
+      checkForNewMessages(data.id);
+    }
   }
 
   async function handleLogout() {

@@ -26,7 +26,7 @@ export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
 
     if (msgs && msgs.length > 0) {
       const maxId = Math.max(...msgs.map(m => m.id));
-      await AsyncStorage.setItem('last_read_message_id', maxId.toString());
+      await AsyncStorage.setItem('last_read_message_id_' + profile.id, maxId.toString());
       DeviceEventEmitter.emit('mural_messages_read');
     }
   }, [profile.id]);
