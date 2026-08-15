@@ -171,8 +171,11 @@ function RankingTab({ users, meetings, onSelect }) {
     return count;
   }
 
+  // Filtrar para excluir os administradores do ranking
+  const nonAdminUsers = users.filter((u) => u.role !== 'admin');
+
   // Calcular indicações, volume da rede e reuniões de cada usuário
-  const rankingData = users.map((u) => {
+  const rankingData = nonAdminUsers.map((u) => {
     const referralNetworkCount = getReferralNetworkCount(u.id);
     const referralsCount = users.filter((ref) => ref.referrer_id === u.id).length;
     const eventsCount = meetings.filter((meet) => meet.created_by === u.id).length;
