@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import TopBar from '../components/TopBar';
 import PersonModal from '../components/PersonModal';
-import { fetchTotalUsersCount, fetchDirectReferrals, fetchMatrixChildren, fetchProfileById } from '../lib/api';
+import { fetchTotalUsersCount, fetchDirectReferrals, fetchMatrixChildren, fetchProfileById, fetchAllProfiles } from '../lib/api';
 
 const ORBIT_SIZE = 250, R = 100, CX = ORBIT_SIZE / 2, CY = ORBIT_SIZE / 2;
 function initials(name) { return (name || '?').split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase(); }
@@ -23,23 +23,40 @@ export default function NetworkScreen({ profile }) {
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [selectedSponsor, setSelectedSponsor] = useState(null);
   const [showAllList, setShowAllList] = useState(false);
+  const [allUsers, setAllUsers] = useState([]);
 
   const load = useCallback(async () => {
-    const [totalCount, directs, matrix, sps, crd] = await Promise.all([
+    const [totalCount, directs, matrix, sps, crd, all] = await Promise.all([
       fetchTotalUsersCount(),
       fetchDirectReferrals(profile.id),
       fetchMatrixChildren(profile.id),
       profile.referrer_id ? fetchProfileById(profile.referrer_id) : null,
-      profile.coord_id ? fetchProfileById(profile.coord_id) : null
+      profile.coord_id ? fetchProfileById(profile.coord_id) : null,
+      fetchAllProfiles()
     ]);
     setTotalUsers(totalCount);
     setDirect(directs);
     setMatrixChildren(matrix);
     setSponsor(sps);
     setCoord(crd);
+    setAllUsers(all || []);
   }, [profile.id, profile.referrer_id, profile.coord_id]);
 
   useEffect(() => { load(); }, [load]);
+
+  function getReferralNetworkCount(userId) {
+    if (!allUsers || allUsers.length === 0) return 0;
+    let count = 0;
+    let currentLevel = allUsers.filter((u) => u.referrer_id === userId);
+    let depth = 1;
+    while (currentLevel.length > 0 && depth <= 20) {
+      count += currentLevel.length;
+      const nextLevelIds = currentLevel.map((u) => u.id);
+      currentLevel = allUsers.filter((u) => nextLevelIds.includes(u.referrer_id));
+      depth++;
+    }
+    return count;
+  }
 
   async function openPerson(p) {
     setSelectedPerson(p);
@@ -51,6 +68,19 @@ export default function NetworkScreen({ profile }) {
   return (
     <div className="screen">
       <TopBar totalUsers={totalUsers} />
+
+      <div className="card" style={{ 
+        background: 'linear-gradient(135deg, rgba(123, 108, 244, 0.12), rgba(0, 242, 254, 0.03))', 
+        borderColor: 'rgba(123, 108, 244, 0.3)',
+        padding: '14px 18px',
+        borderRadius: 16,
+        marginBottom: 16,
+        textAlign: 'center'
+      }}>
+        <div style={{ fontSize: 11, color: 'var(--ink2)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>Sua Rede de Indicações (Até 20ª Geração)</div>
+        <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--violet)', marginTop: 4 }}>{getReferralNetworkCount(profile.id)}</div>
+        <div className="muted" style={{ fontSize: 9.5, marginTop: 4 }}>Membros ativos acumulados através de seus diretos</div>
+      </div>
 
       {coord && (
         <div className="card" style={{ 
@@ -131,7 +161,11 @@ export default function NetworkScreen({ profile }) {
                 <div style={{ fontWeight: 600, fontSize: 13 }}>
                   {c.name} {index < 10 ? <span style={{ color: 'var(--teal)', fontSize: 11, fontWeight: 500 }}>(Slot {index + 1})</span> : <span style={{ color: 'var(--violet)', fontSize: 11, fontWeight: 500 }}>(Excedente)</span>}
                 </div>
-                <div className="muted">{c.instagram || c.email}</div>
+                <div className="muted" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                  <span>🕸️ Rede: <strong style={{ color: 'var(--violet)' }}>{getReferralNetworkCount(c.id)}</strong></span>
+                  <span>·</span>
+                  <span>{c.instagram || c.email}</span>
+                </div>
               </div>
               <span className="id-badge">#{c.id}</span>
             </div>
@@ -156,7 +190,7 @@ export default function NetworkScreen({ profile }) {
       <div style={{ height: 20 }} />
 
       {selectedPerson && (
-        <PersonModal person={selectedPerson} sponsor={selectedSponsor} onClose={() => setSelectedPerson(null)} />
+        <PersonModal person={selectedPerson} sponsor={selectedSponsor} networkCount={getReferralNetworkCount(selectedPerson.id)} onClose={() => setSelectedPerson(null)} />
       )}
     </div>
   );

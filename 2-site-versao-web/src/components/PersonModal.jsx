@@ -2,7 +2,7 @@ function initials(name) { return (name || '?').split(' ').map((p) => p[0]).slice
 function roleLabel(role) { return role === 'admin' ? 'Admin' : role === 'coord' ? 'Coord' : 'Membro'; }
 function roleClass(role) { return role === 'admin' ? 'role-admin' : role === 'coord' ? 'role-coord' : 'role-user'; }
 
-export default function PersonModal({ person, sponsor, onClose }) {
+export default function PersonModal({ person, sponsor, networkCount, onClose }) {
   if (!person) return null;
 
   const socials = [
@@ -38,6 +38,11 @@ export default function PersonModal({ person, sponsor, onClose }) {
             <span className={`role-badge ${roleClass(person.role)}`}>{roleLabel(person.role)}</span>
           </div>
           {sponsor && <div className="muted" style={{ marginTop: 6 }}>Indicado por <b>{sponsor.name}</b> (#{sponsor.id})</div>}
+          {typeof networkCount === 'number' && (
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--violet)', marginTop: 8 }}>
+              🕸️ Rede acumulada: {networkCount} {networkCount === 1 ? 'membro' : 'membros'}
+            </div>
+          )}
         </div>
 
         <div className="card-title">Redes sociais — seguir</div>

@@ -157,19 +157,38 @@ function UsersTab({ users, onSelect }) {
 
 /* ===== RANKING (TOP 100) ===== */
 function RankingTab({ users, meetings, onSelect }) {
-  // Calcular indicações e reuniões de cada usuário
+  // Helper para calcular tamanho da rede pela árvore de indicações (até a 20ª geração)
+  function getReferralNetworkCount(userId) {
+    let count = 0;
+    let currentLevel = users.filter((u) => u.referrer_id === userId);
+    let depth = 1;
+    while (currentLevel.length > 0 && depth <= 20) {
+      count += currentLevel.length;
+      const nextLevelIds = currentLevel.map((u) => u.id);
+      currentLevel = users.filter((u) => nextLevelIds.includes(u.referrer_id));
+      depth++;
+    }
+    return count;
+  }
+
+  // Calcular indicações, volume da rede e reuniões de cada usuário
   const rankingData = users.map((u) => {
+    const referralNetworkCount = getReferralNetworkCount(u.id);
     const referralsCount = users.filter((ref) => ref.referrer_id === u.id).length;
     const eventsCount = meetings.filter((meet) => meet.created_by === u.id).length;
     return {
       profile: u,
+      referralNetworkCount,
       referralsCount,
       eventsCount,
     };
   });
 
-  // Ordenar por indicações (primário) e eventos (secundário)
+  // Ordenar por volume de rede de indicações (primário), indicações diretas (secundário) e eventos (terciário)
   rankingData.sort((a, b) => {
+    if (b.referralNetworkCount !== a.referralNetworkCount) {
+      return b.referralNetworkCount - a.referralNetworkCount;
+    }
     if (b.referralsCount !== a.referralsCount) {
       return b.referralsCount - a.referralsCount;
     }
@@ -209,7 +228,7 @@ function RankingTab({ users, meetings, onSelect }) {
 
   return (
     <div>
-      <div className="card-title">Ranking Geral (Top 100)</div>
+      <div className="card-title">Ranking Geral MMN (Top 100)</div>
       {top100.length === 0 && <div className="empty">Nenhum cadastro encontrado.</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {top100.map((item, idx) => {
@@ -254,7 +273,9 @@ function RankingTab({ users, meetings, onSelect }) {
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
                   <span className={`role-badge ${roleClass(p.role)}`} style={{ fontSize: 9, padding: '1px 5px' }}>{roleLabel(p.role)}</span>
                 </div>
-                <div className="muted" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                <div className="muted" style={{ fontSize: 11, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 8px', marginTop: 4 }}>
+                  <span>🕸️ Rede: <strong style={{ color: 'var(--violet)', fontSize: 12 }}>{item.referralNetworkCount}</strong></span>
+                  <span>·</span>
                   <span>🤝 Indicações: <strong style={{ color: 'var(--teal)' }}>{item.referralsCount}</strong></span>
                   <span>·</span>
                   <span>📅 Eventos: <strong style={{ color: 'var(--gold)' }}>{item.eventsCount}</strong></span>
