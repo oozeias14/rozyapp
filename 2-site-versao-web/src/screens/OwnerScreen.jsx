@@ -110,7 +110,7 @@ export default function OwnerScreen({ profile, onOpenAdminOwner }) {
 
       {/* Seção de Vídeo Diário */}
       {owner.video_url && (
-        <div className="card" style={{ marginTop: 16, padding: '16px 20px' }}>
+        <div className="card-gradient" style={{ marginTop: 16, padding: '16px 20px' }}>
           <div className="card-title" style={{ color: 'var(--ink2)', letterSpacing: '0.05em', textTransform: 'uppercase', fontSize: 10, fontWeight: 700, marginBottom: 12 }}>🎥 Vídeo de Hoje</div>
           
           {getYoutubeId(owner.video_url) ? (
