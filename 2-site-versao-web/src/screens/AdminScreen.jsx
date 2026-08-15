@@ -88,60 +88,10 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         <span className={`role-badge ${roleClass(profile.role)}`}>{roleLabel(profile.role)}</span>
       </div>
 
-      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', marginBottom: 12 }}>
-        <button 
-          onClick={() => tabsRef.current?.scrollBy({ left: -100, behavior: 'smooth' })}
-          style={{
-            background: 'rgba(255, 255, 255, 0.04)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            color: 'var(--ink1)',
-            borderRadius: '50%',
-            width: 28,
-            height: 28,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            flexShrink: 0,
-            marginRight: 6,
-            fontSize: 16,
-            lineHeight: 1,
-            transition: 'background 0.2s',
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
-          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)'}
-        >
-          ‹
-        </button>
-        <div ref={tabsRef} className="adm-tabs" style={{ display: 'flex', gap: 6, overflowX: 'auto', flex: 1, scrollbarWidth: 'none', margin: 0, paddingBottom: 0 }}>
-          {tabs.map(([key, label]) => (
-            <button key={key} className={`adm-tab${tab === key ? ' on' : ''}`} style={{ flexShrink: 0 }} onClick={() => setTab(key)}>{label}</button>
-          ))}
-        </div>
-        <button 
-          onClick={() => tabsRef.current?.scrollBy({ left: 100, behavior: 'smooth' })}
-          style={{
-            background: 'rgba(255, 255, 255, 0.04)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            color: 'var(--ink1)',
-            borderRadius: '50%',
-            width: 28,
-            height: 28,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            flexShrink: 0,
-            marginLeft: 6,
-            fontSize: 16,
-            lineHeight: 1,
-            transition: 'background 0.2s',
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'}
-          onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)'}
-        >
-          ›
-        </button>
+      <div className="adm-tabs" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+        {tabs.map(([key, label]) => (
+          <button key={key} className={`adm-tab${tab === key ? ' on' : ''}`} onClick={() => setTab(key)}>{label}</button>
+        ))}
       </div>
 
       <button className="btn btn-ghost" style={{ marginTop: 10, marginBottom: 10, width: '100%' }} onClick={onBack}>← Voltar ao aplicativo</button>

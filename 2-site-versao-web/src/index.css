@@ -300,8 +300,7 @@ label.lbl { font-size: 10.5px; color: var(--ink2); margin: 0 0 4px 2px; display:
 
 .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--teal); color: var(--ink1); padding: 10px 15px; border-radius: 12px; font-size: 12px; z-index: 300; box-shadow: 0 10px 30px rgba(0,0,0,.5); max-width: 88vw; }
 
-.adm-tabs { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 12px; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
-.adm-tabs::-webkit-scrollbar { display: none; }
+.adm-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .adm-tab { padding: 7px 13px; border-radius: 999px; font-size: 12px; font-weight: 700; cursor: pointer; color: var(--ink2); border: 1px solid var(--line); white-space: nowrap; background: none; }
 .adm-tab.on { background: var(--violet); color: #fff; border-color: var(--violet); }
 .sep { height: 1px; background: var(--line); margin: 14px 0; }
