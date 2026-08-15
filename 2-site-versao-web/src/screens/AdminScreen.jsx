@@ -551,7 +551,7 @@ function OwnerTab({ owner, reload }) {
       <label className="lbl">Instagram</label><input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@usuario" />
       <label className="lbl">TikTok</label><input value={tiktok} onChange={(e) => setTiktok(e.target.value)} placeholder="@usuario" />
       <label className="lbl">WhatsApp</label><input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="5561999999999" />
-      <label className="lbl">Vídeo de Hoje (Link do YouTube/Vimeo/etc.)</label>
+      <label className="lbl">Cole Link Youtube ou Reels Instagram</label>
       <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..." />
       <button className="btn btn-teal" onClick={save} disabled={saving}>{saving ? 'Salvando...' : 'Salvar perfil de Dr. Candido'}</button>
     </div>
