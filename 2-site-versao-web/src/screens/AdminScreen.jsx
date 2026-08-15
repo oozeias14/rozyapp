@@ -493,10 +493,8 @@ function OwnerTab({ owner, reload }) {
   const [name, setName] = useState(owner?.name || '');
   const [bio, setBio] = useState(owner?.bio || '');
   const [instagram, setInstagram] = useState(owner?.instagram || '');
-  const [facebook, setFacebook] = useState(owner?.facebook || '');
   const [tiktok, setTiktok] = useState(owner?.tiktok || '');
   const [whatsapp, setWhatsapp] = useState(owner?.whatsapp || '');
-  const [youtube, setYoutube] = useState(owner?.youtube || '');
   const [videoUrl, setVideoUrl] = useState(owner?.video_url || '');
   const [photoUrl, setPhotoUrl] = useState(owner?.photo_url || null);
   const [saving, setSaving] = useState(false);
@@ -519,7 +517,7 @@ function OwnerTab({ owner, reload }) {
   async function save() {
     setSaving(true);
     try {
-      await updateOwnerProfile({ name, photo_url: photoUrl, bio, instagram, facebook, tiktok, whatsapp, youtube, video_url: videoUrl });
+      await updateOwnerProfile({ name, photo_url: photoUrl, bio, instagram, tiktok, whatsapp, video_url: videoUrl });
       alert('Perfil de Dr. Candido salvo.');
       reload();
     } catch (e) { alert('Erro: ' + e.message); } finally { setSaving(false); }
@@ -551,10 +549,8 @@ function OwnerTab({ owner, reload }) {
       <label className="lbl">Bio / Descrição</label>
       <textarea style={{ minHeight: 90 }} value={bio} onChange={(e) => setBio(e.target.value)} maxLength={1000} />
       <label className="lbl">Instagram</label><input value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="@usuario" />
-      <label className="lbl">Facebook</label><input value={facebook} onChange={(e) => setFacebook(e.target.value)} />
       <label className="lbl">TikTok</label><input value={tiktok} onChange={(e) => setTiktok(e.target.value)} placeholder="@usuario" />
       <label className="lbl">WhatsApp</label><input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="5561999999999" />
-      <label className="lbl">YouTube (URL)</label><input value={youtube} onChange={(e) => setYoutube(e.target.value)} placeholder="https://youtube.com/..." />
       <label className="lbl">Vídeo de Hoje (Link do YouTube/Vimeo/etc.)</label>
       <input value={videoUrl} onChange={(e) => setVideoUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..." />
       <button className="btn btn-teal" onClick={save} disabled={saving}>{saving ? 'Salvando...' : 'Salvar perfil de Dr. Candido'}</button>

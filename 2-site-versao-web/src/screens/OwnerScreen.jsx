@@ -54,7 +54,6 @@ export default function OwnerScreen({ profile, onOpenAdminOwner }) {
       ),
       url: `https://instagram.com/${owner.instagram.replace('@', '')}`
     },
-    owner.facebook && { key: 'facebook', label: 'Facebook', value: owner.facebook, icon: '📘', url: `https://facebook.com/${encodeURIComponent(owner.facebook)}` },
     owner.tiktok && { key: 'tiktok', label: 'TikTok', value: owner.tiktok, icon: '🎵', url: `https://tiktok.com/${owner.tiktok}` },
     owner.whatsapp && {
       key: 'whatsapp',
@@ -67,7 +66,6 @@ export default function OwnerScreen({ profile, onOpenAdminOwner }) {
       ),
       url: `https://wa.me/${owner.whatsapp}`
     },
-    owner.youtube && { key: 'youtube', label: 'YouTube', value: 'Canal oficial', icon: '▶️', url: owner.youtube },
   ].filter(Boolean);
 
   return (
