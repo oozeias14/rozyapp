@@ -207,7 +207,6 @@ function UserDetail({ user, sponsor, coord, placementParent, isAdmin, onBack, on
               ) : (
                 <TouchableOpacity style={[S.btn, S.btnGhost]} onPress={demote}><Text style={S.btnTextGhost}>Rebaixar a Membro</Text></TouchableOpacity>
               )}
-              <TouchableOpacity style={[S.btn, S.btnWarn]} onPress={confirmDelete}><Text style={S.btnTextWarn}>Excluir cadastro</Text></TouchableOpacity>
             </>
           )}
         </>

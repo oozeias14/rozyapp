@@ -174,7 +174,6 @@ function UserDetail({ user, sponsor, coord, placementParent, isAdmin, onBack, on
               {user.role === 'user'
                 ? <button className="btn btn-violet" onClick={promote}>Promover a Coordenador</button>
                 : <button className="btn btn-ghost" onClick={demote}>Rebaixar a Membro</button>}
-              <button className="btn btn-warn" onClick={confirmDelete}>Excluir cadastro</button>
             </>
           )}
         </>
