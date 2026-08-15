@@ -98,9 +98,9 @@ export default function OwnerScreen({ profile, onOpenAdminOwner }) {
           <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--line)' }} />
 
           {/* Right Column: Bio Bullet Points */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11, lineHeight: 1.35, color: 'var(--ink1)', textAlign: 'left' }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 11, lineHeight: 1.35, color: 'var(--ink1)', textAlign: 'center', alignItems: 'center' }}>
             {owner.bio.split('\n').map((line, idx) => (
-              <div key={idx} style={{ display: 'flex', alignItems: 'flex-start' }}>
+              <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <span style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{line}</span>
               </div>
             ))}
