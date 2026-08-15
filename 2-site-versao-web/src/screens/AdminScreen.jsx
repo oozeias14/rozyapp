@@ -60,6 +60,8 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         ))}
       </div>
 
+      <button className="btn btn-ghost" style={{ marginTop: 10, marginBottom: 10, width: '100%' }} onClick={onBack}>← Voltar ao aplicativo</button>
+
       <div style={{ flex: 1 }}>
         {loading && <div style={{ fontSize: 12, color: 'var(--teal)', textAlign: 'center', margin: '8px 0' }}>⏳ Carregando dados...</div>}
         {tab === 'users' && <UsersTab users={users} isAdmin={isAdmin} reload={load} />}
@@ -68,8 +70,6 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         {tab === 'stats' && isAdmin && <StatsTab users={users} meetings={meetings} messages={messages} />}
         {tab === 'settings' && isAdmin && settings && <SettingsTab settings={settings} profile={profile} reload={load} />}
       </div>
-
-      <button className="btn btn-ghost" style={{ marginTop: 10 }} onClick={onBack}>← Voltar ao aplicativo</button>
     </div>
   );
 }

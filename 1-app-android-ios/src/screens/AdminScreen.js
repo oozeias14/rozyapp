@@ -72,6 +72,10 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         ))}
       </ScrollView>
 
+      <TouchableOpacity style={[S.btn, S.btnGhost, { marginTop: 8, marginBottom: 8 }]} onPress={onBack}>
+        <Text style={S.btnTextGhost}>← Voltar ao aplicativo</Text>
+      </TouchableOpacity>
+
       {loading && (
         <ActivityIndicator color={COLORS.teal} size="small" style={{ marginVertical: 8 }} />
       )}
@@ -84,10 +88,6 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         {tab === 'settings' && isAdmin && settings ? <SettingsTab settings={settings} profile={profile} reload={load} /> : null}
         <View style={{ height: 10 }} />
       </ScrollView>
-
-      <TouchableOpacity style={[S.btn, S.btnGhost, { marginTop: 10 }]} onPress={onBack}>
-        <Text style={S.btnTextGhost}>← Voltar ao aplicativo</Text>
-      </TouchableOpacity>
     </View>
   );
 }
