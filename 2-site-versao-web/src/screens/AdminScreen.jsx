@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import PersonModal from '../components/PersonModal';
 import { supabase, MAX_PHOTO_BYTES, compressImageWeb } from '../lib/supabase';
 import {
   fetchAllProfiles, updateProfile, deleteProfile, promoteToCoordinator, demoteToUser,
@@ -39,6 +40,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
   const [settings, setSettings] = useState(null);
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [modalPerson, setModalPerson] = useState(null);
 
   const load = useCallback(async () => {
     const [u, m, msg, o, s] = await Promise.all([
@@ -96,12 +98,20 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
       <div style={{ flex: 1 }}>
         {loading && <div style={{ fontSize: 12, color: 'var(--teal)', textAlign: 'center', margin: '8px 0' }}>⏳ Carregando dados...</div>}
         {tab === 'users' && <UsersTab users={users} onSelect={(u) => setSelected(u)} />}
-        {tab === 'ranking' && <RankingTab users={users} meetings={meetings} onSelect={(u) => setSelected(u)} />}
+        {tab === 'ranking' && <RankingTab users={users} meetings={meetings} onSelect={(u) => setModalPerson(u)} />}
         {tab === 'messages' && <MessagesTab messages={messages} profile={profile} reload={load} />}
         {tab === 'owner' && isAdmin && owner && <OwnerTab owner={owner} reload={load} />}
         {tab === 'stats' && isAdmin && <StatsTab users={users} meetings={meetings} messages={messages} />}
         {tab === 'settings' && isAdmin && settings && <SettingsTab settings={settings} profile={profile} reload={load} />}
       </div>
+
+      {modalPerson && (
+        <PersonModal 
+          person={modalPerson} 
+          sponsor={users.find((u) => u.id === modalPerson.referrer_id)} 
+          onClose={() => setModalPerson(null)} 
+        />
+      )}
     </div>
   );
 }
