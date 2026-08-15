@@ -234,11 +234,11 @@ export default function NetworkScreen({ profile }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span className="id-badge">#{c.id}</span>
-                {c.whatsapp && (
+                {(c.whatsapp || c.phone) && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      window.open(`https://wa.me/${c.whatsapp.replace(/[^0-9]/g, '')}`, '_blank');
+                      window.open(`https://wa.me/${(c.whatsapp || c.phone).replace(/[^0-9]/g, '')}`, '_blank');
                     }}
                     style={{
                       background: 'rgba(37, 211, 102, 0.1)',
