@@ -9,6 +9,13 @@ function getYoutubeId(url) {
   return (match && match[2].length === 11) ? match[2] : null;
 }
 
+function getInstagramReelCode(url) {
+  if (!url) return null;
+  const regExp = /instagram\.com\/(?:reels|reel|p)\/([a-zA-Z0-9_-]+)/;
+  const match = url.match(regExp);
+  return match ? match[1] : null;
+}
+
 export default function OwnerScreen({ profile, onOpenAdminOwner }) {
   const [owner, setOwner] = useState(null);
   const [totalUsers, setTotalUsers] = useState(0);
@@ -107,6 +114,17 @@ export default function OwnerScreen({ profile, onOpenAdminOwner }) {
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
                 style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
+              />
+            </div>
+          ) : getInstagramReelCode(owner.video_url) ? (
+            <div style={{ width: '100%', display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+              <iframe
+                src={`https://www.instagram.com/reel/${getInstagramReelCode(owner.video_url)}/embed/`}
+                title="Instagram Reel"
+                frameBorder="0"
+                scrolling="no"
+                allowtransparency="true"
+                style={{ width: '100%', maxWidth: 360, height: 480, borderRadius: 12, border: 'none', background: 'transparent' }}
               />
             </div>
           ) : (
