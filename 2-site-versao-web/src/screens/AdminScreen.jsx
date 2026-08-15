@@ -37,6 +37,8 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
   const [messages, setMessages] = useState([]);
   const [owner, setOwner] = useState(null);
   const [settings, setSettings] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [editing, setEditing] = useState(null);
 
   const load = useCallback(async () => {
     const [u, m, msg, o, s] = await Promise.all([
@@ -49,9 +51,32 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
   useEffect(() => { load(); }, [load]);
 
   const tabs = [
-    ['users', '👥 Cadastros'], ['messages', '📣 Mensagens'],
+    ['users', '👥 Cadastros'],
+    ['ranking', '🏆 Ranking'],
+    ['messages', '📣 Mensagens'],
     ...(isAdmin ? [['owner', '👨‍⚕️ Dr. Candido'], ['stats', '📊 Stats'], ['settings', '⚙️ Conta']] : []),
   ];
+
+  if (editing) {
+    return (
+      <div className="screen" style={{ display: 'flex', flexDirection: 'column' }}>
+        <EditUserForm user={editing} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); setSelected(null); load(); }} />
+      </div>
+    );
+  }
+
+  if (selected) {
+    const sponsor = users.find((u) => u.id === selected.referrer_id);
+    const coord = users.find((u) => u.id === selected.coord_id);
+    const placementParent = users.find((u) => u.id === selected.parent_id);
+    const childrenCount = users.filter((u) => u.referrer_id === selected.id).length;
+    return (
+      <div className="screen" style={{ display: 'flex', flexDirection: 'column' }}>
+        <UserDetail user={{ ...selected, children_count: childrenCount }} sponsor={sponsor} coord={coord} placementParent={placementParent} isAdmin={isAdmin}
+          onBack={() => setSelected(null)} onEdit={() => setEditing(selected)} onChanged={() => { setSelected(null); load(); }} />
+      </div>
+    );
+  }
 
   return (
     <div className="screen" style={{ display: 'flex', flexDirection: 'column' }}>
@@ -70,7 +95,8 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
 
       <div style={{ flex: 1 }}>
         {loading && <div style={{ fontSize: 12, color: 'var(--teal)', textAlign: 'center', margin: '8px 0' }}>⏳ Carregando dados...</div>}
-        {tab === 'users' && <UsersTab users={users} isAdmin={isAdmin} reload={load} />}
+        {tab === 'users' && <UsersTab users={users} onSelect={(u) => setSelected(u)} />}
+        {tab === 'ranking' && <RankingTab users={users} meetings={meetings} onSelect={(u) => setSelected(u)} />}
         {tab === 'messages' && <MessagesTab messages={messages} profile={profile} reload={load} />}
         {tab === 'owner' && isAdmin && owner && <OwnerTab owner={owner} reload={load} />}
         {tab === 'stats' && isAdmin && <StatsTab users={users} meetings={meetings} messages={messages} />}
@@ -89,10 +115,8 @@ function Avatar({ person, size = 36 }) {
 }
 
 /* ===== CADASTROS ===== */
-function UsersTab({ users, isAdmin, reload }) {
+function UsersTab({ users, onSelect }) {
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState(null);
-  const [editing, setEditing] = useState(null);
 
   const filtered = users.filter((u) =>
     u.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -100,24 +124,12 @@ function UsersTab({ users, isAdmin, reload }) {
     (u.email || '').toLowerCase().includes(search.toLowerCase())
   );
 
-  if (editing) return <EditUserForm user={editing} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); setSelected(null); reload(); }} />;
-  if (selected) {
-    const sponsor = users.find((u) => u.id === selected.referrer_id);
-    const coord = users.find((u) => u.id === selected.coord_id);
-    const placementParent = users.find((u) => u.id === selected.parent_id);
-    const childrenCount = users.filter((u) => u.referrer_id === selected.id).length;
-    return (
-      <UserDetail user={{ ...selected, children_count: childrenCount }} sponsor={sponsor} coord={coord} placementParent={placementParent} isAdmin={isAdmin}
-        onBack={() => setSelected(null)} onEdit={() => setEditing(selected)} onChanged={() => { setSelected(null); reload(); }} />
-    );
-  }
-
   return (
     <div>
       <div className="card-title">Todos os cadastros ({users.length})</div>
       <input placeholder="Buscar nome, e-mail ou ID..." value={search} onChange={(e) => setSearch(e.target.value)} />
       {filtered.map((p) => (
-        <div key={p.id} className="data-row" onClick={() => setSelected(p)}>
+        <div key={p.id} className="data-row" onClick={() => onSelect(p)}>
           <Avatar person={p} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
@@ -129,6 +141,119 @@ function UsersTab({ users, isAdmin, reload }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ===== RANKING (TOP 100) ===== */
+function RankingTab({ users, meetings, onSelect }) {
+  // Calcular indicações e reuniões de cada usuário
+  const rankingData = users.map((u) => {
+    const referralsCount = users.filter((ref) => ref.referrer_id === u.id).length;
+    const eventsCount = meetings.filter((meet) => meet.created_by === u.id).length;
+    return {
+      profile: u,
+      referralsCount,
+      eventsCount,
+    };
+  });
+
+  // Ordenar por indicações (primário) e eventos (secundário)
+  rankingData.sort((a, b) => {
+    if (b.referralsCount !== a.referralsCount) {
+      return b.referralsCount - a.referralsCount;
+    }
+    return b.eventsCount - a.eventsCount;
+  });
+
+  const top100 = rankingData.slice(0, 100);
+
+  function getRankBadgeStyle(rank) {
+    if (rank === 1) {
+      return {
+        background: 'linear-gradient(135deg, #FFE259, #FFA751)',
+        color: '#000',
+        fontWeight: 'bold',
+        textShadow: '0 1px 1px rgba(255,255,255,0.4)',
+      };
+    }
+    if (rank === 2) {
+      return {
+        background: 'linear-gradient(135deg, #E2E8F0, #94A3B8)',
+        color: '#000',
+        fontWeight: 'bold',
+      };
+    }
+    if (rank === 3) {
+      return {
+        background: 'linear-gradient(135deg, #F39C12, #D35400)',
+        color: '#fff',
+        fontWeight: 'bold',
+      };
+    }
+    return {
+      background: 'rgba(255, 255, 255, 0.08)',
+      color: 'var(--ink2)',
+    };
+  }
+
+  return (
+    <div>
+      <div className="card-title">Ranking Geral (Top 100)</div>
+      {top100.length === 0 && <div className="empty">Nenhum cadastro encontrado.</div>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {top100.map((item, idx) => {
+          const rank = idx + 1;
+          const p = item.profile;
+          const badgeStyle = getRankBadgeStyle(rank);
+          
+          return (
+            <div 
+              key={p.id} 
+              className="data-row" 
+              onClick={() => onSelect(p)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                cursor: 'pointer',
+                padding: '10px 14px',
+                borderRadius: 12,
+                backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid rgba(255, 255, 255, 0.04)',
+                transition: 'background 0.2s',
+              }}
+            >
+              <div 
+                style={{ 
+                  width: 28, 
+                  height: 28, 
+                  borderRadius: '50%', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  fontSize: 12,
+                  ...badgeStyle
+                }}
+              >
+                {rank}
+              </div>
+              <Avatar person={p} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                  <span className={`role-badge ${roleClass(p.role)}`} style={{ fontSize: 9, padding: '1px 5px' }}>{roleLabel(p.role)}</span>
+                </div>
+                <div className="muted" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                  <span>🤝 Indicações: <strong style={{ color: 'var(--teal)' }}>{item.referralsCount}</strong></span>
+                  <span>·</span>
+                  <span>📅 Eventos: <strong style={{ color: 'var(--gold)' }}>{item.eventsCount}</strong></span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
