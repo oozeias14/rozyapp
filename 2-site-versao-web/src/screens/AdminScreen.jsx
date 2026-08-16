@@ -627,14 +627,20 @@ function RequestsTab({ reload }) {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('pending'); // 'pending' or 'history'
+  const [tableMissing, setTableMissing] = useState(false);
 
   const loadRequests = useCallback(async () => {
     setLoading(true);
     try {
       const data = await fetchAdminRequests();
       setRequests(data || []);
+      setTableMissing(false);
     } catch (e) {
-      alert('Erro ao carregar solicitações: ' + e.message);
+      if (e.message && (e.message.includes('admin_requests') || e.message.includes('schema cache') || e.message.includes('relation'))) {
+        setTableMissing(true);
+      } else {
+        alert('Erro ao carregar solicitações: ' + e.message);
+      }
     }
     setLoading(false);
   }, []);
@@ -642,6 +648,55 @@ function RequestsTab({ reload }) {
   useEffect(() => {
     loadRequests();
   }, [loadRequests]);
+
+  if (tableMissing) {
+    const sqlCode = `-- Executar no SQL Editor do Supabase:\n\nCREATE TABLE IF NOT EXISTS admin_requests (\n  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,\n  created_at timestamptz DEFAULT now(),\n  created_by uuid REFERENCES profiles(id) ON DELETE CASCADE,\n  action_type text NOT NULL,\n  target_id text,\n  payload jsonb NOT NULL,\n  status text DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),\n  approved_by uuid REFERENCES profiles(id),\n  approved_at timestamptz\n);\n\nALTER TABLE admin_requests ENABLE ROW LEVEL SECURITY;\n\n-- Drop existing policies if any to avoid errors\nDROP POLICY IF EXISTS "Permitir leitura geral para usuários autenticados" ON admin_requests;\nDROP POLICY IF EXISTS "Permitir inserção para usuários autenticados" ON admin_requests;\nDROP POLICY IF EXISTS "Permitir update para usuários autenticados" ON admin_requests;\n\nCREATE POLICY "Permitir leitura geral para usuários autenticados" ON admin_requests FOR SELECT TO authenticated USING (true);\nCREATE POLICY "Permitir inserção para usuários autenticados" ON admin_requests FOR INSERT TO authenticated WITH CHECK (true);\nCREATE POLICY "Permitir update para usuários autenticados" ON admin_requests FOR UPDATE TO authenticated USING (true);`;
+
+    return (
+      <div className="card" style={{ padding: 16, border: '1.5px solid rgba(255, 165, 0, 0.3)', background: 'rgba(255, 165, 0, 0.05)' }}>
+        <h3 style={{ color: '#FF7847', fontSize: 14, fontWeight: 700, marginBottom: 8 }}>⚠️ Configuração do Banco de Dados Pendente</h3>
+        <p style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>
+          Para que o sistema de <strong>Admin 2</strong> funcione online, você precisa criar a tabela correspondente no seu painel da Supabase.
+        </p>
+        <p style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 10 }}>
+          <strong>Como fazer:</strong><br />
+          1. Acesse o painel do seu **Supabase**.<br />
+          2. Clique em **SQL Editor** no menu lateral esquerdo.<br />
+          3. Clique em **New query** (Nova consulta).<br />
+          4. Cole o código SQL abaixo e clique em **Run** (Executar).
+        </p>
+        
+        <textarea 
+          readOnly 
+          value={sqlCode} 
+          style={{ 
+            width: '100%', 
+            height: 120, 
+            fontSize: 10.5, 
+            fontFamily: 'monospace', 
+            background: '#0d111c', 
+            color: '#a9b2c3', 
+            padding: 8, 
+            borderRadius: 6, 
+            border: '1px solid var(--line)',
+            resize: 'none',
+            marginBottom: 10
+          }} 
+        />
+        
+        <button 
+          className="btn btn-teal" 
+          onClick={() => {
+            navigator.clipboard.writeText(sqlCode);
+            alert('Código SQL copiado com sucesso!');
+          }}
+          style={{ width: '100%' }}
+        >
+          Copiar Código SQL
+        </button>
+      </div>
+    );
+  }
 
   async function handleApprove(reqId) {
     if (!confirm('Deseja realmente aprovar e executar esta alteração?')) return;
