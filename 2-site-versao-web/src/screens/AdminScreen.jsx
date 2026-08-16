@@ -1,3 +1,6 @@
+import { useEffect, useState, useCallback, useRef } from 'react';
+import PersonModal from '../components/PersonModal';
+import { supabase, MAX_PHOTO_BYTES, compressImageWeb } from '../lib/supabase';
 import {
   fetchAllProfiles, updateProfile, deleteProfile, promoteToCoordinator, demoteToUser,
   fetchMeetings, createMeeting, deleteMeeting,
