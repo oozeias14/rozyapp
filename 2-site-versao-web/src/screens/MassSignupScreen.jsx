@@ -154,7 +154,12 @@ export default function MassSignupScreen({ profile }) {
 
       const { data: authData, error: authErr } = await tempSupabase.auth.signUp({
         email: cleanedEmail,
-        password: '123456'
+        password: '123456',
+        options: {
+          data: {
+            via_mass_signup: true
+          }
+        }
       });
 
       if (authErr) {

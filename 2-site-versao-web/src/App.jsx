@@ -138,13 +138,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (profile && profile.role === 'user') {
+    if (profile && session?.user?.user_metadata?.via_mass_signup) {
       const isDismissed = localStorage.getItem(`first_access_popup_dismissed_${profile.id}`);
       if (!isDismissed) {
         setShowFirstAccessModal(true);
       }
     }
-  }, [profile]);
+  }, [profile, session]);
 
   async function checkForNewMessages(profileId) {
     try {
