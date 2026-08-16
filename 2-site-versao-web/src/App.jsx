@@ -156,8 +156,10 @@ export default function App() {
 
   async function loadProfile(authId) {
     const { data } = await supabase.from('profiles').select('*').eq('auth_id', authId).maybeSingle();
-    setProfile(data);
-    setTab('owner');
+    setProfile((prev) => {
+      if (!prev) setTab('owner');
+      return data;
+    });
     setLoading(false);
     if (data) {
       checkForNewMessages(data.id);
