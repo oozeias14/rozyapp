@@ -179,6 +179,52 @@ export default function App() {
     return <div className="app-shell"><div className="screen" style={{ textAlign: 'center', paddingTop: 100 }}>Carregando...</div></div>;
   }
 
+  const isPrivacyPage = window.location.pathname === '/privacidade' || window.location.pathname === '/privacy';
+
+  if (isPrivacyPage) {
+    return (
+      <div className="app-shell">
+        <div className="screen" style={{ overflowY: 'auto', padding: '24px 20px', color: 'var(--ink1)', lineHeight: 1.6 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 16, color: 'var(--teal)' }}>Política de Privacidade</h1>
+          <p style={{ fontSize: 13, marginBottom: 12, color: 'var(--ink2)' }}>Última atualização: 15 de agosto de 2026</p>
+          
+          <p style={{ fontSize: 13, marginBottom: 12 }}>
+            Esta Política de Privacidade descreve como o aplicativo <strong>Amigos Dr. Candido</strong> coleta, usa e compartilha suas informações pessoais ao utilizar nossos serviços.
+          </p>
+
+          <h2 style={{ fontSize: 16, fontWeight: 700, marginTop: 20, marginBottom: 8, color: 'var(--violet)' }}>1. Informações que Coletamos</h2>
+          <p style={{ fontSize: 13, marginBottom: 12 }}>
+            Para utilizar o aplicativo, coletamos informações básicas fornecidas diretamente por você no momento do cadastro, tais como nome completo, endereço de e-mail e número de telefone/WhatsApp.
+          </p>
+
+          <h2 style={{ fontSize: 16, fontWeight: 700, marginTop: 20, marginBottom: 8, color: 'var(--violet)' }}>2. Como Usamos as Informações</h2>
+          <p style={{ fontSize: 13, marginBottom: 12 }}>
+            Utilizamos os dados coletados exclusivamente para gerenciar sua conta de acesso, permitir a visualização de sua rede de indicações, possibilitar o contato entre patrocinadores e indicados via WhatsApp e viabilizar o recebimento de novidades no mural.
+          </p>
+
+          <h2 style={{ fontSize: 16, fontWeight: 700, marginTop: 20, marginBottom: 8, color: 'var(--violet)' }}>3. Compartilhamento de Dados</h2>
+          <p style={{ fontSize: 13, marginBottom: 12 }}>
+            Seus dados de contato (nome e WhatsApp) ficam visíveis apenas para o seu patrocinador direto na aba de acompanhamento da rede, a fim de possibilitar ajuda mútua. Não compartilhamos, vendemos ou alugamos seus dados para terceiros.
+          </p>
+
+          <h2 style={{ fontSize: 16, fontWeight: 700, marginTop: 20, marginBottom: 8, color: 'var(--violet)' }}>4. Seus Direitos</h2>
+          <p style={{ fontSize: 13, marginBottom: 12 }}>
+            Você pode solicitar a alteração ou exclusão definitiva dos seus dados a qualquer momento entrando em contato com o suporte ou solicitando a exclusão de conta através das configurações do aplicativo.
+          </p>
+
+          <h2 style={{ fontSize: 16, fontWeight: 700, marginTop: 20, marginBottom: 8, color: 'var(--violet)' }}>5. Contato</h2>
+          <p style={{ fontSize: 13, marginBottom: 12 }}>
+            Se você tiver alguma dúvida sobre esta Política de Privacidade, entre em contato através do e-mail oficial do desenvolvedor.
+          </p>
+          
+          <div style={{ marginTop: 30, borderTop: '1px solid var(--line)', paddingTop: 16, textAlign: 'center' }}>
+            <button className="btn btn-ghost" onClick={() => window.location.href = '/'}>Voltar ao Início</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (passwordRecovery) {
     return (
       <div className="app-shell">
