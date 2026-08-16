@@ -11,6 +11,7 @@ import AdminScreen from './screens/AdminScreen';
 import MassSignupScreen from './screens/MassSignupScreen';
 import SupportScreen from './screens/SupportScreen';
 import BottomNav from './components/BottomNav';
+import FirstAccessModal from './components/FirstAccessModal';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -22,6 +23,7 @@ export default function App() {
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [timeLeft, setTimeLeft] = useState(null);
   const [hasNewMuralMessage, setHasNewMuralMessage] = useState(false);
+  const [showFirstAccessModal, setShowFirstAccessModal] = useState(false);
 
   useEffect(() => {
     if (!profile) {
@@ -134,6 +136,15 @@ export default function App() {
       window.removeEventListener('mural_messages_read', handleMessagesRead);
     };
   }, []);
+
+  useEffect(() => {
+    if (profile && profile.role === 'user') {
+      const isDismissed = localStorage.getItem(`first_access_popup_dismissed_${profile.id}`);
+      if (!isDismissed) {
+        setShowFirstAccessModal(true);
+      }
+    }
+  }, [profile]);
 
   async function checkForNewMessages(profileId) {
     try {
@@ -250,6 +261,12 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      {showFirstAccessModal && (
+        <FirstAccessModal 
+          profile={profile} 
+          onClose={() => setShowFirstAccessModal(false)} 
+        />
+      )}
       {timeLeft !== null && (
         <div style={timerStyle}>
           <style>{`
