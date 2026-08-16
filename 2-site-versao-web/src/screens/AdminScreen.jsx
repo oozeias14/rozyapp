@@ -1,6 +1,3 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import PersonModal from '../components/PersonModal';
-import { supabase, MAX_PHOTO_BYTES, compressImageWeb } from '../lib/supabase';
 import {
   fetchAllProfiles, updateProfile, deleteProfile, promoteToCoordinator, demoteToUser,
   fetchMeetings, createMeeting, deleteMeeting,
@@ -8,11 +5,22 @@ import {
   fetchOwnerProfile, updateOwnerProfile,
   fetchAppSettings, updateAppDomain,
   adminResetPassword, changeOwnPassword,
+  fetchAdminRequests, approveAdminRequest, rejectAdminRequest, promoteToAdmin2
 } from '../lib/api';
 
 function initials(name) { return (name || '?').split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase(); }
-function roleLabel(role) { return role === 'admin' ? 'Admin' : role === 'coord' ? 'Coord' : 'Membro'; }
-function roleClass(role) { return role === 'admin' ? 'role-admin' : role === 'coord' ? 'role-coord' : 'role-user'; }
+function roleLabel(role) {
+  if (role === 'admin') return 'Admin';
+  if (role === 'admin2') return 'Admin 2';
+  if (role === 'coord') return 'Coord';
+  return 'Membro';
+}
+function roleClass(role) {
+  if (role === 'admin') return 'role-admin';
+  if (role === 'admin2') return 'role-admin2';
+  if (role === 'coord') return 'role-coord';
+  return 'role-user';
+}
 function fmtDate(d) {
   if (!d) return '';
   try {
@@ -30,7 +38,8 @@ function notifyBrowser(title, body) {
 }
 
 export default function AdminScreen({ profile, onBack, initialTab }) {
-  const isAdmin = profile.role === 'admin';
+  const isAdmin = profile.role === 'admin' || profile.role === 'admin2';
+  const isTrueAdmin = profile.role === 'admin';
   const [tab, setTab] = useState(initialTab || 'users');
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
@@ -58,6 +67,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
     ['ranking', '🏆 Ranking'],
     ['messages', '📣 Mensagens'],
     ...(isAdmin ? [['owner', '👨‍⚕️ Dr. Candido'], ['stats', '📊 Stats'], ['settings', '⚙️ Conta']] : []),
+    ...(isTrueAdmin ? [['requests', '📥 Solicitações Admin']] : []),
   ];
 
   if (editing) {
@@ -75,7 +85,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
     const childrenCount = users.filter((u) => u.referrer_id === selected.id).length;
     return (
       <div className="screen" style={{ display: 'flex', flexDirection: 'column' }}>
-        <UserDetail user={{ ...selected, children_count: childrenCount }} sponsor={sponsor} coord={coord} placementParent={placementParent} isAdmin={isAdmin}
+        <UserDetail user={{ ...selected, children_count: childrenCount }} sponsor={sponsor} coord={coord} placementParent={placementParent} isAdmin={isAdmin} isTrueAdmin={isTrueAdmin}
           onBack={() => setSelected(null)} onEdit={() => setEditing(selected)} onChanged={() => { setSelected(null); load(); }} />
       </div>
     );
@@ -84,7 +94,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
   return (
     <div className="screen" style={{ display: 'flex', flexDirection: 'column' }}>
       <div className="row-bw" style={{ marginBottom: 12 }}>
-        <div className="brand"><div className="dot" /><span>Painel {isAdmin ? 'Admin' : 'Coordenador'}</span></div>
+        <div className="brand"><div className="dot" /><span>Painel {profile.role === 'admin' ? 'Admin' : profile.role === 'admin2' ? 'Admin 2' : 'Coordenador'}</span></div>
         <span className={`role-badge ${roleClass(profile.role)}`}>{roleLabel(profile.role)}</span>
       </div>
 
@@ -104,6 +114,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         {tab === 'owner' && isAdmin && owner && <OwnerTab owner={owner} reload={load} />}
         {tab === 'stats' && isAdmin && <StatsTab users={users} meetings={meetings} messages={messages} />}
         {tab === 'settings' && isAdmin && settings && <SettingsTab settings={settings} profile={profile} reload={load} />}
+        {tab === 'requests' && isTrueAdmin && <RequestsTab reload={load} />}
       </div>
 
       {modalPerson && (
@@ -306,7 +317,7 @@ function RankingTab({ users, meetings, onSelect }) {
   );
 }
 
-function UserDetail({ user, sponsor, coord, placementParent, isAdmin, onBack, onEdit, onChanged }) {
+function UserDetail({ user, sponsor, coord, placementParent, isAdmin, isTrueAdmin, onBack, onEdit, onChanged }) {
   const rows = [
     ['E-mail', user.email], ['Telefone', user.phone || '-'], ['Nascimento', user.birth || '-'],
     ['Instagram', user.instagram || '-'], ['Facebook', user.facebook || '-'], ['TikTok', user.tiktok || '-'], ['WhatsApp', user.whatsapp || '-'],
@@ -317,6 +328,14 @@ function UserDetail({ user, sponsor, coord, placementParent, isAdmin, onBack, on
 
   async function promote() { try { await promoteToCoordinator(user.id); onChanged(); } catch (e) { alert('Erro: ' + e.message); } }
   async function demote() { try { await demoteToUser(user.id); onChanged(); } catch (e) { alert('Erro: ' + e.message); } }
+  async function promoteToA2() {
+    try {
+      await promoteToAdmin2(user.id);
+      onChanged();
+    } catch (e) {
+      alert('Erro: ' + e.message);
+    }
+  }
   async function confirmDelete() {
     if (!confirm(`Tem certeza que deseja excluir ${user.name}? Essa ação não pode ser desfeita.`)) return;
     try { await deleteProfile(user.id); onChanged(); } catch (e) { alert('Erro: ' + e.message); }
@@ -350,14 +369,26 @@ function UserDetail({ user, sponsor, coord, placementParent, isAdmin, onBack, on
           {user.role !== 'admin' && (
             <>
               <div className="sep" />
-              {user.role === 'user'
-                ? <button className="btn btn-violet" onClick={promote}>Promover a Coordenador</button>
-                : <button className="btn btn-ghost" onClick={demote}>Rebaixar a Membro</button>}
+              {isTrueAdmin && user.role === 'user' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+                  <button className="btn btn-violet" onClick={promote}>Promover a Coordenador</button>
+                  <button className="btn btn-gold" onClick={promoteToA2}>Promover a Admin 2</button>
+                </div>
+              )}
+              {isTrueAdmin && user.role === 'coord' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+                  <button className="btn btn-ghost" onClick={demote}>Rebaixar a Membro</button>
+                  <button className="btn btn-gold" onClick={promoteToA2}>Promover a Admin 2</button>
+                </div>
+              )}
+              {isTrueAdmin && user.role === 'admin2' && (
+                <button className="btn btn-ghost" style={{ width: '100%' }} onClick={demote}>Rebaixar a Membro</button>
+              )}
             </>
           )}
         </>
       )}
-      <button className="btn btn-ghost" onClick={onBack}>Voltar</button>
+      <button className="btn btn-ghost" style={{ marginTop: 8 }} onClick={onBack}>Voltar</button>
     </div>
   );
 }
@@ -585,6 +616,142 @@ function SettingsTab({ settings, profile, reload }) {
         <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Mínimo 6 caracteres" />
         <button className="btn btn-violet" onClick={savePassword}>Alterar senha</button>
       </div>
+    </div>
+  );
+}
+
+function RequestsTab({ reload }) {
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('pending'); // 'pending' or 'history'
+
+  const loadRequests = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchAdminRequests();
+      setRequests(data || []);
+    } catch (e) {
+      alert('Erro ao carregar solicitações: ' + e.message);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    loadRequests();
+  }, [loadRequests]);
+
+  async function handleApprove(reqId) {
+    if (!confirm('Deseja realmente aprovar e executar esta alteração?')) return;
+    try {
+      await approveAdminRequest(reqId);
+      alert('Solicitação aprovada e executada com sucesso!');
+      loadRequests();
+      reload();
+    } catch (e) {
+      alert('Erro ao aprovar solicitação: ' + e.message);
+    }
+  }
+
+  async function handleReject(reqId) {
+    if (!confirm('Deseja realmente rejeitar esta solicitação?')) return;
+    try {
+      await rejectAdminRequest(reqId);
+      alert('Solicitação rejeitada com sucesso!');
+      loadRequests();
+    } catch (e) {
+      alert('Erro ao rejeitar solicitação: ' + e.message);
+    }
+  }
+
+  const filtered = requests.filter(r => filter === 'pending' ? r.status === 'pending' : r.status !== 'pending');
+
+  function translateAction(type) {
+    const m = {
+      'update_profile': 'Editar Perfil',
+      'delete_profile': 'Excluir Cadastro',
+      'promote_coordinator': 'Promover a Coordenador',
+      'promote_admin2': 'Promover a Admin 2',
+      'demote_user': 'Rebaixar a Membro',
+      'create_meeting': 'Agendar Reunião',
+      'delete_meeting': 'Excluir Reunião',
+      'update_meeting': 'Editar Reunião',
+      'create_message': 'Enviar Mensagem no Mural',
+      'delete_message': 'Excluir Mensagem',
+      'update_owner_profile': 'Atualizar Dr. Candido',
+      'update_settings': 'Atualizar Domínio',
+      'admin_reset_password': 'Redefinir Senha'
+    };
+    return m[type] || type;
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button 
+          className="btn" 
+          style={{ 
+            flex: 1, 
+            fontSize: 11, 
+            padding: '8px 4px', 
+            borderRadius: 8, 
+            background: filter === 'pending' ? 'var(--violet)' : 'rgba(255,255,255,0.03)', 
+            color: filter === 'pending' ? '#fff' : 'var(--ink2)',
+            border: '1px solid ' + (filter === 'pending' ? 'var(--violet)' : 'var(--line)')
+          }}
+          onClick={() => setFilter('pending')}
+        >
+          Pendentes ({requests.filter(r => r.status === 'pending').length})
+        </button>
+        <button 
+          className="btn" 
+          style={{ 
+            flex: 1, 
+            fontSize: 11, 
+            padding: '8px 4px', 
+            borderRadius: 8, 
+            background: filter === 'history' ? 'var(--violet)' : 'rgba(255,255,255,0.03)', 
+            color: filter === 'history' ? '#fff' : 'var(--ink2)',
+            border: '1px solid ' + (filter === 'history' ? 'var(--violet)' : 'var(--line)')
+          }}
+          onClick={() => setFilter('history')}
+        >
+          Histórico ({requests.filter(r => r.status !== 'pending').length})
+        </button>
+      </div>
+
+      {loading && <div style={{ textAlign: 'center', color: 'var(--teal)', fontSize: 12 }}>⏳ Carregando solicitações...</div>}
+      {!loading && filtered.length === 0 && <div className="empty">Nenhuma solicitação nesta categoria.</div>}
+
+      {filtered.map(r => (
+        <div key={r.id} className="card" style={{ padding: 14, marginBottom: 8, border: '1.5px solid rgba(255,255,255,0.05)' }}>
+          <div className="row-bw" style={{ marginBottom: 6 }}>
+            <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--gold)' }}>{translateAction(r.action_type)}</span>
+            <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', padding: '2px 6px', borderRadius: 4, 
+              background: r.status === 'pending' ? 'rgba(255, 165, 0, 0.15)' : r.status === 'approved' ? 'rgba(0, 242, 254, 0.15)' : 'rgba(255, 0, 0, 0.15)',
+              color: r.status === 'pending' ? 'orange' : r.status === 'approved' ? 'var(--teal)' : 'red'
+            }}>
+              {r.status === 'pending' ? 'Pendente' : r.status === 'approved' ? 'Aprovada' : 'Rejeitada'}
+            </span>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--ink2)', marginBottom: 8 }}>
+            Solicitado por: <strong>{r.profiles?.name || 'Admin 2'}</strong> em {new Date(r.created_at).toLocaleString('pt-BR')}
+          </div>
+          
+          <div style={{ background: 'rgba(0,0,0,0.2)', padding: 10, borderRadius: 8, fontSize: 11.5, fontFamily: 'monospace', whiteSpace: 'pre-wrap', marginBottom: 12, border: '1px solid var(--line)', color: 'var(--ink1)' }}>
+            {r.target_id && <div>Alvo ID: {r.target_id}</div>}
+            {Object.keys(r.payload || {}).length > 0 && (
+              <div>Dados: {JSON.stringify(r.payload, null, 2)}</div>
+            )}
+          </div>
+
+          {r.status === 'pending' && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-teal" style={{ flex: 1, padding: '6px 12px', fontSize: 12 }} onClick={() => handleApprove(r.id)}>Aprovar</button>
+              <button className="btn btn-ghost" style={{ flex: 1, padding: '6px 12px', fontSize: 12, color: 'red', borderColor: 'rgba(255,0,0,0.3)' }} onClick={() => handleReject(r.id)}>Rejeitar</button>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

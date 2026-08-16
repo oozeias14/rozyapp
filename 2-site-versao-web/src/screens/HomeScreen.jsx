@@ -35,7 +35,7 @@ export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const isStaff = profile.role === 'admin' || profile.role === 'coord';
+  const isStaff = profile.role === 'admin' || profile.role === 'admin2' || profile.role === 'coord';
 
   // Estatísticas transparentes
   const completedM = meetings.filter((m) => m.status === 'realizada');
@@ -56,8 +56,8 @@ export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
         <div className="card" style={{ background: 'linear-gradient(135deg, rgba(138, 43, 226, 0.15), rgba(138, 43, 226, 0.05))', borderColor: 'var(--violet)', cursor: 'pointer' }} onClick={onOpenAdmin}>
           <div className="row-bw">
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 13.5 }}>⚙️ Painel {profile.role === 'admin' ? 'Admin' : 'Coordenador'}</div>
-              <div className="muted">Cadastros, eventos, mensagens{profile.role === 'admin' ? ' e o Dr. Candido' : ''}</div>
+              <div style={{ fontWeight: 700, fontSize: 13.5 }}>⚙️ Painel {profile.role === 'admin' || profile.role === 'admin2' ? 'Admin' : 'Coordenador'}</div>
+              <div className="muted">Cadastros, eventos, mensagens{profile.role === 'admin' || profile.role === 'admin2' ? ' e o Dr. Candido' : ''}</div>
             </div>
             <button className="btn btn-violet btn-sm">Abrir</button>
           </div>

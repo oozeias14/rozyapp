@@ -1,6 +1,16 @@
 function initials(name) { return (name || '?').split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase(); }
-function roleLabel(role) { return role === 'admin' ? 'Admin' : role === 'coord' ? 'Coord' : 'Membro'; }
-function roleClass(role) { return role === 'admin' ? 'role-admin' : role === 'coord' ? 'role-coord' : 'role-user'; }
+function roleLabel(role) {
+  if (role === 'admin') return 'Admin';
+  if (role === 'admin2') return 'Admin 2';
+  if (role === 'coord') return 'Coord';
+  return 'Membro';
+}
+function roleClass(role) {
+  if (role === 'admin') return 'role-admin';
+  if (role === 'admin2') return 'role-admin2';
+  if (role === 'coord') return 'role-coord';
+  return 'role-user';
+}
 
 export default function PersonModal({ person, sponsor, networkCount, onClose }) {
   if (!person) return null;

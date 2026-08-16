@@ -122,6 +122,7 @@ label.lbl { font-size: 10.5px; color: var(--ink2); margin: 0 0 4px 2px; display:
 .id-badge { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--ink2); background: var(--panel2); padding: 2px 7px; border-radius: 6px; }
 .role-badge { font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 6px; text-transform: uppercase; }
 .role-admin { background: rgba(232,197,71,.18); color: var(--gold); }
+.role-admin2 { background: rgba(232,120,71,0.18); color: #FF7847; }
 .role-coord { background: var(--violet-dim); color: var(--violet); }
 .role-user { background: var(--teal-dim); color: var(--teal); }
 

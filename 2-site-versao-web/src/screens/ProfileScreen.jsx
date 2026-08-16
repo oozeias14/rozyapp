@@ -15,7 +15,7 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
   const fileInputRef = useRef(null);
 
   const referralLink = `https://${appDomain}/${profile.username || profile.id}`;
-  const isStaff = profile.role === 'admin' || profile.role === 'coord';
+  const isStaff = profile.role === 'admin' || profile.role === 'admin2' || profile.role === 'coord';
 
   useEffect(() => {
     (async () => {
@@ -130,8 +130,8 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
         <div style={{ fontSize: 12, color: 'var(--teal)', fontWeight: 700, marginBottom: 6 }}>@{profile.username || 'sem_usuario'}</div>
         <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 6 }}>
           <span className="id-badge">#{profile.id}</span>
-          <span className={`role-badge ${profile.role === 'admin' ? 'role-admin' : profile.role === 'coord' ? 'role-coord' : 'role-user'}`}>
-            {profile.role === 'admin' ? 'Admin' : profile.role === 'coord' ? 'Coord' : 'Membro'}
+          <span className={`role-badge ${profile.role === 'admin' ? 'role-admin' : profile.role === 'admin2' ? 'role-admin2' : profile.role === 'coord' ? 'role-coord' : 'role-user'}`}>
+            {profile.role === 'admin' ? 'Admin' : profile.role === 'admin2' ? 'Admin 2' : profile.role === 'coord' ? 'Coord' : 'Membro'}
           </span>
         </div>
         <div className="muted" style={{ marginTop: 10, fontSize: 12 }}>{profile.email}</div>
@@ -222,7 +222,7 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
         </form>
       </div>
 
-      {isStaff && <button className="btn btn-violet" onClick={onOpenAdmin}>⚙️ Abrir painel {profile.role === 'admin' ? 'Admin' : 'Coordenador'}</button>}
+      {isStaff && <button className="btn btn-violet" onClick={onOpenAdmin}>⚙️ Abrir painel {profile.role === 'admin' || profile.role === 'admin2' ? 'Admin' : 'Coordenador'}</button>}
       <button className="btn btn-ghost" onClick={onLogout}>Sair da conta</button>
       <div style={{ height: 20 }} />
     </div>
