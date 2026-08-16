@@ -8,7 +8,7 @@ import {
   fetchOwnerProfile, updateOwnerProfile,
   fetchAppSettings, updateAppDomain,
   adminResetPassword, changeOwnPassword,
-  fetchAdminRequests, approveAdminRequest, rejectAdminRequest, promoteToAdmin2
+  promoteToAdmin2
 } from '../lib/api';
 
 function initials(name) { return (name || '?').split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase(); }
@@ -70,7 +70,6 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
     ['ranking', '🏆 Ranking'],
     ['messages', '📣 Mensagens'],
     ...(isAdmin ? [['owner', '👨‍⚕️ Dr. Candido'], ['stats', '📊 Stats'], ['settings', '⚙️ Conta']] : []),
-    ...(isTrueAdmin ? [['requests', '📥 Solicitações Admin']] : []),
   ];
 
   if (editing) {
@@ -117,7 +116,6 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         {tab === 'owner' && isAdmin && owner && <OwnerTab owner={owner} reload={load} />}
         {tab === 'stats' && isAdmin && <StatsTab users={users} meetings={meetings} messages={messages} />}
         {tab === 'settings' && isAdmin && settings && <SettingsTab settings={settings} profile={profile} reload={load} />}
-        {tab === 'requests' && isTrueAdmin && <RequestsTab reload={load} />}
       </div>
 
       {modalPerson && (
@@ -623,193 +621,4 @@ function SettingsTab({ settings, profile, reload }) {
   );
 }
 
-function RequestsTab({ reload }) {
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('pending'); // 'pending' or 'history'
-  const [tableMissing, setTableMissing] = useState(false);
 
-  const loadRequests = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await fetchAdminRequests();
-      setRequests(data || []);
-      setTableMissing(false);
-    } catch (e) {
-      if (e.message && (e.message.includes('admin_requests') || e.message.includes('schema cache') || e.message.includes('relation'))) {
-        setTableMissing(true);
-      } else {
-        alert('Erro ao carregar solicitações: ' + e.message);
-      }
-    }
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    loadRequests();
-  }, [loadRequests]);
-
-  if (tableMissing) {
-    const sqlCode = `-- Executar no SQL Editor do Supabase:\n\nCREATE TABLE IF NOT EXISTS admin_requests (\n  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,\n  created_at timestamptz DEFAULT now(),\n  created_by uuid REFERENCES profiles(id) ON DELETE CASCADE,\n  action_type text NOT NULL,\n  target_id text,\n  payload jsonb NOT NULL,\n  status text DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),\n  approved_by uuid REFERENCES profiles(id),\n  approved_at timestamptz\n);\n\nALTER TABLE admin_requests ENABLE ROW LEVEL SECURITY;\n\n-- Drop existing policies if any to avoid errors\nDROP POLICY IF EXISTS "Permitir leitura geral para usuários autenticados" ON admin_requests;\nDROP POLICY IF EXISTS "Permitir inserção para usuários autenticados" ON admin_requests;\nDROP POLICY IF EXISTS "Permitir update para usuários autenticados" ON admin_requests;\n\nCREATE POLICY "Permitir leitura geral para usuários autenticados" ON admin_requests FOR SELECT TO authenticated USING (true);\nCREATE POLICY "Permitir inserção para usuários autenticados" ON admin_requests FOR INSERT TO authenticated WITH CHECK (true);\nCREATE POLICY "Permitir update para usuários autenticados" ON admin_requests FOR UPDATE TO authenticated USING (true);`;
-
-    return (
-      <div className="card" style={{ padding: 16, border: '1.5px solid rgba(255, 165, 0, 0.3)', background: 'rgba(255, 165, 0, 0.05)' }}>
-        <h3 style={{ color: '#FF7847', fontSize: 14, fontWeight: 700, marginBottom: 8 }}>⚠️ Configuração do Banco de Dados Pendente</h3>
-        <p style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>
-          Para que o sistema de <strong>Admin 2</strong> funcione online, você precisa criar a tabela correspondente no seu painel da Supabase.
-        </p>
-        <p style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 10 }}>
-          <strong>Como fazer:</strong><br />
-          1. Acesse o painel do seu **Supabase**.<br />
-          2. Clique em **SQL Editor** no menu lateral esquerdo.<br />
-          3. Clique em **New query** (Nova consulta).<br />
-          4. Cole o código SQL abaixo e clique em **Run** (Executar).
-        </p>
-        
-        <textarea 
-          readOnly 
-          value={sqlCode} 
-          style={{ 
-            width: '100%', 
-            height: 120, 
-            fontSize: 10.5, 
-            fontFamily: 'monospace', 
-            background: '#0d111c', 
-            color: '#a9b2c3', 
-            padding: 8, 
-            borderRadius: 6, 
-            border: '1px solid var(--line)',
-            resize: 'none',
-            marginBottom: 10
-          }} 
-        />
-        
-        <button 
-          className="btn btn-teal" 
-          onClick={() => {
-            navigator.clipboard.writeText(sqlCode);
-            alert('Código SQL copiado com sucesso!');
-          }}
-          style={{ width: '100%' }}
-        >
-          Copiar Código SQL
-        </button>
-      </div>
-    );
-  }
-
-  async function handleApprove(reqId) {
-    if (!confirm('Deseja realmente aprovar e executar esta alteração?')) return;
-    try {
-      await approveAdminRequest(reqId);
-      alert('Solicitação aprovada e executada com sucesso!');
-      loadRequests();
-      reload();
-    } catch (e) {
-      alert('Erro ao aprovar solicitação: ' + e.message);
-    }
-  }
-
-  async function handleReject(reqId) {
-    if (!confirm('Deseja realmente rejeitar esta solicitação?')) return;
-    try {
-      await rejectAdminRequest(reqId);
-      alert('Solicitação rejeitada com sucesso!');
-      loadRequests();
-    } catch (e) {
-      alert('Erro ao rejeitar solicitação: ' + e.message);
-    }
-  }
-
-  const filtered = requests.filter(r => filter === 'pending' ? r.status === 'pending' : r.status !== 'pending');
-
-  function translateAction(type) {
-    const m = {
-      'update_profile': 'Editar Perfil',
-      'delete_profile': 'Excluir Cadastro',
-      'promote_coordinator': 'Promover a Coordenador',
-      'promote_admin2': 'Promover a Admin 2',
-      'demote_user': 'Rebaixar a Membro',
-      'create_meeting': 'Agendar Reunião',
-      'delete_meeting': 'Excluir Reunião',
-      'update_meeting': 'Editar Reunião',
-      'create_message': 'Enviar Mensagem no Mural',
-      'delete_message': 'Excluir Mensagem',
-      'update_owner_profile': 'Atualizar Dr. Candido',
-      'update_settings': 'Atualizar Domínio',
-      'admin_reset_password': 'Redefinir Senha'
-    };
-    return m[type] || type;
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', gap: 6 }}>
-        <button 
-          className="btn" 
-          style={{ 
-            flex: 1, 
-            fontSize: 11, 
-            padding: '8px 4px', 
-            borderRadius: 8, 
-            background: filter === 'pending' ? 'var(--violet)' : 'rgba(255,255,255,0.03)', 
-            color: filter === 'pending' ? '#fff' : 'var(--ink2)',
-            border: '1px solid ' + (filter === 'pending' ? 'var(--violet)' : 'var(--line)')
-          }}
-          onClick={() => setFilter('pending')}
-        >
-          Pendentes ({requests.filter(r => r.status === 'pending').length})
-        </button>
-        <button 
-          className="btn" 
-          style={{ 
-            flex: 1, 
-            fontSize: 11, 
-            padding: '8px 4px', 
-            borderRadius: 8, 
-            background: filter === 'history' ? 'var(--violet)' : 'rgba(255,255,255,0.03)', 
-            color: filter === 'history' ? '#fff' : 'var(--ink2)',
-            border: '1px solid ' + (filter === 'history' ? 'var(--violet)' : 'var(--line)')
-          }}
-          onClick={() => setFilter('history')}
-        >
-          Histórico ({requests.filter(r => r.status !== 'pending').length})
-        </button>
-      </div>
-
-      {loading && <div style={{ textAlign: 'center', color: 'var(--teal)', fontSize: 12 }}>⏳ Carregando solicitações...</div>}
-      {!loading && filtered.length === 0 && <div className="empty">Nenhuma solicitação nesta categoria.</div>}
-
-      {filtered.map(r => (
-        <div key={r.id} className="card" style={{ padding: 14, marginBottom: 8, border: '1.5px solid rgba(255,255,255,0.05)' }}>
-          <div className="row-bw" style={{ marginBottom: 6 }}>
-            <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--gold)' }}>{translateAction(r.action_type)}</span>
-            <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', padding: '2px 6px', borderRadius: 4, 
-              background: r.status === 'pending' ? 'rgba(255, 165, 0, 0.15)' : r.status === 'approved' ? 'rgba(0, 242, 254, 0.15)' : 'rgba(255, 0, 0, 0.15)',
-              color: r.status === 'pending' ? 'orange' : r.status === 'approved' ? 'var(--teal)' : 'red'
-            }}>
-              {r.status === 'pending' ? 'Pendente' : r.status === 'approved' ? 'Aprovada' : 'Rejeitada'}
-            </span>
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--ink2)', marginBottom: 8 }}>
-            Solicitado por: <strong>{r.profiles?.name || 'Admin 2'}</strong> em {new Date(r.created_at).toLocaleString('pt-BR')}
-          </div>
-          
-          <div style={{ background: 'rgba(0,0,0,0.2)', padding: 10, borderRadius: 8, fontSize: 11.5, fontFamily: 'monospace', whiteSpace: 'pre-wrap', marginBottom: 12, border: '1px solid var(--line)', color: 'var(--ink1)' }}>
-            {r.target_id && <div>Alvo ID: {r.target_id}</div>}
-            {Object.keys(r.payload || {}).length > 0 && (
-              <div>Dados: {JSON.stringify(r.payload, null, 2)}</div>
-            )}
-          </div>
-
-          {r.status === 'pending' && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-teal" style={{ flex: 1, padding: '6px 12px', fontSize: 12 }} onClick={() => handleApprove(r.id)}>Aprovar</button>
-              <button className="btn btn-ghost" style={{ flex: 1, padding: '6px 12px', fontSize: 12, color: 'red', borderColor: 'rgba(255,0,0,0.3)' }} onClick={() => handleReject(r.id)}>Rejeitar</button>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
