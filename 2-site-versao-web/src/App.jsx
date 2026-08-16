@@ -9,6 +9,7 @@ import ProfileScreen from './screens/ProfileScreen';
 import OwnerScreen from './screens/OwnerScreen';
 import AdminScreen from './screens/AdminScreen';
 import MassSignupScreen from './screens/MassSignupScreen';
+import SupportScreen from './screens/SupportScreen';
 import BottomNav from './components/BottomNav';
 
 export default function App() {
@@ -182,6 +183,11 @@ export default function App() {
   }
 
   const isPrivacyPage = window.location.pathname === '/privacidade' || window.location.pathname === '/privacy';
+  const isSupportPage = window.location.pathname === '/suporte';
+
+  if (isSupportPage) {
+    return <SupportScreen />;
+  }
 
   if (isPrivacyPage) {
     return (
