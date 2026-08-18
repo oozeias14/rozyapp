@@ -373,13 +373,11 @@ function UserDetail({ user, sponsor, coord, placementParent, isAdmin, isTrueAdmi
               {isTrueAdmin && user.role === 'user' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
                   <button className="btn btn-violet" onClick={promote}>Promover a Coordenador</button>
-                  <button className="btn btn-gold" onClick={promoteToA2}>Promover a Admin 2</button>
                 </div>
               )}
               {isTrueAdmin && user.role === 'coord' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
                   <button className="btn btn-ghost" onClick={demote}>Rebaixar a Membro</button>
-                  <button className="btn btn-gold" onClick={promoteToA2}>Promover a Admin 2</button>
                 </div>
               )}
               {isTrueAdmin && user.role === 'admin2' && (
