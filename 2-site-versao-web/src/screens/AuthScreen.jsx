@@ -73,6 +73,17 @@ export default function AuthScreen({ onLoggedIn }) {
   const [isUsernameManual, setIsUsernameManual] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
+
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('remembered_email') || '';
+    const savedPassword = localStorage.getItem('remembered_password') || '';
+    if (savedEmail) {
+      setEmail(savedEmail);
+      setPassword(savedPassword);
+      setRememberMe(true);
+    }
+  }, []);
 
   useEffect(() => {
     function handleBeforeInstallPrompt(e) {
@@ -175,6 +186,14 @@ export default function AuthScreen({ onLoggedIn }) {
         alert('Erro no login: ' + translateError(error)); 
         return; 
       }
+      if (rememberMe) {
+        localStorage.setItem('remembered_email', email.trim());
+        localStorage.setItem('remembered_password', password);
+      } else {
+        localStorage.removeItem('remembered_email');
+        localStorage.removeItem('remembered_password');
+      }
+
       onLoggedIn(data.user);
     } catch (err) {
       setLoading(false);
@@ -435,6 +454,36 @@ export default function AuthScreen({ onLoggedIn }) {
             <label className="lbl">Senha</label>
             <input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
           </>
+        )}
+
+        {mode === 'login' && (
+          <label style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px', 
+            marginTop: '12px', 
+            marginBottom: '16px',
+            textAlign: 'left',
+            cursor: 'pointer',
+            userSelect: 'none',
+            width: 'fit-content'
+          }}>
+            <input 
+              type="checkbox" 
+              checked={rememberMe} 
+              onChange={(e) => setRememberMe(e.target.checked)} 
+              style={{ 
+                width: '16px', 
+                height: '16px', 
+                accentColor: 'var(--teal)',
+                cursor: 'pointer',
+                margin: 0
+              }} 
+            />
+            <span style={{ fontSize: '13px', color: 'var(--ink2)', fontWeight: 500 }}>
+              Manter conectado (Salvar dados)
+            </span>
+          </label>
         )}
 
         <button className="btn btn-teal" type="submit" disabled={loading}>
