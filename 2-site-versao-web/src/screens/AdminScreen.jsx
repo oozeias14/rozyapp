@@ -576,7 +576,7 @@ function StatsTab({ users, meetings, messages }) {
 
 /* ===== CONFIGURACOES ===== */
 function SettingsTab({ settings, profile, reload }) {
-  const [domain, setDomain] = useState(settings?.app_domain || 'orbita.app');
+  const [domain, setDomain] = useState(settings?.app_domain || 'amigosdrcandido.com.br');
   const [name, setName] = useState(profile.name);
   const [email, setEmail] = useState(profile.email);
   const [newPassword, setNewPassword] = useState('');
@@ -586,9 +586,11 @@ function SettingsTab({ settings, profile, reload }) {
     if (!clean) { alert('Digite um domínio válido'); return; }
     try { await updateAppDomain(clean); alert('Domínio atualizado.'); reload(); } catch (e) { alert('Erro: ' + e.message); }
   }
+
   async function saveAccount() {
     try { await updateProfile(profile.id, { name, email }); alert('Dados atualizados.'); reload(); } catch (e) { alert('Erro: ' + e.message); }
   }
+
   async function savePassword() {
     if (newPassword.length < 6) { alert('Use ao menos 6 caracteres.'); return; }
     try { await changeOwnPassword(newPassword); setNewPassword(''); alert('Senha alterada.'); } catch (e) { alert('Erro: ' + e.message); }

@@ -175,6 +175,14 @@ export async function updateAppDomain(domain) {
   if (error) throw error;
 }
 
+export async function updateAppSettings(settings) {
+  if (await isCurrentUserAdmin2()) {
+    handleAdmin2Block();
+  }
+  const { error } = await supabase.from('app_settings').update(settings).eq('id', 1);
+  if (error) throw error;
+}
+
 // ── SENHA / CONTA (via Supabase Auth) ────────────────────
 export async function changeOwnPassword(newPassword) {
   const { error } = await supabase.auth.updateUser({ password: newPassword });

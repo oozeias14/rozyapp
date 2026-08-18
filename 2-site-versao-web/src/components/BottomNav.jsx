@@ -12,6 +12,15 @@ const ICONS = {
       <line x1="22" y1="11" x2="16" y2="11" />
     </svg>
   ),
+  qrcode: (
+    <svg viewBox="0 0 24 24">
+      <path d="M3 3h8v8H3zm2 2v4h4V5z" />
+      <path d="M13 3h8v8h-8zm2 2v4h4V5z" />
+      <path d="M3 13h8v8H3zm2 2v4h4v-4z" />
+      <path d="M13 13h3v3h-3zm5 0h3v3h-3zm0 5h3v3h-3zm-5 0h3v3h-3z" />
+      <path d="M16 16h2v2h-2zm2 2h2v2h-2z" />
+    </svg>
+  ),
 };
 
 export default function BottomNav({ active, onChange, profile, hasNewMuralMessage }) {
@@ -23,6 +32,7 @@ export default function BottomNav({ active, onChange, profile, hasNewMuralMessag
     { key: 'network', label: 'Rede' },
     { key: 'agenda', label: 'Eventos' },
     isStaff && { key: 'mass_signup', label: 'Cadastro' },
+    { key: 'qrcode', label: 'QR Code' },
     { key: 'profile', label: 'Perfil' },
   ].filter(Boolean);
 

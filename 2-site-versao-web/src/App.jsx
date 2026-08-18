@@ -10,6 +10,7 @@ import OwnerScreen from './screens/OwnerScreen';
 import AdminScreen from './screens/AdminScreen';
 import MassSignupScreen from './screens/MassSignupScreen';
 import SupportScreen from './screens/SupportScreen';
+import QrCodeScreen from './screens/QrCodeScreen';
 import BottomNav from './components/BottomNav';
 import FirstAccessModal from './components/FirstAccessModal';
 
@@ -287,6 +288,7 @@ export default function App() {
           {tab === 'home' && <HomeScreen profile={profile} onOpenAdmin={() => openAdmin('users')} onGoToAgenda={() => setTab('agenda')} />}
           {tab === 'network' && <NetworkScreen profile={profile} />}
           {tab === 'agenda' && <AgendaScreen profile={profile} />}
+          {tab === 'qrcode' && <QrCodeScreen profile={profile} />}
           {tab === 'profile' && (
             <ProfileScreen profile={profile} onProfileUpdated={setProfile} onOpenAdmin={() => openAdmin('users')} onLogout={handleLogout} />
           )}
