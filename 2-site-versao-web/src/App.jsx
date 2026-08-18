@@ -114,8 +114,15 @@ export default function App() {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) loadProfile(session.user.id);
-      else setLoading(false);
+      if (session) {
+        if (!localStorage.getItem('session_start_time')) {
+          localStorage.setItem('session_start_time', Date.now().toString());
+        }
+        loadProfile(session.user.id);
+      } else {
+        localStorage.removeItem('session_start_time');
+        setLoading(false);
+      }
     });
     // Quando a pessoa clica no link de "esqueci minha senha" recebido por
     // e-mail, o Supabase abre o site de volta e dispara este evento —
@@ -123,8 +130,16 @@ export default function App() {
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') { setPasswordRecovery(true); setLoading(false); return; }
       setSession(session);
-      if (session) loadProfile(session.user.id);
-      else { setProfile(null); setLoading(false); }
+      if (session) {
+        if (!localStorage.getItem('session_start_time')) {
+          localStorage.setItem('session_start_time', Date.now().toString());
+        }
+        loadProfile(session.user.id);
+      } else {
+        localStorage.removeItem('session_start_time');
+        setProfile(null);
+        setLoading(false);
+      }
     });
 
     function handleMessagesRead() {
