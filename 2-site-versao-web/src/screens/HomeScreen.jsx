@@ -57,7 +57,12 @@ export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
           <div className="row-bw">
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 700, fontSize: 13.5 }}>⚙️ Painel {profile.role === 'admin' || profile.role === 'admin2' ? 'Admin' : 'Coordenador'}</div>
-              <div className="muted">Cadastros, eventos, mensagens{profile.role === 'admin' || profile.role === 'admin2' ? ' e o Dr. Candido' : ''}</div>
+              <div className="muted">
+                {profile.role === 'admin' || profile.role === 'admin2'
+                  ? 'Cadastros, eventos, mensagens, estatísticas e configurações'
+                  : 'Cadastros, eventos e estatísticas'
+                }
+              </div>
             </div>
             <button className="btn btn-violet btn-sm">Abrir</button>
           </div>
