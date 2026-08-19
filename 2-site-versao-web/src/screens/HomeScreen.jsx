@@ -59,8 +59,8 @@ export default function HomeScreen({ profile, onOpenAdmin, onGoToAgenda }) {
               <div style={{ fontWeight: 700, fontSize: 13.5 }}>⚙️ Painel {profile.role === 'admin' || profile.role === 'admin2' ? 'Admin' : 'Coordenador'}</div>
               <div className="muted">
                 {profile.role === 'admin' || profile.role === 'admin2'
-                  ? 'Cadastros, eventos, mensagens, estatísticas e configurações'
-                  : 'Cadastros, eventos e estatísticas'
+                  ? 'Cadastros, ranking, mensagens, estatísticas e conta'
+                  : 'Cadastros, ranking e estatísticas'
                 }
               </div>
             </div>
