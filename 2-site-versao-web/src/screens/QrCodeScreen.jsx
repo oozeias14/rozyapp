@@ -8,6 +8,7 @@ export default function QrCodeScreen({ profile }) {
   const [appDomain, setAppDomain] = useState('amigosdrcandido.com.br');
   const [totalUsers, setTotalUsers] = useState(0);
   const [settings, setSettings] = useState(null);
+  const [zoomed, setZoomed] = useState(false);
 
   // Estados para o editor de template (apenas Admins)
   const [qrX, setQrX] = useState(10);
@@ -598,11 +599,10 @@ export default function QrCodeScreen({ profile }) {
                 <span>WhatsApp</span>
               </a>
               
-              <a 
-                href={`https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=00f2fe&bgcolor=090d16&data=${encodeURIComponent(referralLink)}`}
-                target="_blank" 
-                rel="noreferrer"
+              <button 
+                type="button"
                 className="btn btn-ghost"
+                onClick={() => setZoomed(true)}
                 style={{ 
                   flex: 1, 
                   fontWeight: 700, 
@@ -613,15 +613,101 @@ export default function QrCodeScreen({ profile }) {
                   fontSize: '13px',
                   border: '1px solid var(--line)', 
                   borderRadius: '10px',
-                  margin: 0,
-                  textDecoration: 'none'
+                  margin: 0
                 }}
               >
                 <span>🔍 Ampliar</span>
-              </a>
+              </button>
             </div>
           </div>
         )}
+
+        {/* OVERLAY / LIGHTBOX DE QR CODE AMPLIADO NO PRÓPRIO APP */}
+        {zoomed && (
+          <div 
+            onClick={() => setZoomed(false)}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(9, 13, 22, 0.96)',
+              backdropFilter: 'blur(10px)',
+              zIndex: 9999,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '24px'
+            }}
+          >
+            {/* Botão de Fechar X */}
+            <button 
+              onClick={() => setZoomed(false)}
+              style={{
+                position: 'absolute',
+                top: '20px',
+                right: '20px',
+                background: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '50%',
+                width: '44px',
+                height: '44px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff',
+                fontSize: '20px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                outline: 'none'
+              }}
+            >
+              ✕
+            </button>
+
+            {/* Mensagem em cima */}
+            <h2 style={{ 
+              fontSize: '22px', 
+              fontWeight: 700, 
+              color: '#fff', 
+              marginBottom: '24px', 
+              letterSpacing: '0.05em',
+              textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+              fontFamily: 'system-ui, -apple-system, sans-serif'
+            }}>
+              Leia o QR CODE
+            </h2>
+
+            {/* QR Code ampliado no próprio app */}
+            <div style={{
+              background: '#fff',
+              padding: '16px',
+              borderRadius: '24px',
+              boxShadow: '0 10px 40px rgba(0, 242, 254, 0.25)',
+              border: '2px solid rgba(0, 242, 254, 0.4)',
+              maxWidth: '90vw',
+              maxHeight: '90vw',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <img 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&color=000000&bgcolor=ffffff&data=${encodeURIComponent(referralLink)}`}
+                alt="QR Code Ampliado"
+                style={{
+                  width: 'min(300px, 70vw)',
+                  height: 'min(300px, 70vw)',
+                  display: 'block'
+                }}
+                onClick={(e) => e.stopPropagation()} // Impede fechar ao clicar no QR Code
+              />
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
