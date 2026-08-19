@@ -18,13 +18,17 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('owner');
+  const [tab, setTab] = useState(() => localStorage.getItem('active_tab') || 'owner');
   const [mode, setMode] = useState('app');
   const [adminInitialTab, setAdminInitialTab] = useState('users');
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [timeLeft, setTimeLeft] = useState(null);
   const [hasNewMuralMessage, setHasNewMuralMessage] = useState(false);
   const [showFirstAccessModal, setShowFirstAccessModal] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('active_tab', tab);
+  }, [tab]);
 
   useEffect(() => {
     if (!profile) {
@@ -185,7 +189,11 @@ export default function App() {
   async function loadProfile(authId) {
     const { data } = await supabase.from('profiles').select('*').eq('auth_id', authId).maybeSingle();
     setProfile((prev) => {
-      if (!prev) setTab('owner');
+      if (!prev) {
+        const savedTab = localStorage.getItem('active_tab');
+        if (savedTab) setTab(savedTab);
+        else setTab('owner');
+      }
       return data;
     });
     setLoading(false);
@@ -196,6 +204,7 @@ export default function App() {
 
   async function handleLogout() {
     localStorage.removeItem('session_start_time');
+    localStorage.removeItem('active_tab');
     await supabase.auth.signOut();
     window.location.reload();
   }
