@@ -69,7 +69,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
     ['users', '👥 Cadastros'],
     ['ranking', '🏆 Ranking'],
     ['messages', '📣 Mensagens'],
-    ...(isAdmin ? [['owner', '👨‍⚕️ Dr. Candido'], ['stats', '📊 Stats'], ['settings', '⚙️ Conta']] : []),
+    ...(isAdmin ? [['owner', '👨‍⚕️ Dr. Candido'], ['stats', '📊 Estatísticas'], ['settings', '⚙️ Conta']] : []),
   ];
 
   if (editing) {
@@ -555,19 +555,336 @@ function OwnerTab({ owner, reload }) {
 function StatsTab({ users, meetings, messages }) {
   const coords = users.filter((u) => u.role === 'coord').length;
   const members = users.filter((u) => u.role === 'user').length;
-  const stats = [['Total cadastros', users.length, 'var(--teal)'], ['Coordenadores', coords, 'var(--violet)'], ['Membros', members, 'var(--ink1)'], ['Reuniões', meetings.length, 'var(--gold)']];
+  const admins = users.filter((u) => u.role === 'admin' || u.role === 'admin2').length;
+  const total = users.length || 1;
+
+  const coordPct = ((coords / total) * 100).toFixed(1);
+  const memberPct = ((members / total) * 100).toFixed(1);
+  const adminPct = ((admins / total) * 100).toFixed(1);
+
+  // Cálculos dos períodos (Atual vs Anterior)
+  const now = new Date();
+  const ms24h = 24 * 60 * 60 * 1000;
+  const ms48h = 48 * 60 * 60 * 1000;
+  const ms7d = 7 * 24 * 60 * 60 * 1000;
+  const ms14d = 14 * 24 * 60 * 60 * 1000;
+  const ms30d = 30 * 24 * 60 * 60 * 1000;
+  const ms60d = 60 * 24 * 60 * 60 * 1000;
+
+  // 24 Horas
+  const count24h = users.filter(u => {
+    if (!u.created_at) return false;
+    const diff = now - new Date(u.created_at);
+    return diff <= ms24h;
+  }).length;
+
+  const countPrev24h = users.filter(u => {
+    if (!u.created_at) return false;
+    const diff = now - new Date(u.created_at);
+    return diff > ms24h && diff <= ms48h;
+  }).length;
+
+  // 7 Dias
+  const count7d = users.filter(u => {
+    if (!u.created_at) return false;
+    const diff = now - new Date(u.created_at);
+    return diff <= ms7d;
+  }).length;
+
+  const countPrev7d = users.filter(u => {
+    if (!u.created_at) return false;
+    const diff = now - new Date(u.created_at);
+    return diff > ms7d && diff <= ms14d;
+  }).length;
+
+  // 30 Dias
+  const count30d = users.filter(u => {
+    if (!u.created_at) return false;
+    const diff = now - new Date(u.created_at);
+    return diff <= ms30d;
+  }).length;
+
+  const countPrev30d = users.filter(u => {
+    if (!u.created_at) return false;
+    const diff = now - new Date(u.created_at);
+    return diff > ms30d && diff <= ms60d;
+  }).length;
+
+  // Helper para renderizar crachá de crescimento/queda
+  const renderGrowthBadge = (current, previous) => {
+    if (previous === 0) {
+      if (current > 0) {
+        return <span style={{ color: '#25D366', fontWeight: 700, fontSize: '11px', background: 'rgba(37, 211, 102, 0.1)', padding: '2px 6px', borderRadius: '6px' }}>+{current} novos 🗠</span>;
+      }
+      return <span style={{ color: 'var(--ink3)', fontSize: '11px', background: 'rgba(255,255,255,0.03)', padding: '2px 6px', borderRadius: '6px' }}>0%</span>;
+    }
+    const growth = ((current - previous) / previous) * 100;
+    if (growth > 0) {
+      const fmtGrowth = growth > 999 ? growth.toFixed(0) : growth.toFixed(1);
+      return <span style={{ color: '#25D366', fontWeight: 700, fontSize: '11px', background: 'rgba(37, 211, 102, 0.1)', padding: '2px 6px', borderRadius: '6px' }}>+{fmtGrowth}% 🗠</span>;
+    } else if (growth < 0) {
+      const fmtGrowth = Math.abs(growth) > 999 ? growth.toFixed(0) : growth.toFixed(1);
+      return <span style={{ color: '#FF3B30', fontWeight: 700, fontSize: '11px', background: 'rgba(255, 59, 48, 0.1)', padding: '2px 6px', borderRadius: '6px' }}>{fmtGrowth}% 🗦</span>;
+    }
+    return <span style={{ color: 'var(--ink2)', fontSize: '11px', background: 'rgba(255,255,255,0.03)', padding: '2px 6px', borderRadius: '6px' }}>0%</span>;
+  };
+
+  // Cálculo dos últimos 7 dias de cadastro para o gráfico diário
+  const getDaysArray = () => {
+    const days = [];
+    const weekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(now.getDate() - i);
+      days.push({
+        dateStr: d.toISOString().split('T')[0],
+        label: weekdays[d.getDay()],
+        dayOfMonth: d.getDate()
+      });
+    }
+    return days;
+  };
+
+  const last7Days = getDaysArray();
+  const chartData = last7Days.map(day => {
+    const count = users.filter(u => {
+      if (!u.created_at) return false;
+      const uDate = u.created_at.split('T')[0];
+      return uDate === day.dateStr;
+    }).length;
+    return {
+      ...day,
+      count
+    };
+  });
+
+  const maxDayCount = Math.max(...chartData.map(d => d.count), 1);
+
+  // Geração de coordenadas para o Gráfico de Linha SVG
+  const chartWidth = 500;
+  const chartHeight = 160;
+  const paddingX = 35;
+  const paddingY = 20;
+
+  const points = chartData.map((d, index) => {
+    const x = paddingX + (index * (chartWidth - 2 * paddingX)) / 6;
+    const y = chartHeight - paddingY - (d.count / maxDayCount) * (chartHeight - 2 * paddingY);
+    return {
+      x,
+      y,
+      count: d.count,
+      label: d.label,
+      dayOfMonth: d.dayOfMonth
+    };
+  });
+
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+  const areaPath = points.length > 0
+    ? `${linePath} L ${points[points.length - 1].x.toFixed(1)} ${chartHeight - paddingY} L ${points[0].x.toFixed(1)} ${chartHeight - paddingY} Z`
+    : '';
+
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', paddingBottom: '30px' }}>
+      
+      {/* Cards de Métricas Principais */}
       <div className="stat-grid">
-        {stats.map(([label, num, color]) => (
-          <div key={label} className="stat-box">
-            <div className="card-title">{label}</div>
-            <div className="stat-num" style={{ color }}>{num}</div>
-          </div>
-        ))}
+        <div className="stat-box" style={{ borderLeft: '4px solid var(--teal)' }}>
+          <div className="card-title">Total de Cadastros</div>
+          <div className="stat-num" style={{ color: 'var(--teal)' }}>{users.length}</div>
+          <div style={{ fontSize: '11px', color: 'var(--ink2)', marginTop: '4px' }}>Usuários ativos no banco</div>
+        </div>
+
+        <div className="stat-box" style={{ borderLeft: '4px solid var(--violet)' }}>
+          <div className="card-title">Coordenadores</div>
+          <div className="stat-num" style={{ color: 'var(--violet)' }}>{coords}</div>
+          <div style={{ fontSize: '11px', color: 'var(--ink2)', marginTop: '4px' }}>{coordPct}% da base de membros</div>
+        </div>
+
+        <div className="stat-box" style={{ borderLeft: '4px solid var(--gold)' }}>
+          <div className="card-title">Reuniões / Eventos</div>
+          <div className="stat-num" style={{ color: 'var(--gold)' }}>{meetings.length}</div>
+          <div style={{ fontSize: '11px', color: 'var(--ink2)', marginTop: '4px' }}>Criadas pela rede</div>
+        </div>
       </div>
-      <div className="card-title">Mensagens enviadas</div>
-      <div className="stat-box"><div className="stat-num">{messages.length}</div></div>
+
+      {/* Seção de Evolução Recente */}
+      <div className="card" style={{ padding: '20px 16px', background: 'var(--panel2)', borderRadius: 16, border: '1px solid var(--line)' }}>
+        <h3 style={{ fontSize: '14px', color: '#fff', fontWeight: 700, margin: '0 0 16px 0', textAlign: 'left' }}>📈 Crescimento Recente</h3>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+          
+          <div style={{ background: '#090d16', border: '1px solid var(--line)', borderRadius: 12, padding: '12px 6px', textAlign: 'center' }}>
+            <div style={{ fontSize: '10px', color: 'var(--ink2)', fontWeight: 600, marginBottom: '6px' }}>Últimas 24h</div>
+            <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--teal)' }}>{count24h}</div>
+            <div style={{ fontSize: '9px', color: 'var(--ink3)', marginTop: '6px', display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+              {renderGrowthBadge(count24h, countPrev24h)}
+              <span>vs 24h ant.</span>
+            </div>
+          </div>
+
+          <div style={{ background: '#090d16', border: '1px solid var(--line)', borderRadius: 12, padding: '12px 6px', textAlign: 'center' }}>
+            <div style={{ fontSize: '10px', color: 'var(--ink2)', fontWeight: 600, marginBottom: '6px' }}>Últimos 7 dias</div>
+            <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--violet)' }}>{count7d}</div>
+            <div style={{ fontSize: '9px', color: 'var(--ink3)', marginTop: '6px', display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+              {renderGrowthBadge(count7d, countPrev7d)}
+              <span>vs 7d ant.</span>
+            </div>
+          </div>
+
+          <div style={{ background: '#090d16', border: '1px solid var(--line)', borderRadius: 12, padding: '12px 6px', textAlign: 'center' }}>
+            <div style={{ fontSize: '10px', color: 'var(--ink2)', fontWeight: 600, marginBottom: '6px' }}>Últimos 30 dias</div>
+            <div style={{ fontSize: '20px', fontWeight: 800, color: 'var(--gold)' }}>{count30d}</div>
+            <div style={{ fontSize: '9px', color: 'var(--ink3)', marginTop: '6px', display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+              {renderGrowthBadge(count30d, countPrev30d)}
+              <span>vs 30d ant.</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      {/* Gráfico de Linha SVG Premium (Últimos 7 Dias) */}
+      <div className="card" style={{ padding: '20px 16px', background: 'var(--panel2)', borderRadius: 16, border: '1px solid var(--line)' }}>
+        <div className="row-bw" style={{ marginBottom: 16 }}>
+          <h3 style={{ fontSize: '14px', color: '#fff', fontWeight: 700, margin: 0 }}>📊 Gráfico de Cadastro (Últimos 7 Dias)</h3>
+          <span style={{ fontSize: '11px', color: 'var(--ink3)' }}>Evolução Diária</span>
+        </div>
+
+        <div style={{ background: '#05070d', border: '1px solid var(--line)', borderRadius: 16, padding: '16px 8px 12px 8px' }}>
+          
+          {/* Container Responsivo do SVG */}
+          <div style={{ position: 'relative', width: '100%' }}>
+            <svg 
+              viewBox={`0 0 ${chartWidth} ${chartHeight}`} 
+              style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}
+            >
+              <defs>
+                {/* Gradiente sob a linha */}
+                <linearGradient id="chart-line-gradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--teal)" stopOpacity="0.3" />
+                  <stop offset="100%" stopColor="var(--teal)" stopOpacity="0.0" />
+                </linearGradient>
+              </defs>
+
+              {/* Linha horizontal central de referência */}
+              <line 
+                x1={paddingX} 
+                y1={chartHeight / 2} 
+                x2={chartWidth - paddingX} 
+                y2={chartHeight / 2} 
+                stroke="rgba(255, 255, 255, 0.04)" 
+                strokeDasharray="4 4" 
+              />
+              
+              {/* Linha base do rodapé */}
+              <line 
+                x1={paddingX} 
+                y1={chartHeight - paddingY} 
+                x2={chartWidth - paddingX} 
+                y2={chartHeight - paddingY} 
+                stroke="rgba(255, 255, 255, 0.1)" 
+              />
+
+              {/* 1) Preenchimento de Área sob a linha */}
+              {areaPath && (
+                <path d={areaPath} fill="url(#chart-line-gradient)" />
+              )}
+
+              {/* 2) A própria Linha do Gráfico */}
+              {linePath && (
+                <path 
+                  d={linePath} 
+                  fill="none" 
+                  stroke="var(--teal)" 
+                  strokeWidth="3.5" 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                />
+              )}
+
+              {/* 3) Nós circulares e rótulos de valores em cada ponto do gráfico */}
+              {points.map((p, index) => (
+                <g key={index}>
+                  {/* Círculo do ponto */}
+                  <circle 
+                    cx={p.x} 
+                    cy={p.y} 
+                    r="5" 
+                    fill="#05070d" 
+                    stroke="var(--teal)" 
+                    strokeWidth="3" 
+                  />
+                  {/* Rótulo numérico acima do ponto */}
+                  <text 
+                    x={p.x} 
+                    y={p.y - 10} 
+                    textAnchor="middle" 
+                    fontSize="10" 
+                    fontWeight="800"
+                    fill={p.count > 0 ? '#fff' : 'var(--ink3)'}
+                  >
+                    {p.count}
+                  </text>
+                </g>
+              ))}
+            </svg>
+          </div>
+
+          {/* Legenda de Dias perfeitamente alinhados */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: `0 ${paddingX - 10}px`, marginTop: 6 }}>
+            {points.map((p, index) => (
+              <div key={index} style={{ width: '12%', textAlign: 'center', fontSize: '10px', fontWeight: 700, color: 'var(--ink2)' }}>
+                <div>{p.label}</div>
+                <div style={{ fontSize: '8.5px', color: 'var(--ink3)', marginTop: 2 }}>{p.dayOfMonth}</div>
+              </div>
+            ))}
+          </div>
+
+        </div>
+      </div>
+
+      {/* Distribuição por Cargo */}
+      <div className="card" style={{ padding: '20px 16px', background: 'var(--panel2)', borderRadius: 16, border: '1px solid var(--line)', textAlign: 'left' }}>
+        <h3 style={{ fontSize: '14px', color: '#fff', fontWeight: 700, margin: '0 0 14px 0' }}>👥 Distribuição de Funções</h3>
+        
+        {/* Barra Proporcional Segmentada */}
+        <div style={{ display: 'flex', height: '14px', borderRadius: '7px', overflow: 'hidden', marginBottom: '18px', background: 'var(--line)' }}>
+          <div style={{ width: `${memberPct}%`, background: 'var(--teal)' }} title={`Membros: ${members}`} />
+          <div style={{ width: `${coordPct}%`, background: 'var(--violet)' }} title={`Coordenadores: ${coords}`} />
+          <div style={{ width: `${adminPct}%`, background: 'var(--gold)' }} title={`Admins: ${admins}`} />
+        </div>
+
+        {/* Legendas e Dados */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="row-bw" style={{ fontSize: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'var(--teal)' }} />
+              <span style={{ color: 'var(--ink2)' }}>Membros</span>
+            </div>
+            <span style={{ fontWeight: 700 }}>{members} ({memberPct}%)</span>
+          </div>
+
+          <div className="row-bw" style={{ fontSize: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'var(--violet)' }} />
+              <span style={{ color: 'var(--ink2)' }}>Coordenadores</span>
+            </div>
+            <span style={{ fontWeight: 700 }}>{coords} ({coordPct}%)</span>
+          </div>
+
+          <div className="row-bw" style={{ fontSize: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'var(--gold)' }} />
+              <span style={{ color: 'var(--ink2)' }}>Administradores</span>
+            </div>
+            <span style={{ fontWeight: 700 }}>{admins} ({adminPct}%)</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="card-title" style={{ textAlign: 'left', marginTop: 10 }}>Mensagens enviadas</div>
+      <div className="stat-box" style={{ textAlign: 'left' }}><div className="stat-num">{messages.length}</div></div>
+
     </div>
   );
 }
