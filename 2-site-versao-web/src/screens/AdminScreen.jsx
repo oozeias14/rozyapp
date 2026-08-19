@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import PersonModal from '../components/PersonModal';
-import { supabase, MAX_PHOTO_BYTES, compressImageWeb } from '../lib/supabase';
+import { supabase, MAX_PHOTO_BYTES, compressImageWeb, CITIES } from '../lib/supabase';
 import {
   fetchAllProfiles, updateProfile, deleteProfile, promoteToCoordinator, demoteToUser,
   fetchMeetings, createMeeting, deleteMeeting,
@@ -320,7 +320,7 @@ function RankingTab({ users, meetings, onSelect }) {
 
 function UserDetail({ user, sponsor, coord, placementParent, isAdmin, isTrueAdmin, onBack, onEdit, onChanged }) {
   const rows = [
-    ['E-mail', user.email], ['Telefone', user.phone || '-'], ['Nascimento', user.birth || '-'],
+    ['E-mail', user.email], ['Telefone', user.phone || '-'], ['Cidade / Região', user.city || '-'], ['Nascimento', user.birth || '-'],
     ['Instagram', user.instagram || '-'], ['Facebook', user.facebook || '-'], ['TikTok', user.tiktok || '-'], ['WhatsApp', user.whatsapp || '-'],
     ['Coordenador', coord ? `${coord.name} (#${coord.id})` : '-'],
     ['Indicado por', sponsor ? `${sponsor.name} (#${sponsor.id})` : '-'],
@@ -401,6 +401,9 @@ function EditUserForm({ user, onCancel, onSaved }) {
   const [facebook, setFacebook] = useState(user.facebook || '');
   const [tiktok, setTiktok] = useState(user.tiktok || '');
   const [whatsapp, setWhatsapp] = useState(user.whatsapp || '');
+  const [city, setCity] = useState(user.city || '');
+  const [citySearch, setCitySearch] = useState('');
+  const [cityDropdownOpen, setCityDropdownOpen] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -408,7 +411,7 @@ function EditUserForm({ user, onCancel, onSaved }) {
     setSaving(true);
     try {
       const birthVal = birth && birth.trim() ? birth.trim() : null;
-      await updateProfile(user.id, { name, email, phone, birth: birthVal, instagram, facebook, tiktok, whatsapp });
+      await updateProfile(user.id, { name, email, phone, birth: birthVal, instagram, facebook, tiktok, whatsapp, city });
       if (newPassword.trim()) {
         if (newPassword.length < 6) { alert('Senha muito curta (mínimo 6 caracteres)'); setSaving(false); return; }
         if (user.role === 'admin') await changeOwnPassword(newPassword);
@@ -430,6 +433,106 @@ function EditUserForm({ user, onCancel, onSaved }) {
       <label className="lbl">Facebook</label><input value={facebook} onChange={(e) => setFacebook(e.target.value)} />
       <label className="lbl">TikTok</label><input value={tiktok} onChange={(e) => setTiktok(e.target.value)} />
       <label className="lbl">WhatsApp</label><input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} />
+
+      <label className="lbl">Selecione sua cidade ou a mais próxima</label>
+      <div style={{ position: 'relative', marginBottom: '16px' }}>
+        <div 
+          onClick={() => setCityDropdownOpen(true)}
+          style={{
+            padding: '12px 14px',
+            background: 'rgba(255, 255, 255, 0.03)',
+            border: '1.5px solid rgba(0, 242, 254, 0.25)',
+            borderRadius: '12px',
+            color: city ? '#fff' : 'var(--ink3)',
+            fontSize: '14px',
+            textAlign: 'left',
+            cursor: 'pointer',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}
+        >
+          <span>{city || "Clique para selecionar..."}</span>
+          <span style={{ fontSize: '10px', color: 'var(--ink3)' }}>▼</span>
+        </div>
+        
+        {cityDropdownOpen && (
+          <>
+            <div 
+              style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, background: 'transparent' }} 
+              onClick={() => setCityDropdownOpen(false)} 
+            />
+            <div style={{
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              right: 0,
+              background: '#090d16',
+              border: '1px solid var(--line)',
+              borderRadius: '12px',
+              maxHeight: '200px',
+              overflowY: 'auto',
+              zIndex: 1001,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+              marginTop: '4px'
+            }}>
+              <div style={{ padding: '8px', borderBottom: '1px solid var(--line)', display: 'flex', gap: '6px', background: '#05070d', position: 'sticky', top: 0, zIndex: 2 }}>
+                <input
+                  type="text"
+                  placeholder="Buscar cidade (min. 3 letras)..."
+                  value={citySearch}
+                  onChange={(e) => setCitySearch(e.target.value)}
+                  style={{ padding: '6px 10px', fontSize: '12px', margin: 0, width: '100%', background: 'rgba(255,255,255,0.02)', color: '#fff' }}
+                  autoFocus
+                />
+                {citySearch && (
+                  <button 
+                    type="button" 
+                    className="btn btn-ghost" 
+                    style={{ padding: '0 8px', fontSize: '11px', margin: 0, width: 'auto' }}
+                    onClick={() => setCitySearch('')}
+                  >
+                    Limpar
+                  </button>
+                )}
+              </div>
+              
+              {(() => {
+                const searchVal = citySearch.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                const filteredCities = searchVal.length >= 3
+                  ? CITIES.filter(c => c.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(searchVal))
+                  : CITIES;
+
+                if (filteredCities.length === 0) {
+                  return <div style={{ padding: '12px', fontSize: '12px', color: 'var(--ink3)', textAlign: 'center' }}>Nenhuma cidade encontrada</div>;
+                }
+
+                return filteredCities.map((c) => (
+                  <div
+                    key={c}
+                    onClick={() => {
+                      setCity(c);
+                      setCitySearch('');
+                      setCityDropdownOpen(false);
+                    }}
+                    style={{
+                      padding: '10px 14px',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      color: city === c ? 'var(--teal)' : '#fff',
+                      background: city === c ? 'rgba(0, 242, 254, 0.05)' : 'transparent',
+                      borderBottom: '1px solid rgba(255,255,255,0.02)',
+                      textAlign: 'left'
+                    }}
+                  >
+                    {c}
+                  </div>
+                ));
+              })()}
+            </div>
+          </>
+        )}
+      </div>
 
       <div className="sep" />
       <label className="lbl">Nova senha (deixe em branco para não alterar)</label>
@@ -561,6 +664,21 @@ function StatsTab({ users, meetings, messages }) {
   const coordPct = ((coords / total) * 100).toFixed(1);
   const memberPct = ((members / total) * 100).toFixed(1);
   const adminPct = ((admins / total) * 100).toFixed(1);
+
+  // Distribuição por Cidade/Região (Top Localidades)
+  const cityCounts = {};
+  users.forEach((u) => {
+    const c = u.city || 'Não informado';
+    cityCounts[c] = (cityCounts[c] || 0) + 1;
+  });
+
+  const cityList = Object.entries(cityCounts)
+    .map(([name, count]) => ({
+      name,
+      count,
+      pct: ((count / total) * 100).toFixed(1)
+    }))
+    .sort((a, b) => b.count - a.count);
 
   // Cálculos dos períodos (Atual vs Anterior)
   const now = new Date();
@@ -843,42 +961,28 @@ function StatsTab({ users, meetings, messages }) {
         </div>
       </div>
 
-      {/* Distribuição por Cargo */}
+
+
+      {/* Distribuição por Região (Cidade/Bairro) */}
       <div className="card" style={{ padding: '20px 16px', background: 'var(--panel2)', borderRadius: 16, border: '1px solid var(--line)', textAlign: 'left' }}>
-        <h3 style={{ fontSize: '14px', color: '#fff', fontWeight: 700, margin: '0 0 14px 0' }}>👥 Distribuição de Funções</h3>
-        
-        {/* Barra Proporcional Segmentada */}
-        <div style={{ display: 'flex', height: '14px', borderRadius: '7px', overflow: 'hidden', marginBottom: '18px', background: 'var(--line)' }}>
-          <div style={{ width: `${memberPct}%`, background: 'var(--teal)' }} title={`Membros: ${members}`} />
-          <div style={{ width: `${coordPct}%`, background: 'var(--violet)' }} title={`Coordenadores: ${coords}`} />
-          <div style={{ width: `${adminPct}%`, background: 'var(--gold)' }} title={`Admins: ${admins}`} />
-        </div>
-
-        {/* Legendas e Dados */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div className="row-bw" style={{ fontSize: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'var(--teal)' }} />
-              <span style={{ color: 'var(--ink2)' }}>Membros</span>
+        <h3 style={{ fontSize: '14px', color: '#fff', fontWeight: 700, margin: '0 0 14px 0' }}>🗺️ Distribuição por Região</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {cityList.slice(0, 8).map((item, index) => (
+            <div key={index} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div className="row-bw" style={{ fontSize: '12px' }}>
+                <span style={{ color: 'var(--ink1)', fontWeight: 600 }}>{item.name}</span>
+                <span style={{ fontWeight: 700, color: 'var(--ink2)' }}>{item.count} ({item.pct}%)</span>
+              </div>
+              <div style={{ height: '6px', borderRadius: '3px', background: 'var(--line)', overflow: 'hidden' }}>
+                <div style={{ width: `${item.pct}%`, height: '100%', background: 'linear-gradient(to right, rgba(0, 242, 254, 0.6), var(--teal))', borderRadius: '3px' }} />
+              </div>
             </div>
-            <span style={{ fontWeight: 700 }}>{members} ({memberPct}%)</span>
-          </div>
-
-          <div className="row-bw" style={{ fontSize: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'var(--violet)' }} />
-              <span style={{ color: 'var(--ink2)' }}>Coordenadores</span>
+          ))}
+          {cityList.length > 8 && (
+            <div style={{ fontSize: '11px', color: 'var(--ink3)', textAlign: 'center', marginTop: 4 }}>
+              e mais {cityList.length - 8} regiões com cadastros
             </div>
-            <span style={{ fontWeight: 700 }}>{coords} ({coordPct}%)</span>
-          </div>
-
-          <div className="row-bw" style={{ fontSize: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: 'var(--gold)' }} />
-              <span style={{ color: 'var(--ink2)' }}>Administradores</span>
-            </div>
-            <span style={{ fontWeight: 700 }}>{admins} ({adminPct}%)</span>
-          </div>
+          )}
         </div>
       </div>
 

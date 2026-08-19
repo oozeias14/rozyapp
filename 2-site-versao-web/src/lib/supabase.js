@@ -466,3 +466,44 @@ export function compressImageWeb(file, maxDimension = 500, quality = 0.7) {
     reader.onerror = () => resolve(file);
   });
 }
+
+export const CITIES = [
+  "26 de Setembro",
+  "Água Quente",
+  "Águas Claras",
+  "Arapoanga",
+  "Arniqueira",
+  "Brazlândia",
+  "Candangolândia",
+  "Ceilândia",
+  "Cruzeiro",
+  "Fercal",
+  "Gama",
+  "Guará",
+  "Itapoã",
+  "Jardim Botânico",
+  "Lago Norte",
+  "Lago Sul",
+  "Núcleo Bandeirante",
+  "Paranoá",
+  "Park Way",
+  "Planaltina",
+  "Plano Piloto",
+  "Ponte Alta",
+  "Recanto das Emas",
+  "Riacho Fundo",
+  "Riacho Fundo II",
+  "Samambaia",
+  "Santa Maria",
+  "São Sebastião",
+  "SCIA/Estrutural",
+  "SIA",
+  "Sobradinho",
+  "Sobradinho II",
+  "Sol Nascente/Pôr do Sol",
+  "Sudoeste/Octogonal",
+  "Taguatinga",
+  "Varjão",
+  "Vicente Pires"
+];
+

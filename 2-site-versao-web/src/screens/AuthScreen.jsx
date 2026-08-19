@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, CITIES } from '../lib/supabase';
 
 function translateError(err) {
   if (!err) return '';
@@ -74,6 +74,9 @@ export default function AuthScreen({ onLoggedIn }) {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [city, setCity] = useState('');
+  const [citySearch, setCitySearch] = useState('');
+  const [cityDropdownOpen, setCityDropdownOpen] = useState(false);
 
   useEffect(() => {
     const savedEmail = localStorage.getItem('remembered_email') || '';
@@ -344,6 +347,7 @@ export default function AuthScreen({ onLoggedIn }) {
       parent_id: slotId, 
       referrer_id: isFirstUser ? null : refUser.id,
       username: finalUsername,
+      city: city || null,
     });
 
     setLoading(false);
@@ -381,7 +385,7 @@ export default function AuthScreen({ onLoggedIn }) {
       }
     }
 
-    const messageText = `Olá! Acabei de fazer meu cadastro no Amigos Dr Candido. *Meu usuário:* ${finalUsername}`;
+    const messageText = `Olá! Acabei de fazer meu cadastro no Amigos Dr Candido. *Meu usuário:* ${finalUsername}${city ? ` · *Cidade:* ${city}` : ''}`;
 
     let waPhone = (adminPhone || '').replace(/\D/g, '');
     if (waPhone.length === 10 || waPhone.length === 11) {
@@ -445,6 +449,106 @@ export default function AuthScreen({ onLoggedIn }) {
 
             <label className="lbl">WhatsApp</label>
             <input placeholder="(61) 9 9999-9999" value={phone} onChange={(e) => setPhone(e.target.value)} />
+
+            <label className="lbl">Selecione sua cidade ou a mais próxima</label>
+            <div style={{ position: 'relative', marginBottom: '12px' }}>
+              <div 
+                onClick={() => setCityDropdownOpen(true)}
+                style={{
+                  padding: '12px 14px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1.5px solid var(--line)',
+                  borderRadius: '12px',
+                  color: city ? '#fff' : 'var(--ink3)',
+                  fontSize: '14px',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}
+              >
+                <span>{city || "Clique para selecionar..."}</span>
+                <span style={{ fontSize: '10px', color: 'var(--ink3)' }}>▼</span>
+              </div>
+              
+              {cityDropdownOpen && (
+                <>
+                  <div 
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, background: 'transparent' }} 
+                    onClick={() => setCityDropdownOpen(false)} 
+                  />
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    background: '#090d16',
+                    border: '1.5px solid var(--line)',
+                    borderRadius: '12px',
+                    maxHeight: '200px',
+                    overflowY: 'auto',
+                    zIndex: 1001,
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                    marginTop: '4px'
+                  }}>
+                    <div style={{ padding: '8px', borderBottom: '1px solid var(--line)', display: 'flex', gap: '6px', background: '#05070d', position: 'sticky', top: 0, zIndex: 2 }}>
+                      <input
+                        type="text"
+                        placeholder="Buscar cidade (min. 3 letras)..."
+                        value={citySearch}
+                        onChange={(e) => setCitySearch(e.target.value)}
+                        style={{ padding: '6px 10px', fontSize: '12px', margin: 0, width: '100%', background: 'rgba(255,255,255,0.02)', color: '#fff' }}
+                        autoFocus
+                      />
+                      {citySearch && (
+                        <button 
+                          type="button" 
+                          className="btn btn-ghost" 
+                          style={{ padding: '0 8px', fontSize: '11px', margin: 0, width: 'auto' }}
+                          onClick={() => setCitySearch('')}
+                        >
+                          Limpar
+                        </button>
+                      )}
+                    </div>
+                    
+                    {(() => {
+                      const searchVal = citySearch.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                      const filteredCities = searchVal.length >= 3
+                        ? CITIES.filter(c => c.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(searchVal))
+                        : CITIES;
+
+                      if (filteredCities.length === 0) {
+                        return <div style={{ padding: '12px', fontSize: '12px', color: 'var(--ink3)', textAlign: 'center' }}>Nenhuma cidade encontrada</div>;
+                      }
+
+                      return filteredCities.map((c) => (
+                        <div
+                          key={c}
+                          onClick={() => {
+                            setCity(c);
+                            setCitySearch('');
+                            setCityDropdownOpen(false);
+                          }}
+                          style={{
+                            padding: '10px 14px',
+                            fontSize: '13px',
+                            cursor: 'pointer',
+                            color: city === c ? 'var(--teal)' : '#fff',
+                            background: city === c ? 'rgba(0, 242, 254, 0.05)' : 'transparent',
+                            borderBottom: '1px solid rgba(255,255,255,0.02)',
+                            textAlign: 'left'
+                          }}
+                        >
+                          {c}
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                </>
+              )}
+            </div>
           </>
         )}
         <label className="lbl">{mode === 'login' ? 'E-mail ou Nome de usuário' : 'E-mail'}</label>

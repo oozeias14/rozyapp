@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { supabase, MAX_PHOTO_BYTES, compressImageWeb } from '../lib/supabase';
+import { supabase, MAX_PHOTO_BYTES, compressImageWeb, CITIES } from '../lib/supabase';
 import TopBar from '../components/TopBar';
 import { updateProfile, changeOwnPassword, fetchAppSettings, fetchTotalUsersCount } from '../lib/api';
 
@@ -12,6 +12,9 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
   const [appDomain, setAppDomain] = useState('amigosdrcandido.com.br');
   const [totalUsers, setTotalUsers] = useState(0);
   const fileInputRef = useRef(null);
+  const [city, setCity] = useState(profile.city || '');
+  const [citySearch, setCitySearch] = useState('');
+  const [cityDropdownOpen, setCityDropdownOpen] = useState(false);
 
   const referralLink = `https://${appDomain}/${profile.username || profile.id}`;
   const isStaff = profile.role === 'admin' || profile.role === 'admin2' || profile.role === 'coord';
@@ -100,9 +103,9 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
 
   async function saveSocials() {
     try {
-      await updateProfile(profile.id, { instagram, tiktok, whatsapp });
-      onProfileUpdated({ ...profile, instagram, tiktok, whatsapp });
-      alert('Redes sociais atualizadas.');
+      await updateProfile(profile.id, { instagram, tiktok, whatsapp, city });
+      onProfileUpdated({ ...profile, instagram, tiktok, whatsapp, city });
+      alert('Perfil e localização atualizados.');
     } catch (err) { alert('Erro: ' + err.message); }
   }
 
@@ -148,7 +151,107 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
         <div className="social-input-wrapper">
           <input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="5561999999999" style={{ paddingRight: '12px' }} />
         </div>
-        <button className="btn btn-teal" onClick={saveSocials}>Salvar redes sociais</button>
+        <label className="lbl">Selecione sua cidade ou a mais próxima</label>
+        <div style={{ position: 'relative', marginBottom: '16px' }}>
+          <div 
+            onClick={() => setCityDropdownOpen(true)}
+            style={{
+              padding: '12px 14px',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1.5px solid rgba(0, 242, 254, 0.25)',
+              borderRadius: '12px',
+              color: city ? '#fff' : 'var(--ink3)',
+              fontSize: '14px',
+              textAlign: 'left',
+              cursor: 'pointer',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}
+          >
+            <span>{city || "Clique para selecionar..."}</span>
+            <span style={{ fontSize: '10px', color: 'var(--ink3)' }}>▼</span>
+          </div>
+          
+          {cityDropdownOpen && (
+            <>
+              <div 
+                style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, background: 'transparent' }} 
+                onClick={() => setCityDropdownOpen(false)} 
+              />
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                background: '#090d16',
+                border: '1px solid var(--line)',
+                borderRadius: '12px',
+                maxHeight: '200px',
+                overflowY: 'auto',
+                zIndex: 1001,
+                boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                marginTop: '4px'
+              }}>
+                <div style={{ padding: '8px', borderBottom: '1px solid var(--line)', display: 'flex', gap: '6px', background: '#05070d', position: 'sticky', top: 0, zIndex: 2 }}>
+                  <input
+                    type="text"
+                    placeholder="Buscar cidade (min. 3 letras)..."
+                    value={citySearch}
+                    onChange={(e) => setCitySearch(e.target.value)}
+                    style={{ padding: '6px 10px', fontSize: '12px', margin: 0, width: '100%', background: 'rgba(255,255,255,0.02)', color: '#fff' }}
+                    autoFocus
+                  />
+                  {citySearch && (
+                    <button 
+                      type="button" 
+                      className="btn btn-ghost" 
+                      style={{ padding: '0 8px', fontSize: '11px', margin: 0, width: 'auto' }}
+                      onClick={() => setCitySearch('')}
+                    >
+                      Limpar
+                    </button>
+                  )}
+                </div>
+                
+                {(() => {
+                  const searchVal = citySearch.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                  const filteredCities = searchVal.length >= 3
+                    ? CITIES.filter(c => c.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(searchVal))
+                    : CITIES;
+
+                  if (filteredCities.length === 0) {
+                    return <div style={{ padding: '12px', fontSize: '12px', color: 'var(--ink3)', textAlign: 'center' }}>Nenhuma cidade encontrada</div>;
+                  }
+
+                  return filteredCities.map((c) => (
+                    <div
+                      key={c}
+                      onClick={() => {
+                        setCity(c);
+                        setCitySearch('');
+                        setCityDropdownOpen(false);
+                      }}
+                      style={{
+                        padding: '10px 14px',
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        color: city === c ? 'var(--teal)' : '#fff',
+                        background: city === c ? 'rgba(0, 242, 254, 0.05)' : 'transparent',
+                        borderBottom: '1px solid rgba(255,255,255,0.02)',
+                        textAlign: 'left'
+                      }}
+                    >
+                      {c}
+                    </div>
+                  ));
+                })()}
+              </div>
+            </>
+          )}
+        </div>
+
+        <button className="btn btn-teal" onClick={saveSocials}>Salvar dados e localização</button>
       </div>
 
       <div className="card-title" style={{ marginTop: 20 }}>Link de indicação</div>
