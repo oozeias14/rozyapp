@@ -218,6 +218,7 @@ export default function AuthScreen({ onLoggedIn }) {
     if (!/^[a-zA-Z0-9_-]+$/.test(cleanedUsername)) { alert('Use apenas letras, números, sublinhas (_) ou traços (-) no nome de usuário.'); return; }
 
     if (!cleanedPhone) { alert('Preencha o campo de WhatsApp.'); return; }
+    if (!city) { alert('Por favor, selecione sua cidade ou a mais próxima.'); return; }
 
     if (!cleanedEmail) { alert('Preencha o campo de e-mail.'); return; }
     if (email.includes(' ')) {
