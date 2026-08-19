@@ -8,7 +8,6 @@ export default function QrCodeScreen({ profile }) {
   const [appDomain, setAppDomain] = useState('amigosdrcandido.com.br');
   const [totalUsers, setTotalUsers] = useState(0);
   const [settings, setSettings] = useState(null);
-  const [zoomed, setZoomed] = useState(false);
 
   // Estados para o editor de template (apenas Admins)
   const [qrX, setQrX] = useState(10);
@@ -573,14 +572,14 @@ export default function QrCodeScreen({ profile }) {
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '10px', width: '100%', marginTop: '4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', width: '100%', marginTop: '4px' }}>
               <a 
                 href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`Venha fazer parte do Amigos Dr. Cândido! Cadastre-se pelo meu link de indicação: ${referralLink}`)}`}
                 target="_blank" 
                 rel="noreferrer"
                 className="btn"
                 style={{ 
-                  flex: 1, 
+                  width: '100%', 
                   backgroundColor: '#25D366', 
                   color: '#fff', 
                   fontWeight: 700, 
@@ -596,118 +595,14 @@ export default function QrCodeScreen({ profile }) {
                   margin: 0
                 }}
               >
+                <svg viewBox="0 0 448 512" width="16" height="16" fill="#fff" style={{ flexShrink: 0 }}>
+                  <path d="M380.9 97.1C339 55.1 283.2 32 223.9 32c-122.4 0-222 99.6-222 222 0 39.1 10.2 77.3 29.6 111L0 480l117.7-30.9c32.4 17.7 68.9 27 106.1 27h.1c122.3 0 224.1-99.6 224.1-222 0-59.3-25.2-115-67.1-117zm-157 341.6c-33.2 0-65.7-8.9-94-25.7l-6.7-4-69.8 18.3L72 359.2l-4.4-7c-18.5-29.4-28.2-63.3-28.2-98.2 0-101.7 82.8-184.5 184.6-184.5 49.3 0 95.6 19.2 130.4 54.1 34.8 34.9 56.2 81.2 56.1 130.5 0 101.8-84.9 184.6-186.6 184.6zm101.2-138.2c-5.5-2.8-32.8-16.2-37.9-18-5.1-1.9-8.8-2.8-12.5 2.8-3.7 5.6-14.3 18-17.6 21.8-3.2 3.7-6.5 4.2-12 1.4-32.6-16.3-54-29.1-75.5-66-5.7-9.8 5.7-9.1 16.3-30.3 1.8-3.7.9-6.9-.5-9.7-1.4-2.8-12.5-30.1-17.1-41.2-4.5-10.8-9.1-9.3-12.5-9.5-3.2-.2-6.9-.2-10.6-.2-3.7 0-9.7 1.4-14.8 6.9-5.1 5.6-19.4 19-19.4 46.3 0 27.3 19.9 53.7 22.6 57.4 2.8 3.7 39.1 59.7 94.8 83.8 35.2 15.2 49 16.5 66.6 13.9 10.7-1.6 32.8-13.4 37.4-26.4 4.6-13 4.6-24.1 3.2-26.4-1.3-2.5-5-3.9-10.5-6.6z"/>
+                </svg>
                 <span>WhatsApp</span>
               </a>
-              
-              <button 
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => setZoomed(true)}
-                style={{ 
-                  flex: 1, 
-                  fontWeight: 700, 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center', 
-                  padding: '12px 10px',
-                  fontSize: '13px',
-                  border: '1px solid var(--line)', 
-                  borderRadius: '10px',
-                  margin: 0
-                }}
-              >
-                <span>🔍 Ampliar</span>
-              </button>
             </div>
           </div>
         )}
-
-        {/* OVERLAY / LIGHTBOX DE QR CODE AMPLIADO NO PRÓPRIO APP */}
-        {zoomed && (
-          <div 
-            onClick={() => setZoomed(false)}
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(9, 13, 22, 0.96)',
-              backdropFilter: 'blur(10px)',
-              zIndex: 9999,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '24px'
-            }}
-          >
-            {/* Botão de Fechar X */}
-            <button 
-              onClick={() => setZoomed(false)}
-              style={{
-                position: 'absolute',
-                top: '20px',
-                right: '20px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                borderRadius: '50%',
-                width: '44px',
-                height: '44px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#fff',
-                fontSize: '20px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                outline: 'none'
-              }}
-            >
-              ✕
-            </button>
-
-            {/* Mensagem em cima */}
-            <h2 style={{ 
-              fontSize: '22px', 
-              fontWeight: 700, 
-              color: '#fff', 
-              marginBottom: '24px', 
-              letterSpacing: '0.05em',
-              textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-              fontFamily: 'system-ui, -apple-system, sans-serif'
-            }}>
-              Leia o QR CODE
-            </h2>
-
-            {/* QR Code ampliado no próprio app */}
-            <div style={{
-              background: '#fff',
-              padding: '16px',
-              borderRadius: '24px',
-              boxShadow: '0 10px 40px rgba(0, 242, 254, 0.25)',
-              border: '2px solid rgba(0, 242, 254, 0.4)',
-              maxWidth: '90vw',
-              maxHeight: '90vw',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}>
-              <img 
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&color=000000&bgcolor=ffffff&data=${encodeURIComponent(referralLink)}`}
-                alt="QR Code Ampliado"
-                style={{
-                  width: 'min(300px, 70vw)',
-                  height: 'min(300px, 70vw)',
-                  display: 'block'
-                }}
-                onClick={(e) => e.stopPropagation()} // Impede fechar ao clicar no QR Code
-              />
-            </div>
-          </div>
-        )}
-
       </div>
     </div>
   );
