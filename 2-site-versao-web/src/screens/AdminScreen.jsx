@@ -68,8 +68,10 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
   const tabs = [
     ['users', '👥 Cadastros'],
     ['ranking', '🏆 Ranking'],
-    ['messages', '📣 Mensagens'],
-    ...(isAdmin ? [['owner', '👨‍⚕️ Dr. Candido'], ['stats', '📊 Estatísticas'], ['settings', '⚙️ Conta']] : []),
+    ...(isAdmin ? [['messages', '📣 Mensagens']] : []),
+    ...(isAdmin ? [['owner', '👨‍⚕️ Dr. Candido']] : []),
+    ['stats', '📊 Estatísticas'],
+    ...(isAdmin ? [['settings', '⚙️ Conta']] : []),
   ];
 
   if (editing) {
@@ -114,7 +116,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         {tab === 'ranking' && <RankingTab users={users} meetings={meetings} onSelect={(u) => setModalPerson(u)} />}
         {tab === 'messages' && <MessagesTab messages={messages} profile={profile} reload={load} />}
         {tab === 'owner' && isAdmin && owner && <OwnerTab owner={owner} reload={load} />}
-        {tab === 'stats' && isAdmin && <StatsTab users={users} meetings={meetings} messages={messages} />}
+        {tab === 'stats' && <StatsTab users={users} meetings={meetings} messages={messages} />}
         {tab === 'settings' && isAdmin && settings && <SettingsTab settings={settings} profile={profile} reload={load} />}
       </div>
 
