@@ -16,6 +16,7 @@ export default function QrCodeScreen({ profile }) {
   const [templateUrl, setTemplateUrl] = useState('');
   const [uploadingTemplate, setUploadingTemplate] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [downloadingCard, setDownloadingCard] = useState(false);
 
   // Refs para controle de arrastar (drag and drop)
   const containerRef = useRef(null);
@@ -236,6 +237,92 @@ export default function QrCodeScreen({ profile }) {
       </html>
     `);
     printWindow.document.close();
+  }
+
+  async function handleDownloadCard() {
+    const cardUrl = settings?.card_template_url || templateUrl;
+    
+    // Se não tiver template, baixa o QR code simples
+    if (!cardUrl) {
+      setDownloadingCard(true);
+      try {
+        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=00f2fe&bgcolor=090d16&data=${encodeURIComponent(referralLink)}`;
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = qrCodeUrl;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          
+          const link = document.createElement('a');
+          link.download = `qrcode_${profile.username || profile.id}.png`;
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+          setDownloadingCard(false);
+        };
+        img.onerror = () => {
+          alert('Erro ao carregar imagem do QR Code para download.');
+          setDownloadingCard(false);
+        };
+      } catch (err) {
+        alert('Erro ao baixar: ' + err.message);
+        setDownloadingCard(false);
+      }
+      return;
+    }
+
+    // Se tiver template, compõe o fundo com o QR code
+    setDownloadingCard(true);
+    try {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = cardUrl;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || 900;
+        canvas.height = img.naturalHeight || 1600;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        // QR Code preto e branco para contraste no cartão
+        const printQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=000000&bgcolor=ffffff&data=${encodeURIComponent(referralLink)}`;
+        const qrImg = new Image();
+        qrImg.crossOrigin = "anonymous";
+        qrImg.src = printQrUrl;
+        qrImg.onload = () => {
+          const actualQrX = settings?.card_qr_x ?? qrX;
+          const actualQrY = settings?.card_qr_y ?? qrY;
+          const actualQrSize = settings?.card_qr_size ?? qrSize;
+
+          const qrXPos = (actualQrX / 100) * canvas.width;
+          const qrYPos = (actualQrY / 100) * canvas.height;
+          const qrWidth = (actualQrSize / 100) * canvas.width;
+          const qrHeight = qrWidth; // mantém quadrado perfeito no download
+
+          ctx.drawImage(qrImg, qrXPos, qrYPos, qrWidth, qrHeight);
+
+          const link = document.createElement('a');
+          link.download = `cartao_visita_${profile.username || profile.id}.png`;
+          link.href = canvas.toDataURL('image/png');
+          link.click();
+          setDownloadingCard(false);
+        };
+        qrImg.onerror = () => {
+          alert('Erro ao processar o QR Code para o cartão.');
+          setDownloadingCard(false);
+        };
+      };
+      img.onerror = () => {
+        alert('Erro ao carregar o fundo do cartão.');
+        setDownloadingCard(false);
+      };
+    } catch (err) {
+      alert('Erro ao gerar download: ' + err.message);
+      setDownloadingCard(false);
+    }
   }
 
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&color=00f2fe&bgcolor=090d16&data=${encodeURIComponent(referralLink)}`;
@@ -478,38 +565,49 @@ export default function QrCodeScreen({ profile }) {
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
-              <a 
-                href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`Venha fazer parte do Amigos Dr. Cândido! Cadastre-se pelo meu link de indicação: ${referralLink}`)}`}
-                target="_blank" 
-                rel="noreferrer"
-                className="btn"
-                style={{ 
-                  flex: 1, 
-                  backgroundColor: '#25D366', 
-                  color: '#fff', 
-                  fontWeight: 700, 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center', 
-                  gap: 6,
-                  padding: '12px 10px',
-                  fontSize: '13px',
-                  textDecoration: 'none',
-                  borderRadius: '10px',
-                  border: 'none',
-                  margin: 0
-                }}
-              >
-                <span>WhatsApp</span>
-              </a>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '4px' }}>
+              <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                <a 
+                  href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`Venha fazer parte do Amigos Dr. Cândido! Cadastre-se pelo meu link de indicação: ${referralLink}`)}`}
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="btn"
+                  style={{ 
+                    flex: 1, 
+                    backgroundColor: '#25D366', 
+                    color: '#fff', 
+                    fontWeight: 700, 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    gap: 6,
+                    padding: '12px 10px',
+                    fontSize: '13px',
+                    textDecoration: 'none',
+                    borderRadius: '10px',
+                    border: 'none',
+                    margin: 0
+                  }}
+                >
+                  <span>WhatsApp</span>
+                </a>
+
+                <button 
+                  onClick={handlePrintCard}
+                  className="btn btn-ghost"
+                  style={{ flex: 1.2, margin: 0, fontSize: '13px', fontWeight: 700, borderColor: 'rgba(0, 242, 254, 0.3)', color: 'var(--teal)' }}
+                >
+                  🖨️ Imprimir / PDF
+                </button>
+              </div>
 
               <button 
-                onClick={handlePrintCard}
+                onClick={handleDownloadCard}
                 className="btn btn-teal"
-                style={{ flex: 1.2, margin: 0, fontSize: '13px', fontWeight: 700 }}
+                disabled={downloadingCard}
+                style={{ width: '100%', margin: 0, fontSize: '13.5px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
               >
-                🖨️ Imprimir / PDF
+                <span>{downloadingCard ? '📥 Baixando...' : '📥 Baixar na Galeria'}</span>
               </button>
             </div>
           </div>
@@ -572,7 +670,7 @@ export default function QrCodeScreen({ profile }) {
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'center', width: '100%', marginTop: '4px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', marginTop: '4px' }}>
               <a 
                 href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`Venha fazer parte do Amigos Dr. Cândido! Cadastre-se pelo meu link de indicação: ${referralLink}`)}`}
                 target="_blank" 
@@ -600,6 +698,15 @@ export default function QrCodeScreen({ profile }) {
                 </svg>
                 <span>WhatsApp</span>
               </a>
+
+              <button 
+                onClick={handleDownloadCard}
+                className="btn btn-teal"
+                disabled={downloadingCard}
+                style={{ width: '100%', margin: 0, fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+              >
+                <span>{downloadingCard ? '📥 Baixando...' : '📥 Baixar na Galeria'}</span>
+              </button>
             </div>
           </div>
         )}
