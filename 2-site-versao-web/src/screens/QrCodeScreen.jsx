@@ -607,7 +607,7 @@ export default function QrCodeScreen({ profile }) {
                 disabled={downloadingCard}
                 style={{ width: '100%', margin: 0, fontSize: '13.5px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
               >
-                <span>{downloadingCard ? '📥 Baixando...' : '📥 Baixar na Galeria'}</span>
+                <span>{downloadingCard ? '📥 Salvando...' : '📥 Salvar na Galeria'}</span>
               </button>
             </div>
           </div>
@@ -705,7 +705,7 @@ export default function QrCodeScreen({ profile }) {
                 disabled={downloadingCard}
                 style={{ width: '100%', margin: 0, fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
               >
-                <span>{downloadingCard ? '📥 Baixando...' : '📥 Baixar na Galeria'}</span>
+                <span>{downloadingCard ? '📥 Salvando...' : '📥 Salvar na Galeria'}</span>
               </button>
             </div>
           </div>
