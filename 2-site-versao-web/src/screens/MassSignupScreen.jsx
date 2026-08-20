@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, CITIES } from '../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 import TopBar from '../components/TopBar';
 import { fetchAppSettings, fetchTotalUsersCount } from '../lib/api';
@@ -13,6 +13,9 @@ export default function MassSignupScreen({ profile }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [city, setCity] = useState('');
+  const [citySearch, setCitySearch] = useState('');
+  const [cityDropdownOpen, setCityDropdownOpen] = useState(false);
 
   // Indicator search states
   const [refSearch, setRefSearch] = useState('');
@@ -101,6 +104,10 @@ export default function MassSignupScreen({ profile }) {
       alert('Preencha o WhatsApp.');
       return;
     }
+    if (!city) {
+      alert('Por favor, selecione sua cidade ou a mais próxima.');
+      return;
+    }
     // Email is auto-generated below after username generation
 
     setLoading(true);
@@ -156,7 +163,7 @@ export default function MassSignupScreen({ profile }) {
         email: cleanedEmail,
         password: '123456',
         options: {
-          data: {
+          options: {
             via_mass_signup: true
           }
         }
@@ -189,7 +196,8 @@ export default function MassSignupScreen({ profile }) {
         coord_id: coordId,
         parent_id: foundSlot,
         referrer_id: selectedRef.id,
-        username: finalUsername
+        username: finalUsername,
+        city: city || null
       });
 
       if (profErr) {
@@ -203,13 +211,16 @@ export default function MassSignupScreen({ profile }) {
         name: name.trim(),
         username: finalUsername,
         password: '123456',
-        phone: cleanedPhone
+        phone: cleanedPhone,
+        city: city
       });
 
       // Clear fields for next signup, keep the indicator selected
       setName('');
       setPhone('');
       setEmail('');
+      setCity('');
+      setCitySearch('');
       
       // Update total counter
       const newCount = await fetchTotalUsersCount();
@@ -225,7 +236,7 @@ export default function MassSignupScreen({ profile }) {
   // Get WhatsApp redirect URL for newly registered member
   let memberWaUrl = '';
   if (successData) {
-    const messageText = `Olá, ${successData.name}! Aqui estão seus dados de acesso ao Amigos Dr. Cândido:\n\n*Usuário:* @${successData.username}\n*Senha padrão:* ${successData.password}\n\nLink de acesso: ${window.location.origin}`;
+    const messageText = `Olá, ${successData.name}! Aqui estão seus dados de acesso ao Amigos Dr. Cândido:\n\n*Usuário:* ${successData.username}\n*Senha padrão:* ${successData.password}${successData.city ? `\n*Cidade:* ${successData.city}` : ''}\n\nLink de acesso: ${window.location.origin}`;
     let waPhone = (successData.phone || '').replace(/\D/g, '');
     if (waPhone.length === 10 || waPhone.length === 11) {
       waPhone = '55' + waPhone;
@@ -305,6 +316,106 @@ export default function MassSignupScreen({ profile }) {
             required 
           />
 
+          <label className="lbl">Selecione sua cidade ou a mais próxima <span className="req">*</span></label>
+          <div style={{ position: 'relative', marginBottom: '16px' }}>
+            <div 
+              onClick={() => setCityDropdownOpen(true)}
+              style={{
+                padding: '12px 14px',
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1.5px solid rgba(123, 108, 244, 0.25)',
+                borderRadius: '12px',
+                color: city ? '#fff' : 'var(--ink3)',
+                fontSize: '14px',
+                textAlign: 'left',
+                cursor: 'pointer',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}
+            >
+              <span>{city || "Clique para selecionar..."}</span>
+              <span style={{ fontSize: '10px', color: 'var(--ink3)' }}>▼</span>
+            </div>
+            
+            {cityDropdownOpen && (
+              <>
+                <div 
+                  style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, background: 'transparent' }} 
+                  onClick={() => setCityDropdownOpen(false)} 
+                />
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  background: '#090d16',
+                  border: '1px solid var(--line)',
+                  borderRadius: '12px',
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                  zIndex: 1001,
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                  marginTop: '4px'
+                }}>
+                  <div style={{ padding: '8px', borderBottom: '1px solid var(--line)', display: 'flex', gap: '6px', background: '#05070d', position: 'sticky', top: 0, zIndex: 2 }}>
+                    <input
+                      type="text"
+                      placeholder="Buscar cidade (min. 3 letras)..."
+                      value={citySearch}
+                      onChange={(e) => setCitySearch(e.target.value)}
+                      style={{ padding: '6px 10px', fontSize: '12px', margin: 0, width: '100%', background: 'rgba(255,255,255,0.02)', color: '#fff' }}
+                      autoFocus
+                    />
+                    {citySearch && (
+                      <button 
+                        type="button" 
+                        className="btn btn-ghost" 
+                        style={{ padding: '0 8px', fontSize: '11px', margin: 0, width: 'auto' }}
+                        onClick={() => setCitySearch('')}
+                      >
+                        Limpar
+                      </button>
+                    )}
+                  </div>
+                  
+                  {(() => {
+                    const searchVal = citySearch.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                    const filteredCities = searchVal.length >= 3
+                      ? CITIES.filter(c => c.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(searchVal))
+                      : CITIES;
+
+                    if (filteredCities.length === 0) {
+                      return <div style={{ padding: '12px', fontSize: '12px', color: 'var(--ink3)', textAlign: 'center' }}>Nenhuma cidade encontrada</div>;
+                    }
+
+                    return filteredCities.map((c) => (
+                      <div
+                        key={c}
+                        onClick={() => {
+                          setCity(c);
+                          setCitySearch('');
+                          setCityDropdownOpen(false);
+                        }}
+                        style={{
+                          padding: '10px 14px',
+                          fontSize: '13px',
+                          cursor: 'pointer',
+                          color: city === c ? 'var(--teal)' : '#fff',
+                          background: city === c ? 'rgba(0, 242, 254, 0.05)' : 'transparent',
+                          borderBottom: '1px solid rgba(255,255,255,0.02)',
+                          textAlign: 'left'
+                        }}
+                      >
+                        {c}
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </>
+            )}
+          </div>
+
           {/* Email input removed - auto-generated from username */}
 
           <button className="btn btn-teal" type="submit" disabled={loading} style={{ marginTop: 8 }}>
@@ -322,7 +433,7 @@ export default function MassSignupScreen({ profile }) {
             
             <div style={{ textAlign: 'left', background: 'var(--panel2)', borderRadius: 12, padding: 14, marginBottom: 16, border: '1px solid var(--line)' }}>
               <div style={{ fontSize: 12, color: 'var(--ink2)', marginBottom: 4 }}>Nome: <strong style={{ color: 'var(--ink1)' }}>{successData.name}</strong></div>
-              <div style={{ fontSize: 12, color: 'var(--ink2)', marginBottom: 4 }}>Usuário: <strong style={{ color: 'var(--teal)' }}>@{successData.username}</strong></div>
+              <div style={{ fontSize: 12, color: 'var(--ink2)', marginBottom: 4 }}>Usuário: <strong style={{ color: 'var(--teal)' }}>{successData.username}</strong></div>
               <div style={{ fontSize: 12, color: 'var(--ink2)' }}>Senha padrão: <strong style={{ color: 'var(--ink1)' }}>{successData.password}</strong></div>
             </div>
 
