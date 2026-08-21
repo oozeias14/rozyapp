@@ -28,6 +28,11 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('active_tab', tab);
+    const screens = document.querySelectorAll('.screen');
+    screens.forEach((el) => {
+      el.scrollTop = 0;
+    });
+    window.scrollTo(0, 0);
   }, [tab]);
 
   useEffect(() => {
@@ -74,6 +79,18 @@ export default function App() {
     const m = Math.floor(seconds / 60).toString().padStart(2, '0');
     const s = (seconds % 60).toString().padStart(2, '0');
     return `${m}:${s}`;
+  }
+
+  function handleTabChange(newTab) {
+    if (newTab === tab) {
+      const screens = document.querySelectorAll('.screen');
+      screens.forEach((el) => {
+        el.scrollTop = 0;
+      });
+      window.scrollTo(0, 0);
+    } else {
+      setTab(newTab);
+    }
   }
 
   const timerStyle = {
@@ -318,7 +335,7 @@ export default function App() {
           )}
           {tab === 'mass_signup' && <MassSignupScreen profile={profile} />}
           {tab === 'owner' && <OwnerScreen profile={profile} onOpenAdminOwner={() => openAdmin('owner')} />}
-          <BottomNav active={tab} onChange={setTab} profile={profile} hasNewMuralMessage={hasNewMuralMessage} />
+          <BottomNav active={tab} onChange={handleTabChange} profile={profile} hasNewMuralMessage={hasNewMuralMessage} />
         </>
       )}
     </div>
