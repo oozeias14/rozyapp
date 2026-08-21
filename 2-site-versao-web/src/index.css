@@ -41,7 +41,7 @@ h1, h2, h3, .disp { font-family: 'Space Grotesk', sans-serif; }
 .screen {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 16px calc(120px + env(safe-area-inset-bottom));
+  padding: 20px 16px calc(116px + env(safe-area-inset-bottom));
   -webkit-overflow-scrolling: touch;
 }
 

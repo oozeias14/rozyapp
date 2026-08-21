@@ -332,7 +332,7 @@ export default function QrCodeScreen({ profile }) {
     <div className="screen">
       <TopBar totalUsers={totalUsers} />
       
-      <div className="content" style={{ padding: '24px 16px', textAlign: 'center', overflowY: 'auto', height: 'calc(100vh - 160px)' }}>
+      <div className="content" style={{ padding: '24px 16px', textAlign: 'center', overflowY: 'auto', height: 'calc(100vh - 156px)' }}>
         
         {/* PARTE SUPERIOR (Apenas Admin): Painel de Criação e Configuração */}
         {isAdmin && (

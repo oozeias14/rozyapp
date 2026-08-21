@@ -44,20 +44,18 @@ export default function BottomNav({ active, onChange, profile, hasNewMuralMessag
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        padding: '10px 0',
+        padding: '9px 0',
         background: 'rgba(9, 13, 22, 0.95)',
         borderBottom: '1px solid var(--line)',
         userSelect: 'none'
       }}>
         <span style={{
           fontFamily: "'Space Grotesk', sans-serif",
-          fontSize: '17.5px',
+          fontSize: '15.8px',
           fontWeight: 900,
-          letterSpacing: '3.8px',
-          background: 'linear-gradient(90deg, #FFF9D2, var(--gold), #FFB703)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          textShadow: '0 0 12px rgba(232, 197, 71, 0.15)'
+          letterSpacing: '3.4px',
+          color: '#FFA000',
+          textShadow: '0 0 10px rgba(255, 160, 0, 0.2)'
         }}>
           VOTE DR. CANDIDO 15.678
         </span>
