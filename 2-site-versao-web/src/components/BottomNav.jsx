@@ -44,16 +44,16 @@ export default function BottomNav({ active, onChange, profile, hasNewMuralMessag
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        padding: '12px 0',
+        padding: '10px 0',
         background: 'rgba(9, 13, 22, 0.95)',
         borderBottom: '1px solid var(--line)',
         userSelect: 'none'
       }}>
         <span style={{
           fontFamily: "'Space Grotesk', sans-serif",
-          fontSize: '19.5px',
+          fontSize: '17.5px',
           fontWeight: 900,
-          letterSpacing: '4.25px',
+          letterSpacing: '3.8px',
           background: 'linear-gradient(90deg, #FFF9D2, var(--gold), #FFB703)',
           WebkitBackgroundClip: 'text',
           WebkitTextFillColor: 'transparent',
