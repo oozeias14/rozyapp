@@ -37,25 +37,53 @@ export default function BottomNav({ active, onChange, profile, hasNewMuralMessag
   ].filter(Boolean);
 
   return (
-    <div className="bnav">
-      {tabs.map((t) => (
-        <button key={t.key} className={`ni${active === t.key ? ' on' : ''}`} onClick={() => onChange(t.key)} style={{ position: 'relative' }}>
-          {ICONS[t.key]}
-          {t.key === 'home' && hasNewMuralMessage && (
-            <span style={{
-              position: 'absolute',
-              top: '6px',
-              right: '32%',
-              width: '8px',
-              height: '8px',
-              backgroundColor: '#FF3B30',
-              borderRadius: '50%',
-              border: '1.5px solid #090c12'
-            }} />
-          )}
-          <span>{t.label}</span>
-        </button>
-      ))}
+    <div className="bnav" style={{ flexDirection: 'column', padding: 0 }}>
+      {/* Texto de Campanha fixado acima dos botões */}
+      <div style={{
+        width: '100%',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: '12px 0',
+        background: 'rgba(9, 13, 22, 0.95)',
+        borderBottom: '1px solid var(--line)',
+        userSelect: 'none'
+      }}>
+        <span style={{
+          fontFamily: "'Space Grotesk', sans-serif",
+          fontSize: '19.5px',
+          fontWeight: 900,
+          letterSpacing: '4.25px',
+          background: 'linear-gradient(90deg, #FFF9D2, var(--gold), #FFB703)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          textShadow: '0 0 12px rgba(232, 197, 71, 0.15)'
+        }}>
+          VOTE DR. CANDIDO 15.678
+        </span>
+      </div>
+
+      {/* Botões de Navegação */}
+      <div style={{ display: 'flex', width: '100%', padding: '8px 4px calc(10px + env(safe-area-inset-bottom))' }}>
+        {tabs.map((t) => (
+          <button key={t.key} className={`ni${active === t.key ? ' on' : ''}`} onClick={() => onChange(t.key)} style={{ position: 'relative' }}>
+            {ICONS[t.key]}
+            {t.key === 'home' && hasNewMuralMessage && (
+              <span style={{
+                position: 'absolute',
+                top: '6px',
+                right: '32%',
+                width: '8px',
+                height: '8px',
+                backgroundColor: '#FF3B30',
+                borderRadius: '50%',
+                border: '1.5px solid #090c12'
+              }} />
+            )}
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
