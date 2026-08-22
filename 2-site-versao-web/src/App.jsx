@@ -14,6 +14,9 @@ import QrCodeScreen from './screens/QrCodeScreen';
 import BottomNav from './components/BottomNav';
 import FirstAccessModal from './components/FirstAccessModal';
 
+// Data e hora limite fixa da campanha (ex: até o final do dia 25/08/2026 no fuso de Brasília)
+const POPUP_EXPIRATION_DATE = new Date('2026-08-25T23:59:59-03:00');
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -34,15 +37,8 @@ export default function App() {
       setShowCampaignPopup(false);
       return;
     }
-    const key = `popup_start_time_${profile.id}`;
     const sessionKey = `popup_shown_session_${profile.id}`;
-    let startTime = localStorage.getItem(key);
-    if (!startTime) {
-      startTime = Date.now().toString();
-      localStorage.setItem(key, startTime);
-    }
-    const elapsed = Date.now() - parseInt(startTime, 10);
-    const isExpired = elapsed >= 72 * 60 * 60 * 1000;
+    const isExpired = Date.now() >= POPUP_EXPIRATION_DATE.getTime();
     const alreadyShownThisSession = sessionStorage.getItem(sessionKey);
 
     if (!isExpired && !alreadyShownThisSession) {
@@ -68,11 +64,9 @@ export default function App() {
 
   useEffect(() => {
     if (!showCampaignPopup || !profile) return;
-    const key = `popup_start_time_${profile.id}`;
-    const startTime = parseInt(localStorage.getItem(key) || Date.now().toString(), 10);
     
     const updateTimer = () => {
-      const remaining = (72 * 60 * 60 * 1000) - (Date.now() - startTime);
+      const remaining = POPUP_EXPIRATION_DATE.getTime() - Date.now();
       setTimeLeftPopup(Math.max(0, remaining));
     };
 
