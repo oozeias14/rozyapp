@@ -14,8 +14,8 @@ import QrCodeScreen from './screens/QrCodeScreen';
 import BottomNav from './components/BottomNav';
 import FirstAccessModal from './components/FirstAccessModal';
 
-// Data e hora limite fixa da campanha (ex: até o final do dia 25/08/2026 no fuso de Brasília)
-const POPUP_EXPIRATION_DATE = new Date('2026-08-25T23:59:59-03:00');
+// Data e hora limite fixa da campanha (ex: até dia 24/08/2026 às 00:04:00 no fuso de Brasília, totalizando 48h)
+const POPUP_EXPIRATION_DATE = new Date('2026-08-24T00:04:00-03:00');
 
 export default function App() {
   const [session, setSession] = useState(null);
