@@ -147,6 +147,7 @@ class MockQueryBuilder {
 
   select(fields) { return this; }
   eq(column, value) { this.filters.push({ column, value }); return this; }
+  in(column, values) { this.filters.push({ column, values, isList: true }); return this; }
   order(column, options = {}) {
     this.orderCol = column;
     this.orderAsc = options.ascending !== false;
@@ -206,7 +207,11 @@ class MockQueryBuilder {
         list = list.map(item => {
           let match = true;
           for (const f of this.filters) {
-            if (item[f.column] != f.value) match = false;
+            if (f.isList) {
+              if (!f.values.includes(item[f.column])) match = false;
+            } else {
+              if (item[f.column] != f.value) match = false;
+            }
           }
           if (match) {
             const updated = { ...item, ...this.updatePatch };
@@ -224,7 +229,11 @@ class MockQueryBuilder {
       for (const item of list) {
         let match = true;
         for (const f of this.filters) {
-          if (item[f.column] != f.value) match = false;
+          if (f.isList) {
+            if (!f.values.includes(item[f.column])) match = false;
+          } else {
+            if (item[f.column] != f.value) match = false;
+          }
         }
         if (!match) {
           remaining.push(item);
@@ -236,7 +245,11 @@ class MockQueryBuilder {
     } else {
       // Filtros do SELECT
       for (const f of this.filters) {
-        list = list.filter(item => item[f.column] == f.value);
+        if (f.isList) {
+          list = list.filter(item => f.values.includes(item[f.column]));
+        } else {
+          list = list.filter(item => item[f.column] == f.value);
+        }
       }
 
       // Ordenação

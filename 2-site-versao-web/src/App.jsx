@@ -25,6 +25,41 @@ export default function App() {
   const [timeLeft, setTimeLeft] = useState(null);
   const [hasNewMuralMessage, setHasNewMuralMessage] = useState(false);
   const [showFirstAccessModal, setShowFirstAccessModal] = useState(false);
+  const [showCampaignPopup, setShowCampaignPopup] = useState(false);
+  const [popupTimer, setPopupTimer] = useState(5);
+
+  useEffect(() => {
+    if (!profile) {
+      setShowCampaignPopup(false);
+      return;
+    }
+    const key = `popup_start_time_${profile.id}`;
+    let startTime = localStorage.getItem(key);
+    if (!startTime) {
+      startTime = Date.now().toString();
+      localStorage.setItem(key, startTime);
+    }
+    const elapsed = Date.now() - parseInt(startTime, 10);
+    const isExpired = elapsed >= 72 * 60 * 60 * 1000;
+    if (!isExpired) {
+      setShowCampaignPopup(true);
+    }
+  }, [profile]);
+
+  useEffect(() => {
+    if (!showCampaignPopup) return;
+    setPopupTimer(5);
+    const interval = setInterval(() => {
+      setPopupTimer((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [showCampaignPopup]);
 
   useEffect(() => {
     localStorage.setItem('active_tab', tab);
@@ -91,6 +126,23 @@ export default function App() {
     } else {
       setTab(newTab);
     }
+  }
+
+  function handleSaveCandidateContact() {
+    const vcard = [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      'FN:Dr. Candido',
+      'TEL;TYPE=CELL:+5561999012940',
+      'END:VCARD'
+    ].join('\n');
+
+    const blob = new Blob([vcard], { type: 'text/vcard;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = 'Dr_Candido.vcf';
+    link.href = url;
+    link.click();
   }
 
   const timerStyle = {
@@ -337,6 +389,53 @@ export default function App() {
           {tab === 'owner' && <OwnerScreen profile={profile} onOpenAdminOwner={() => openAdmin('owner')} />}
           <BottomNav active={tab} onChange={handleTabChange} profile={profile} hasNewMuralMessage={hasNewMuralMessage} />
         </>
+      )}
+
+      {showCampaignPopup && (
+        <div className="modal-bg" style={{ zIndex: 99999 }}>
+          <div className="modal" style={{ textAlign: 'center', maxWidth: '380px' }}>
+            <div style={{ fontSize: '44px', marginBottom: '12px' }}>📱</div>
+            <h2 style={{ fontSize: '17px', color: 'var(--gold)', marginBottom: '12px', fontWeight: 700 }}>Adicione o Dr. Candido</h2>
+            
+            <p style={{ fontSize: '13px', color: 'var(--ink1)', lineHeight: '1.6', marginBottom: '20px', textAlign: 'left' }}>
+              Para receber nossos informativos e vídeos importantes no seu WhatsApp, adicione o número <strong>61 99901-2940</strong> aos seus contatos!
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button 
+                onClick={handleSaveCandidateContact}
+                className="btn btn-teal"
+                style={{ 
+                  margin: 0, 
+                  padding: '12px', 
+                  fontSize: '13.5px', 
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px'
+                }}
+              >
+                📥 Salvar na Agenda
+              </button>
+
+              <button 
+                className="btn btn-ghost" 
+                onClick={() => setShowCampaignPopup(false)}
+                disabled={popupTimer > 0}
+                style={{ 
+                  width: '100%', 
+                  margin: 0, 
+                  fontSize: '13px', 
+                  borderColor: popupTimer > 0 ? 'transparent' : 'var(--line)',
+                  color: popupTimer > 0 ? 'var(--ink3)' : 'var(--ink2)'
+                }}
+              >
+                {popupTimer > 0 ? `Aguarde (${popupTimer}s)...` : 'Fechar'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
