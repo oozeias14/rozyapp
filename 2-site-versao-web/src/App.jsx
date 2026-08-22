@@ -27,6 +27,7 @@ export default function App() {
   const [showFirstAccessModal, setShowFirstAccessModal] = useState(false);
   const [showCampaignPopup, setShowCampaignPopup] = useState(false);
   const [popupTimer, setPopupTimer] = useState(5);
+  const [timeLeftPopup, setTimeLeftPopup] = useState(0);
 
   useEffect(() => {
     if (!profile) {
@@ -34,6 +35,7 @@ export default function App() {
       return;
     }
     const key = `popup_start_time_${profile.id}`;
+    const sessionKey = `popup_shown_session_${profile.id}`;
     let startTime = localStorage.getItem(key);
     if (!startTime) {
       startTime = Date.now().toString();
@@ -41,8 +43,11 @@ export default function App() {
     }
     const elapsed = Date.now() - parseInt(startTime, 10);
     const isExpired = elapsed >= 72 * 60 * 60 * 1000;
-    if (!isExpired) {
+    const alreadyShownThisSession = sessionStorage.getItem(sessionKey);
+
+    if (!isExpired && !alreadyShownThisSession) {
       setShowCampaignPopup(true);
+      sessionStorage.setItem(sessionKey, 'true');
     }
   }, [profile]);
 
@@ -60,6 +65,30 @@ export default function App() {
     }, 1000);
     return () => clearInterval(interval);
   }, [showCampaignPopup]);
+
+  useEffect(() => {
+    if (!showCampaignPopup || !profile) return;
+    const key = `popup_start_time_${profile.id}`;
+    const startTime = parseInt(localStorage.getItem(key) || Date.now().toString(), 10);
+    
+    const updateTimer = () => {
+      const remaining = (72 * 60 * 60 * 1000) - (Date.now() - startTime);
+      setTimeLeftPopup(Math.max(0, remaining));
+    };
+
+    updateTimer();
+    const timerInterval = setInterval(updateTimer, 1000);
+    return () => clearInterval(timerInterval);
+  }, [showCampaignPopup, profile]);
+
+  function formatRemainingTime(ms) {
+    if (ms <= 0) return '00h 00m 00s';
+    const totalSecs = Math.floor(ms / 1000);
+    const h = Math.floor(totalSecs / 3600);
+    const m = Math.floor((totalSecs % 3600) / 60);
+    const s = totalSecs % 60;
+    return `${h.toString().padStart(2, '0')}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`;
+  }
 
   useEffect(() => {
     localStorage.setItem('active_tab', tab);
@@ -272,6 +301,9 @@ export default function App() {
   }
 
   async function handleLogout() {
+    if (profile) {
+      sessionStorage.removeItem(`popup_shown_session_${profile.id}`);
+    }
     localStorage.removeItem('session_start_time');
     localStorage.removeItem('active_tab');
     await supabase.auth.signOut();
@@ -397,6 +429,10 @@ export default function App() {
             <div style={{ fontSize: '44px', marginBottom: '12px' }}>📱</div>
             <h2 style={{ fontSize: '17px', color: 'var(--gold)', marginBottom: '12px', fontWeight: 700 }}>Adicione o Dr. Candido</h2>
             
+            <div style={{ color: '#FFA000', fontSize: '11.5px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '16px', background: 'rgba(255, 160, 0, 0.08)', padding: '6px 10px', borderRadius: '8px', border: '1px solid rgba(255, 160, 0, 0.15)' }}>
+              <span>🕒 Este aviso sumirá em: {formatRemainingTime(timeLeftPopup)}</span>
+            </div>
+
             <p style={{ fontSize: '13px', color: 'var(--ink1)', lineHeight: '1.6', marginBottom: '20px', textAlign: 'left' }}>
               Para receber nossos informativos e vídeos importantes no seu WhatsApp, adicione o número <strong>61 99901-2940</strong> aos seus contatos!
             </p>
