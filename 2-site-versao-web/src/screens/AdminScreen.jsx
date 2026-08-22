@@ -167,7 +167,7 @@ function UsersTab({ users, onSelect, reload }) {
     setExporting(true);
     try {
       const cards = toExport.map((u, index) => {
-        const listIndex = Math.floor(index / 256) + 1;
+        const listIndex = Math.floor(index / 250) + 1;
         const fullName = `T${listIndex} ${u.name.trim()}`;
         const tel = (u.phone || u.whatsapp || '').replace(/\D/g, '');
         const cleanTel = tel.length === 10 || tel.length === 11 ? '55' + tel : tel;
