@@ -26,25 +26,40 @@ export default function NetworkScreen({ profile }) {
   const [allUsers, setAllUsers] = useState([]);
   const [filter, setFilter] = useState('all');
   const [page, setPage] = useState(1);
+  const [loadingAllUsers, setLoadingAllUsers] = useState(false);
+  const [allUsersLoaded, setAllUsersLoaded] = useState(false);
 
   const load = useCallback(async () => {
-    const [totalCount, directs, matrix, sps, crd, all] = await Promise.all([
+    const [totalCount, directs, matrix, sps, crd] = await Promise.all([
       fetchTotalUsersCount(),
       fetchDirectReferrals(profile.id),
       fetchMatrixChildren(profile.id),
       profile.referrer_id ? fetchProfileById(profile.referrer_id) : null,
-      profile.coord_id ? fetchProfileById(profile.coord_id) : null,
-      fetchAllProfiles()
+      profile.coord_id ? fetchProfileById(profile.coord_id) : null
     ]);
     setTotalUsers(totalCount);
     setDirect(directs);
     setMatrixChildren(matrix);
     setSponsor(sps);
     setCoord(crd);
-    setAllUsers(all || []);
   }, [profile.id, profile.referrer_id, profile.coord_id]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function loadAllUsers() {
+    if (allUsersLoaded || loadingAllUsers) return;
+    setLoadingAllUsers(true);
+    try {
+      const all = await fetchAllProfiles();
+      setAllUsers(all || []);
+      setAllUsersLoaded(true);
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao carregar a rede: ' + err.message);
+    } finally {
+      setLoadingAllUsers(false);
+    }
+  }
 
   function getReferralNetworkCount(userId) {
     if (!allUsers || allUsers.length === 0) return 0;
@@ -96,7 +111,32 @@ export default function NetworkScreen({ profile }) {
         textAlign: 'center'
       }}>
         <div style={{ fontSize: 11, color: 'var(--ink2)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>Sua Rede de Indicações (Até 20ª Geração)</div>
-        <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--violet)', marginTop: 4 }}>{getReferralNetworkCount(profile.id)}</div>
+        {loadingAllUsers ? (
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--violet)', marginTop: 12, marginBottom: 8 }}>⏳ Carregando...</div>
+        ) : allUsersLoaded ? (
+          <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--violet)', marginTop: 4 }}>{getReferralNetworkCount(profile.id)}</div>
+        ) : (
+          <div style={{ marginTop: 8, marginBottom: 4 }}>
+            <button 
+              onClick={loadAllUsers}
+              style={{ 
+                background: 'rgba(123, 108, 244, 0.15)', 
+                border: '1px solid rgba(123, 108, 244, 0.4)', 
+                padding: '4px 12px', 
+                borderRadius: '8px', 
+                color: '#fff', 
+                fontSize: '11px', 
+                fontWeight: 700,
+                cursor: 'pointer',
+                width: 'auto',
+                margin: 0,
+                display: 'inline-block'
+              }}
+            >
+              📊 Calcular Total
+            </button>
+          </div>
+        )}
         <div className="muted" style={{ fontSize: 9.5, marginTop: 4 }}>Membros ativos acumulados através de seus diretos</div>
       </div>
 
@@ -163,13 +203,17 @@ export default function NetworkScreen({ profile }) {
         <button 
           className="btn btn-teal" 
           style={{ width: '100%' }} 
-          onClick={() => {
+          disabled={loadingAllUsers}
+          onClick={async () => {
+            if (!showAllList) {
+              await loadAllUsers();
+            }
             setShowAllList(!showAllList);
             setPage(1);
             setFilter('all');
           }}
         >
-          {showAllList ? 'Ocultar lista de indicados' : `Ver todos os indicados diretos (${direct.length})`}
+          {loadingAllUsers ? '⏳ Carregando...' : showAllList ? 'Ocultar lista de indicados' : `Ver todos os indicados diretos (${direct.length})`}
         </button>
       </div>
 
