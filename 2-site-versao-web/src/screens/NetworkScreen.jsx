@@ -72,6 +72,10 @@ export default function NetworkScreen({ profile }) {
     filter === 'inactive' ? direct.filter((c) => getReferralNetworkCount(c.id) === 0) : 
     direct;
 
+  const sortedFilteredDirects = [...filteredDirects].sort((a, b) => {
+    return getReferralNetworkCount(b.id) - getReferralNetworkCount(a.id);
+  });
+
   const slots = Array.from({ length: 10 }, (_, i) => matrixChildren[i] || null);
 
   return (
@@ -210,8 +214,8 @@ export default function NetworkScreen({ profile }) {
             </button>
           </div>
 
-          {filteredDirects.length === 0 && <div className="empty">Nenhum indicado nesta categoria.</div>}
-          {filteredDirects.map((c, index) => (
+          {sortedFilteredDirects.length === 0 && <div className="empty">Nenhum indicado nesta categoria.</div>}
+          {sortedFilteredDirects.map((c, index) => (
             <div key={c.id} className="prow" onClick={() => openPerson(c)}>
               <Avatar person={c} size={36} />
               <div style={{ flex: 1 }}>
