@@ -143,12 +143,17 @@ function Avatar({ person, size = 36 }) {
 function UsersTab({ users, onSelect, reload }) {
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [page, setPage] = useState(1);
 
   const filtered = users.filter((u) =>
     u.name.toLowerCase().includes(search.toLowerCase()) ||
     String(u.id).includes(search) ||
     (u.email || '').toLowerCase().includes(search.toLowerCase())
   );
+
+  const ITEMS_PER_PAGE = 10;
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE) || 1;
+  const paginatedUsers = filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
 
   const unexportedCount = users.filter(u => u.role !== 'admin' && u.role !== 'admin2' && !u.vcf_exported).length;
   const exportedCount = users.filter(u => u.role !== 'admin' && u.role !== 'admin2' && u.vcf_exported).length;
@@ -231,8 +236,15 @@ function UsersTab({ users, onSelect, reload }) {
         </button>
       </div>
 
-      <input placeholder="Buscar nome, e-mail ou ID..." value={search} onChange={(e) => setSearch(e.target.value)} />
-      {filtered.map((p) => (
+      <input 
+        placeholder="Buscar nome, e-mail ou ID..." 
+        value={search} 
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setPage(1);
+        }} 
+      />
+      {paginatedUsers.map((p) => (
         <div key={p.id} className="data-row" onClick={() => onSelect(p)}>
           <Avatar person={p} />
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -245,6 +257,49 @@ function UsersTab({ users, onSelect, reload }) {
           </div>
         </div>
       ))}
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
+          <button 
+            className="btn" 
+            style={{ 
+              padding: '6px 12px', 
+              fontSize: 12, 
+              borderRadius: 8, 
+              background: 'rgba(255, 255, 255, 0.05)', 
+              color: page === 1 ? 'var(--ink3)' : '#fff',
+              border: '1px solid var(--line)',
+              cursor: page === 1 ? 'not-allowed' : 'pointer',
+              opacity: page === 1 ? 0.5 : 1
+            }}
+            disabled={page === 1}
+            onClick={() => setPage(p => Math.max(p - 1, 1))}
+          >
+            ⬅️ Anterior
+          </button>
+          <span style={{ fontSize: 12, color: 'var(--ink2)', fontWeight: 600 }}>
+            Página {page} de {totalPages}
+          </span>
+          <button 
+            className="btn" 
+            style={{ 
+              padding: '6px 12px', 
+              fontSize: 12, 
+              borderRadius: 8, 
+              background: 'rgba(255, 255, 255, 0.05)', 
+              color: page === totalPages ? 'var(--ink3)' : '#fff',
+              border: '1px solid var(--line)',
+              cursor: page === totalPages ? 'not-allowed' : 'pointer',
+              opacity: page === totalPages ? 0.5 : 1
+            }}
+            disabled={page === totalPages}
+            onClick={() => setPage(p => Math.min(p + 1, totalPages))}
+          >
+            Próxima ➡️
+          </button>
+        </div>
+      )}
     </div>
   );
 }

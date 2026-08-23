@@ -25,6 +25,7 @@ export default function NetworkScreen({ profile }) {
   const [showAllList, setShowAllList] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
   const [filter, setFilter] = useState('all');
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
     const [totalCount, directs, matrix, sps, crd, all] = await Promise.all([
@@ -75,6 +76,10 @@ export default function NetworkScreen({ profile }) {
   const sortedFilteredDirects = [...filteredDirects].sort((a, b) => {
     return getReferralNetworkCount(b.id) - getReferralNetworkCount(a.id);
   });
+
+  const ITEMS_PER_PAGE = 10;
+  const totalPages = Math.ceil(sortedFilteredDirects.length / ITEMS_PER_PAGE) || 1;
+  const paginatedDirects = sortedFilteredDirects.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
 
   const slots = Array.from({ length: 10 }, (_, i) => matrixChildren[i] || null);
 
@@ -158,7 +163,11 @@ export default function NetworkScreen({ profile }) {
         <button 
           className="btn btn-teal" 
           style={{ width: '100%' }} 
-          onClick={() => setShowAllList(!showAllList)}
+          onClick={() => {
+            setShowAllList(!showAllList);
+            setPage(1);
+            setFilter('all');
+          }}
         >
           {showAllList ? 'Ocultar lista de indicados' : `Ver todos os indicados diretos (${direct.length})`}
         </button>
@@ -178,7 +187,7 @@ export default function NetworkScreen({ profile }) {
                 color: filter === 'all' ? '#fff' : 'var(--ink2)',
                 border: '1px solid ' + (filter === 'all' ? 'var(--violet)' : 'var(--line)')
               }}
-              onClick={() => setFilter('all')}
+              onClick={() => { setFilter('all'); setPage(1); }}
             >
               Todos ({direct.length})
             </button>
@@ -193,7 +202,7 @@ export default function NetworkScreen({ profile }) {
                 color: filter === 'active' ? '#fff' : 'var(--ink2)',
                 border: '1px solid ' + (filter === 'active' ? 'var(--violet)' : 'var(--line)')
               }}
-              onClick={() => setFilter('active')}
+              onClick={() => { setFilter('active'); setPage(1); }}
             >
               Ativos ({activeDirectsCount})
             </button>
@@ -208,14 +217,14 @@ export default function NetworkScreen({ profile }) {
                 color: filter === 'inactive' ? '#fff' : 'var(--ink2)',
                 border: '1px solid ' + (filter === 'inactive' ? 'var(--violet)' : 'var(--line)')
               }}
-              onClick={() => setFilter('inactive')}
+              onClick={() => { setFilter('inactive'); setPage(1); }}
             >
               Sem Rede ({inactiveDirectsCount})
             </button>
           </div>
 
-          {sortedFilteredDirects.length === 0 && <div className="empty">Nenhum indicado nesta categoria.</div>}
-          {sortedFilteredDirects.map((c, index) => (
+          {paginatedDirects.length === 0 && <div className="empty">Nenhum indicado nesta categoria.</div>}
+          {paginatedDirects.map((c, index) => (
             <div key={c.id} className="prow" onClick={() => openPerson(c)}>
               <Avatar person={c} size={36} />
               <div style={{ flex: 1 }}>
@@ -268,6 +277,49 @@ export default function NetworkScreen({ profile }) {
               </div>
             </div>
           ))}
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
+              <button 
+                className="btn" 
+                style={{ 
+                  padding: '6px 12px', 
+                  fontSize: 12, 
+                  borderRadius: 8, 
+                  background: 'rgba(255, 255, 255, 0.05)', 
+                  color: page === 1 ? 'var(--ink3)' : '#fff',
+                  border: '1px solid var(--line)',
+                  cursor: page === 1 ? 'not-allowed' : 'pointer',
+                  opacity: page === 1 ? 0.5 : 1
+                }}
+                disabled={page === 1}
+                onClick={() => setPage(p => Math.max(p - 1, 1))}
+              >
+                ⬅️ Anterior
+              </button>
+              <span style={{ fontSize: 12, color: 'var(--ink2)', fontWeight: 600 }}>
+                Página {page} de {totalPages}
+              </span>
+              <button 
+                className="btn" 
+                style={{ 
+                  padding: '6px 12px', 
+                  fontSize: 12, 
+                  borderRadius: 8, 
+                  background: 'rgba(255, 255, 255, 0.05)', 
+                  color: page === totalPages ? 'var(--ink3)' : '#fff',
+                  border: '1px solid var(--line)',
+                  cursor: page === totalPages ? 'not-allowed' : 'pointer',
+                  opacity: page === totalPages ? 0.5 : 1
+                }}
+                disabled={page === totalPages}
+                onClick={() => setPage(p => Math.min(p + 1, totalPages))}
+              >
+                Próxima ➡️
+              </button>
+            </div>
+          )}
         </div>
       )}
 
