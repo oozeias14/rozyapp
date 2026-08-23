@@ -280,43 +280,57 @@ export default function NetworkScreen({ profile }) {
 
           {/* Pagination Controls */}
           {totalPages > 1 && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
               <button 
                 className="btn" 
                 style={{ 
-                  padding: '6px 12px', 
-                  fontSize: 12, 
-                  borderRadius: 8, 
-                  background: 'rgba(255, 255, 255, 0.05)', 
+                  width: 'auto',
+                  flexShrink: 0,
+                  margin: 0,
+                  padding: '8px 16px', 
+                  fontSize: 13, 
+                  fontWeight: 600,
+                  borderRadius: 10, 
+                  background: 'rgba(255, 255, 255, 0.04)', 
                   color: page === 1 ? 'var(--ink3)' : '#fff',
-                  border: '1px solid var(--line)',
+                  border: '1px solid ' + (page === 1 ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
                   cursor: page === 1 ? 'not-allowed' : 'pointer',
-                  opacity: page === 1 ? 0.5 : 1
+                  opacity: page === 1 ? 0.4 : 1,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6
                 }}
                 disabled={page === 1}
                 onClick={() => setPage(p => Math.max(p - 1, 1))}
               >
-                ⬅️ Anterior
+                <span>←</span> Anterior
               </button>
-              <span style={{ fontSize: 12, color: 'var(--ink2)', fontWeight: 600 }}>
+              <span style={{ fontSize: 13, color: 'var(--ink2)', fontWeight: 600, whiteSpace: 'nowrap', minWidth: '100px', textAlign: 'center' }}>
                 Página {page} de {totalPages}
               </span>
               <button 
                 className="btn" 
                 style={{ 
-                  padding: '6px 12px', 
-                  fontSize: 12, 
-                  borderRadius: 8, 
-                  background: 'rgba(255, 255, 255, 0.05)', 
+                  width: 'auto',
+                  flexShrink: 0,
+                  margin: 0,
+                  padding: '8px 16px', 
+                  fontSize: 13, 
+                  fontWeight: 600,
+                  borderRadius: 10, 
+                  background: 'rgba(255, 255, 255, 0.04)', 
                   color: page === totalPages ? 'var(--ink3)' : '#fff',
-                  border: '1px solid var(--line)',
+                  border: '1px solid ' + (page === totalPages ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
                   cursor: page === totalPages ? 'not-allowed' : 'pointer',
-                  opacity: page === totalPages ? 0.5 : 1
+                  opacity: page === totalPages ? 0.4 : 1,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6
                 }}
                 disabled={page === totalPages}
                 onClick={() => setPage(p => Math.min(p + 1, totalPages))}
               >
-                Próxima ➡️
+                Próxima <span>→</span>
               </button>
             </div>
           )}
