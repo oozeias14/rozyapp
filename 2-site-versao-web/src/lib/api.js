@@ -16,9 +16,26 @@ function handleAdmin2Block() {
 
 // ── PERFIS ────────────────────────────────────────────────
 export async function fetchAllProfiles() {
-  const { data, error } = await supabase.from('profiles').select('*').order('id', { ascending: true });
-  if (error) throw error;
-  return data;
+  let allData = [];
+  let from = 0;
+  const limit = 1000;
+  
+  while (true) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('id', { ascending: true })
+      .range(from, from + limit - 1);
+      
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    
+    allData = allData.concat(data);
+    if (data.length < limit) break;
+    from += limit;
+  }
+  
+  return allData;
 }
 
 export async function fetchTotalUsersCount() {
