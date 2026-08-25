@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import PersonModal from '../components/PersonModal';
 import { supabase, MAX_PHOTO_BYTES, compressImageWeb, CITIES } from '../lib/supabase';
 import {
@@ -117,7 +118,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         {tab === 'messages' && <MessagesTab messages={messages} profile={profile} reload={load} />}
         {tab === 'owner' && isAdmin && owner && <OwnerTab owner={owner} reload={load} />}
         {tab === 'stats' && <StatsTab users={users} meetings={meetings} messages={messages} />}
-        {tab === 'settings' && isAdmin && settings && <SettingsTab settings={settings} profile={profile} reload={load} />}
+        {tab === 'settings' && isAdmin && settings && <SettingsTab settings={settings} profile={profile} reload={load} users={users} />}
       </div>
 
       {modalPerson && (
@@ -1144,11 +1145,13 @@ function StatsTab({ users, meetings, messages }) {
 }
 
 /* ===== CONFIGURACOES ===== */
-function SettingsTab({ settings, profile, reload }) {
+function SettingsTab({ settings, profile, reload, users }) {
   const [domain, setDomain] = useState(settings?.app_domain || 'amigosdrcandido.com.br');
   const [name, setName] = useState(profile.name);
   const [email, setEmail] = useState(profile.email);
   const [newPassword, setNewPassword] = useState('');
+  const [restoring, setRestoring] = useState(false);
+  const [restoreProgress, setRestoreProgress] = useState('');
 
   async function saveDomain() {
     const clean = domain.trim().replace(/^https?:\/\//, '').replace(/\/$/, '');
@@ -1165,8 +1168,171 @@ function SettingsTab({ settings, profile, reload }) {
     try { await changeOwnPassword(newPassword); setNewPassword(''); alert('Senha alterada.'); } catch (e) { alert('Erro: ' + e.message); }
   }
 
+  function handleBackup() {
+    try {
+      const dataStr = JSON.stringify(users, null, 2);
+      const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+      const exportFileDefaultName = `backup_usuarios_${new Date().toISOString().split('T')[0]}_${Date.now()}.json`;
+      const linkElement = document.createElement('a');
+      linkElement.setAttribute('href', dataUri);
+      linkElement.setAttribute('download', exportFileDefaultName);
+      linkElement.click();
+    } catch (err) {
+      alert('Erro ao gerar backup: ' + err.message);
+    }
+  }
+
+  async function handleRestore(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const confirmRestore = window.confirm('ATENÇÃO: Este processo irá recriar todos os usuários do arquivo de backup que não estiverem no banco atual. Deseja prosseguir?');
+    if (!confirmRestore) {
+      e.target.value = '';
+      return;
+    }
+
+    setRestoring(true);
+    setRestoreProgress('Lendo arquivo de backup...');
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const backupUsers = JSON.parse(event.target.result);
+        if (!Array.isArray(backupUsers)) {
+          throw new Error('Formato de arquivo inválido. Deve ser uma lista de usuários.');
+        }
+
+        setRestoreProgress(`Verificando banco... 0/${backupUsers.length}`);
+
+        const tempSupabase = createClient(supabase.supabaseUrl, supabase.supabaseKey, {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false
+          }
+        });
+
+        let successCount = 0;
+        let skipCount = 0;
+        let errorCount = 0;
+
+        for (let i = 0; i < backupUsers.length; i++) {
+          const u = backupUsers[i];
+          setRestoreProgress(`Restaurando ${i + 1}/${backupUsers.length}: ${u.name}...`);
+
+          // 1) Check if already exists in profiles
+          const { data: existingUser } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('username', u.username)
+            .maybeSingle();
+
+          if (existingUser) {
+            skipCount++;
+            continue;
+          }
+
+          // 2) Sign up in auth using email and default password
+          const userEmail = u.email || `${u.username}@amigosdrcandido.com.br`;
+          const { data: authData, error: authErr } = await tempSupabase.auth.signUp({
+            email: userEmail,
+            password: '123456'
+          });
+
+          if (authErr) {
+            console.error(`Erro ao criar autenticação para ${u.name}:`, authErr);
+            errorCount++;
+            continue;
+          }
+
+          // 3) Insert profile with original id and new auth_id
+          const { error: insertErr } = await supabase
+            .from('profiles')
+            .insert({
+              id: u.id,
+              auth_id: authData.user.id,
+              name: u.name,
+              email: userEmail,
+              phone: u.phone || u.whatsapp,
+              whatsapp: u.whatsapp || u.phone,
+              role: u.role || 'user',
+              coord_id: u.coord_id,
+              parent_id: u.parent_id,
+              referrer_id: u.referrer_id,
+              username: u.username,
+              city: u.city || null,
+              created_at: u.created_at,
+              vcf_exported: u.vcf_exported || false,
+              live_enabled: u.live_enabled !== undefined ? u.live_enabled : true
+            });
+
+          if (insertErr) {
+            console.error(`Erro ao inserir perfil de ${u.name}:`, insertErr);
+            errorCount++;
+          } else {
+            successCount++;
+          }
+        }
+
+        alert(`Restauração concluída!\nContas recriadas: ${successCount}\nContas já existentes (puladas): ${skipCount}\nErros: ${errorCount}`);
+        if (reload) await reload();
+      } catch (err) {
+        alert('Erro ao processar arquivo: ' + err.message);
+      } finally {
+        setRestoring(false);
+        setRestoreProgress('');
+        e.target.value = '';
+      }
+    };
+    reader.readAsText(file);
+  }
+
   return (
     <div>
+      <div className="card-title">Cópia de Segurança (Backup & Restauração)</div>
+      <div className="card">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: '#fff', marginBottom: '4px' }}>Exportar Cadastros</div>
+            <div style={{ fontSize: '11.5px', color: 'var(--ink3)', marginBottom: '8px' }}>Baixe um arquivo contendo todos os cadastros atuais do sistema para segurança.</div>
+            <button className="btn btn-teal" onClick={handleBackup} style={{ margin: 0, width: 'auto', padding: '8px 16px' }}>
+              📥 Baixar Backup (.JSON)
+            </button>
+          </div>
+          <div style={{ borderTop: '1px solid var(--line)', marginTop: '8px', paddingTop: '16px' }}>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: '#fff', marginBottom: '4px' }}>Importar / Restaurar Cadastros</div>
+            <div style={{ fontSize: '11.5px', color: 'var(--ink3)', marginBottom: '8px' }}>Selecione um arquivo de backup (.JSON) baixado anteriormente para recriar as contas perdidas no banco de dados.</div>
+            
+            {restoring ? (
+              <div style={{ fontSize: '13px', color: 'var(--teal)', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>⏳</span> {restoreProgress}
+              </div>
+            ) : (
+              <div style={{ position: 'relative', display: 'inline-block' }}>
+                <button className="btn btn-violet" style={{ margin: 0, width: 'auto', padding: '8px 16px', pointerEvents: 'none' }}>
+                  📤 Carregar & Restaurar (.JSON)
+                </button>
+                <input 
+                  type="file" 
+                  accept=".json" 
+                  onChange={handleRestore}
+                  style={{ 
+                    position: 'absolute', 
+                    top: 0, 
+                    left: 0, 
+                    width: '100%', 
+                    height: '100%', 
+                    opacity: 0, 
+                    cursor: 'pointer' 
+                  }} 
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="card-title">Domínio do app (link de indicação)</div>
       <div className="card">
         <label className="lbl">Domínio</label>
@@ -1191,5 +1357,3 @@ function SettingsTab({ settings, profile, reload }) {
     </div>
   );
 }
-
-
