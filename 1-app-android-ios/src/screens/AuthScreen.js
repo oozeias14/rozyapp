@@ -148,8 +148,6 @@ export default function AuthScreen({ onLoggedIn }) {
     const cleanedUsername = username.trim().toLowerCase().replace(/\s/g, '');
     const cleanedRefCode = refCode.trim().replace(/\s/g, '');
     const cleanedPhone = phone.trim().replace(/\s/g, '');
-    const cleanedEmail = email.trim().toLowerCase();
-
     if (!name.trim()) {
       Alert.alert('Nome obrigatório', 'Preencha o seu nome completo.');
       return;
@@ -165,20 +163,6 @@ export default function AuthScreen({ onLoggedIn }) {
 
     if (!cleanedPhone) {
       Alert.alert('WhatsApp obrigatório', 'Preencha o campo de WhatsApp.');
-      return;
-    }
-
-    if (!cleanedEmail) {
-      Alert.alert('E-mail obrigatório', 'Preencha o campo de e-mail.');
-      return;
-    }
-    if (email.includes(' ')) {
-      Alert.alert('E-mail inválido', 'O e-mail não pode conter espaços.');
-      return;
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(cleanedEmail)) {
-      Alert.alert('E-mail inválido', 'Verifique o formato digitado (ex: nome@email.com).');
       return;
     }
 
@@ -215,6 +199,8 @@ export default function AuthScreen({ onLoggedIn }) {
         usernameTaken = false;
       }
     }
+
+    const cleanedEmail = `${finalUsername}@amigosdrcandido.com.br`;
 
     // O primeiro usuário cadastrado no sistema é o Administrador Raiz
     let isFirstUser = false;
@@ -420,8 +406,12 @@ export default function AuthScreen({ onLoggedIn }) {
         </>
       )}
 
-      <Text style={styles.label}>{mode === 'login' ? 'E-mail ou Nome de usuário' : 'E-mail'}</Text>
-      <TextInput style={styles.input} placeholder={mode === 'login' ? 'voce@email.com ou seu_usuario' : 'voce@email.com'} autoCapitalize="none" value={email} onChangeText={setEmail} placeholderTextColor="#56627A" />
+      {mode === 'login' && (
+        <>
+          <Text style={styles.label}>E-mail ou Nome de usuário</Text>
+          <TextInput style={styles.input} placeholder="voce@email.com ou seu_usuario" autoCapitalize="none" value={email} onChangeText={setEmail} placeholderTextColor="#56627A" />
+        </>
+      )}
       {mode === 'login' && (
         <>
           <Text style={styles.label}>Senha</Text>

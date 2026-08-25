@@ -211,25 +211,12 @@ export default function AuthScreen({ onLoggedIn }) {
     const cleanedUsername = username.trim().toLowerCase().replace(/\s/g, '');
     const cleanedRefCode = refCode.trim().replace(/\s/g, '');
     const cleanedPhone = phone.trim().replace(/\s/g, '');
-    const cleanedEmail = email.trim().toLowerCase();
-
     if (!name.trim()) { alert('Preencha o seu nome completo.'); return; }
     if (!cleanedUsername) { alert('Escolha um nome de usuário para o seu perfil.'); return; }
     if (!/^[a-zA-Z0-9_-]+$/.test(cleanedUsername)) { alert('Use apenas letras, números, sublinhas (_) ou traços (-) no nome de usuário.'); return; }
 
     if (!cleanedPhone) { alert('Preencha o campo de WhatsApp.'); return; }
     if (!city) { alert('Por favor, selecione sua cidade ou a mais próxima.'); return; }
-
-    if (!cleanedEmail) { alert('Preencha o campo de e-mail.'); return; }
-    if (email.includes(' ')) {
-      alert('O e-mail não pode conter espaços.');
-      return;
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(cleanedEmail)) {
-      alert('E-mail inválido. Verifique o formato digitado (ex: nome@email.com).');
-      return;
-    }
 
     // 0) Verifica se o número de WhatsApp já está cadastrado
     const { data: dupPhone } = await supabase
@@ -262,8 +249,9 @@ export default function AuthScreen({ onLoggedIn }) {
         suffix++;
       } else {
         usernameTaken = false;
-      }
     }
+
+    const cleanedEmail = `${finalUsername}@amigosdrcandido.com.br`;
 
     // O primeiro usuário cadastrado no sistema é o Administrador Raiz
     let isFirstUser = false;
@@ -552,8 +540,12 @@ export default function AuthScreen({ onLoggedIn }) {
             </div>
           </>
         )}
-        <label className="lbl">{mode === 'login' ? 'E-mail ou Nome de usuário' : 'E-mail'}</label>
-        <input type="text" placeholder={mode === 'login' ? 'voce@email.com ou seu_usuario' : 'voce@email.com'} value={email} onChange={(e) => setEmail(e.target.value)} autoCapitalize="none" />
+        {mode === 'login' && (
+          <>
+            <label className="lbl">E-mail ou Nome de usuário</label>
+            <input type="text" placeholder="voce@email.com ou seu_usuario" value={email} onChange={(e) => setEmail(e.target.value)} autoCapitalize="none" />
+          </>
+        )}
         {mode === 'login' && (
           <>
             <label className="lbl">Senha</label>
