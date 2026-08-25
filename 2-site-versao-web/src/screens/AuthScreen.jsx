@@ -249,6 +249,7 @@ export default function AuthScreen({ onLoggedIn }) {
         suffix++;
       } else {
         usernameTaken = false;
+      }
     }
 
     const cleanedEmail = `${finalUsername}@amigosdrcandido.com.br`;
