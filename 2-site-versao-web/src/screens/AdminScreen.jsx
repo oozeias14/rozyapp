@@ -831,6 +831,30 @@ function StatsTab({ users, meetings, messages }) {
     }))
     .sort((a, b) => b.count - a.count);
 
+  const last5Users = [...users]
+    .sort((a, b) => {
+      if (a.created_at && b.created_at) {
+        return new Date(b.created_at) - new Date(a.created_at);
+      }
+      return b.id - a.id;
+    })
+    .slice(0, 5);
+
+  const fmtDateTime = (isoStr) => {
+    if (!isoStr) return '';
+    try {
+      const d = new Date(isoStr);
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      return `${day}/${month}/${year} às ${hours}:${minutes}`;
+    } catch {
+      return isoStr;
+    }
+  };
+
   // Cálculos dos períodos (Atual vs Anterior)
   const now = new Date();
   const ms24h = 24 * 60 * 60 * 1000;
@@ -1134,6 +1158,28 @@ function StatsTab({ users, meetings, messages }) {
               e mais {cityList.length - 8} regiões com cadastros
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Últimos 5 Cadastros */}
+      <div className="card" style={{ padding: '20px 16px', background: 'var(--panel2)', borderRadius: 16, border: '1px solid var(--line)', textAlign: 'left' }}>
+        <h3 style={{ fontSize: '14px', color: '#fff', fontWeight: 700, margin: '0 0 14px 0' }}>🆕 Últimos 5 Cadastros</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {last5Users.map((u) => (
+            <div key={u.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#090d16', border: '1px solid var(--line)', borderRadius: 12, gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                <Avatar person={u} size={30} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--ink3)' }}>ID: #{u.id} · @{u.username}</div>
+                </div>
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--teal)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                {fmtDateTime(u.created_at)}
+              </div>
+            </div>
+          ))}
+          {last5Users.length === 0 && <div className="empty" style={{ fontSize: '12px' }}>Nenhum usuário cadastrado.</div>}
         </div>
       </div>
 
