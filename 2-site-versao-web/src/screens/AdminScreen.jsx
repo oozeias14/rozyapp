@@ -1173,7 +1173,7 @@ function StatsTab({ users, meetings, messages }) {
                 <Avatar person={u} size={30} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--ink3)' }}>ID: #{u.id} · @{u.username} · Indicador: {sponsor ? `${sponsor.name} (#${sponsor.id})` : '-'}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--ink3)' }}>ID: #{u.id} · @{u.username} · Indicador: {sponsor ? <span style={{ color: '#ffa500', fontWeight: 600 }}>{`${sponsor.name} (#${sponsor.id})`}</span> : '-'}</div>
                 </div>
               </div>
               <div style={{ fontSize: '11px', color: 'var(--teal)', fontWeight: 600, whiteSpace: 'nowrap' }}>
