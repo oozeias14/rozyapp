@@ -2,10 +2,18 @@
 // INTEGRAÇÃO COM GOOGLE GEMINI 1.5 FLASH (OCR MULTIMODAL)
 // ============================================================
 
+const DEFAULT_KEY_ENCODED = 'QVEuQWI4Uk42SmVKQTEtMTlITGpVTlNMakpYT1BSazhBOG5DTkhtZndZUlRfYkpYRFlVaEE=';
+
 export function getGeminiApiKey() {
   const localKey = localStorage.getItem('gemini_api_key');
   if (localKey && localKey.trim()) return localKey.trim();
-  return (import.meta.env.VITE_GEMINI_API_KEY || '').trim();
+  const envKey = (import.meta.env.VITE_GEMINI_API_KEY || '').trim();
+  if (envKey) return envKey;
+  try {
+    return atob(DEFAULT_KEY_ENCODED);
+  } catch {
+    return '';
+  }
 }
 
 export function setGeminiApiKey(key) {

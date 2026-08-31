@@ -594,60 +594,53 @@ export default function MassSignupScreen({ profile }) {
       {/* --- BANNER DE DIGITALIZAÇÃO COM IA (EXCLUSIVO ADMIN) --- */}
       {isAdmin && (
         <div style={{
-          marginBottom: 16,
-          padding: '14px 16px',
-          background: 'linear-gradient(135deg, rgba(232, 197, 71, 0.12), rgba(61, 217, 179, 0.08))',
-          border: '1.5px solid rgba(232, 197, 71, 0.35)',
+          marginBottom: 18,
+          padding: '16px 18px',
+          background: 'linear-gradient(135deg, rgba(232, 197, 71, 0.14), rgba(61, 217, 179, 0.08))',
+          border: '1.5px solid rgba(232, 197, 71, 0.4)',
           borderRadius: 16,
-          boxShadow: '0 6px 24px rgba(0, 0, 0, 0.25)',
+          boxShadow: '0 8px 30px rgba(0, 0, 0, 0.3)',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
+          flexDirection: 'column',
           gap: 12
         }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
+          <div>
             <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>📸 Digitalização com IA</span>
-              <span style={{ fontSize: 10, background: 'rgba(232, 197, 71, 0.2)', color: 'var(--gold)', padding: '2px 7px', borderRadius: 6, fontWeight: 700 }}>ADMIN</span>
+              <span>📸 Digitalização Inteligente (OCR)</span>
+              <span style={{ fontSize: 10, background: 'rgba(232, 197, 71, 0.25)', color: 'var(--gold)', padding: '2px 8px', borderRadius: 6, fontWeight: 800 }}>ADMIN</span>
             </div>
-            <div style={{ fontSize: 11.5, color: 'var(--ink2)', marginTop: 3, lineHeight: 1.4 }}>
-              Tire uma foto da folha de presença física e a IA (Gemini 1.5 Flash) identificará todos os nomes e telefones automaticamente.
+            <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 4, lineHeight: 1.45 }}>
+              Tire uma foto da folha de presença física e a IA identificará todos os nomes e telefones automaticamente.
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-            <button
-              type="button"
-              className="btn btn-teal"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={scanning}
-              style={{
-                margin: 0,
-                padding: '9px 14px',
-                fontSize: 12.5,
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                background: 'linear-gradient(135deg, #3DD9B3, #25D366)',
-                color: '#051A14',
-                border: 'none',
-                boxShadow: '0 4px 12px rgba(61, 217, 179, 0.3)'
-              }}
-            >
-              <span>{scanning ? '⏳ Lendo...' : '📸 Ler Folha de Presença'}</span>
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              title="Configurações da Chave da IA"
-              onClick={() => setApiKeyModalOpen(true)}
-              style={{ margin: 0, padding: '9px 11px', fontSize: 13, border: '1px solid var(--line)' }}
-            >
-              ⚙️
-            </button>
-          </div>
+          <button
+            type="button"
+            className="btn btn-teal"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={scanning}
+            style={{
+              margin: 0,
+              padding: '15px 20px',
+              fontSize: 15,
+              fontWeight: 800,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 10,
+              background: 'linear-gradient(135deg, #3DD9B3, #25D366)',
+              color: '#051A14',
+              border: 'none',
+              borderRadius: 12,
+              boxShadow: '0 6px 20px rgba(61, 217, 179, 0.35)',
+              cursor: 'pointer',
+              width: '100%'
+            }}
+          >
+            <span style={{ fontSize: 20 }}>📸</span>
+            <span>{scanning ? '⏳ Analisando Folha de Presença...' : 'Ler Folha de Presença'}</span>
+          </button>
+
           <input
             ref={fileInputRef}
             type="file"
@@ -1104,62 +1097,6 @@ export default function MassSignupScreen({ profile }) {
         </div>
       )}
 
-      {/* --- MODAL DE CONFIGURAÇÃO DA CHAVE GEMINI AI --- */}
-      {apiKeyModalOpen && (
-        <div className="modal-bg" style={{ zIndex: 10003 }}>
-          <div className="modal" style={{ maxWidth: 420, padding: '22px 18px', textAlign: 'left' }}>
-            <h3 style={{ fontSize: 16, color: '#fff', fontWeight: 800, margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>🤖 Configurar Chave Gemini IA</span>
-            </h3>
-            <p style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5, marginBottom: 14 }}>
-              O leitor de folha de presença utiliza a inteligência artificial <strong>Google Gemini 1.5 Flash</strong> (gratuita para testes via Google AI Studio).
-            </p>
-
-            <label className="lbl">Sua Chave de API (Gemini)</label>
-            <input
-              type="password"
-              placeholder="AIzaSy..."
-              value={apiKeyInput}
-              onChange={(e) => setApiKeyInput(e.target.value)}
-              style={{ fontSize: 13, marginBottom: 10 }}
-            />
-
-            <div style={{ fontSize: 11.5, color: 'var(--ink3)', marginBottom: 16, lineHeight: 1.4 }}>
-              💡 Você pode gerar uma chave gratuita em 10 segundos no link oficial:{' '}
-              <a 
-                href="https://aistudio.google.com/app/apikey" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                style={{ color: 'var(--teal)', fontWeight: 700, textDecoration: 'underline' }}
-              >
-                Google AI Studio (Get API Key)
-              </a>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => {
-                  setApiKeyModalOpen(false);
-                  setPendingScanFile(null);
-                }}
-                style={{ flex: 1, margin: 0 }}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                className="btn btn-teal"
-                onClick={saveApiKeyAndProceed}
-                style={{ flex: 1.2, margin: 0 }}
-              >
-                Salvar Chave
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* --- MODAL DE SUCESSO DO CADASTRO MANUAL INDIVIDUAL --- */}
       {successData && (
