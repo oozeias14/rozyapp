@@ -101,7 +101,7 @@ export async function extractContactsFromAttendanceSheet(imageBlobOrFile, custom
   }
 
   const base64Data = await fileToBase64(imageBlobOrFile);
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
 
   const promptText = `Você é um assistente especialista em OCR e transcrição de listas de presença físicas (manuscritas ou impressas) em eventos no Brasil.
 Analise detalhadamente a foto da folha de presença enviada.
