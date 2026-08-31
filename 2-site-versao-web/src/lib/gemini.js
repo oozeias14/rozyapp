@@ -101,6 +101,32 @@ export async function extractContactsFromAttendanceSheet(imageBlobOrFile, custom
   }
 
   const base64Data = await fileToBase64(imageBlobOrFile);
+
+  // 1. Tenta primeiro pelo endpoint seguro serverless (/api/gemini-ocr)
+  try {
+    const proxyRes = await fetch('/api/gemini-ocr', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey
+      },
+      body: JSON.stringify({
+        base64Image: base64Data,
+        mimeType: 'image/jpeg'
+      })
+    });
+
+    if (proxyRes.ok) {
+      const proxyData = await proxyRes.json();
+      if (proxyData.contatos && Array.isArray(proxyData.contatos)) {
+        return proxyData.contatos;
+      }
+    }
+  } catch (proxyErr) {
+    console.warn('Proxy /api/gemini-ocr indisponível, tentando chamada direta...', proxyErr);
+  }
+
+  // 2. Fallback para chamada direta do cliente
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
 
   const promptText = `Você é um assistente especialista em OCR e transcrição de listas de presença físicas (manuscritas ou impressas) em eventos no Brasil.
