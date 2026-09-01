@@ -46,6 +46,18 @@ export default function MassSignupScreen({ profile }) {
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentName: '' });
   const [batchResult, setBatchResult] = useState(null);
+  const [vcfSuccessData, setVcfSuccessData] = useState(null);
+  const [copiedMessage, setCopiedMessage] = useState(false);
+
+  const BROADCAST_WELCOME_MESSAGE = `Olá! Seja muito bem-vindo(a) ao projeto Amigos Dr. Cândido! 🎉
+
+Seu cadastro foi realizado com sucesso em nosso sistema.
+
+🔗 Link de Acesso: https://amigosdrcandido.com.br
+📱 Login: Seu número de WhatsApp
+🔑 Senha inicial: 123456
+
+Acesse agora para acompanhar seus dados e indicações!`;
 
   useEffect(() => {
     (async () => {
@@ -260,7 +272,14 @@ export default function MassSignupScreen({ profile }) {
     link.href = url;
     link.click();
 
-    alert(`Arquivo vCard gerado com ${valid.length} contatos! Você já pode abri-lo no celular para criar a Lista de Transmissão.`);
+    setVcfSuccessData({ count: valid.length });
+    setCopiedMessage(false);
+  }
+
+  function handleCopyBroadcastMessage() {
+    navigator.clipboard.writeText(BROADCAST_WELCOME_MESSAGE);
+    setCopiedMessage(true);
+    setTimeout(() => setCopiedMessage(false), 3000);
   }
 
   // --- Cadastro em Massa no Banco de Dados ---
@@ -1027,21 +1046,92 @@ export default function MassSignupScreen({ profile }) {
               )}
             </div>
 
-            <p style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5, marginBottom: 16 }}>
-              Todos os novos membros foram integrados à árvore de indicações e podem acessar o sistema com a senha padrão <strong>123456</strong>.
-            </p>
+            <div style={{ background: '#05070d', border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px', textAlign: 'left', marginBottom: 14 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--gold)', marginBottom: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>MENSAGEM DE BOAS-VINDAS / ACESSO:</span>
+                {copiedMessage && <span style={{ color: 'var(--teal)', fontSize: 10 }}>✓ Copiado!</span>}
+              </div>
+              <pre style={{ margin: 0, fontSize: 11, color: 'var(--ink1)', whiteSpace: 'pre-wrap', fontFamily: 'inherit', lineHeight: 1.4 }}>
+                {BROADCAST_WELCOME_MESSAGE}
+              </pre>
+            </div>
 
-            <button
-              type="button"
-              className="btn btn-teal"
-              style={{ width: '100%', margin: 0 }}
-              onClick={() => {
-                setBatchResult(null);
-                setScannedContacts(null);
-              }}
-            >
-              Concluir e Voltar
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={handleCopyBroadcastMessage}
+                style={{ width: '100%', margin: 0, padding: '10px', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, border: '1px solid var(--teal)', color: 'var(--teal)' }}
+              >
+                <span>{copiedMessage ? '✅ Mensagem Copiada!' : '📋 Copiar Mensagem de Boas-Vindas'}</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-teal"
+                style={{ width: '100%', margin: 0, padding: '10px', fontSize: 12.5, fontWeight: 800 }}
+                onClick={() => {
+                  setBatchResult(null);
+                  setScannedContacts(null);
+                }}
+              >
+                Concluir e Voltar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL DE SUCESSO DA EXPORTAÇÃO VCARD / LISTA DE TRANSMISSÃO --- */}
+      {vcfSuccessData && (
+        <div className="modal-bg" style={{ zIndex: 10003 }}>
+          <div className="modal" style={{ maxWidth: 440, width: '92%', padding: '20px 18px', textAlign: 'center' }}>
+            <div style={{ fontSize: 40, marginBottom: 8 }}>📲</div>
+            <h2 style={{ fontSize: 17, fontWeight: 800, color: 'var(--teal)', margin: '0 0 6px 0' }}>
+              Lista vCard Gerada!
+            </h2>
+            <div style={{ fontSize: 12, color: 'var(--ink2)', marginBottom: 14 }}>
+              <strong>{vcfSuccessData.count} contatos</strong> prontos no arquivo baixado com prefixo <strong>T1</strong>.
+            </div>
+
+            {/* Caixa com a mensagem de boas-vindas */}
+            <div style={{ background: '#05070d', border: '1px solid var(--line)', borderRadius: 10, padding: '12px 14px', textAlign: 'left', marginBottom: 14 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--gold)', marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>MENSAGEM PARA A LISTA DE TRANSMISSÃO:</span>
+                {copiedMessage && <span style={{ color: 'var(--teal)', fontSize: 10 }}>✓ Copiado!</span>}
+              </div>
+              <pre style={{ margin: 0, fontSize: 11.5, color: 'var(--ink1)', whiteSpace: 'pre-wrap', fontFamily: 'inherit', lineHeight: 1.45 }}>
+                {BROADCAST_WELCOME_MESSAGE}
+              </pre>
+            </div>
+
+            {/* Passos rápidos */}
+            <div style={{ background: 'var(--panel2)', borderRadius: 8, padding: '10px 12px', textAlign: 'left', marginBottom: 16, fontSize: 11, color: 'var(--ink2)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div><strong>1.</strong> Abra o arquivo <code>.vcf</code> baixado para salvar na agenda do celular.</div>
+              <div><strong>2.</strong> No WhatsApp, crie uma <strong>Lista de Transmissão</strong> com esses contatos (<code>T1...</code>).</div>
+              <div><strong>3.</strong> Copie a mensagem abaixo e envie para todos de uma vez!</div>
+            </div>
+
+            {/* Botões de Ação */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button
+                type="button"
+                className="btn btn-teal"
+                onClick={handleCopyBroadcastMessage}
+                style={{ width: '100%', margin: 0, padding: '11px', fontSize: 13, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+              >
+                <span>{copiedMessage ? '✅ Mensagem Copiada!' : '📋 Copiar Mensagem da Transmissão'}</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setVcfSuccessData(null)}
+                style={{ width: '100%', margin: 0, padding: '9px', fontSize: 12 }}
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}
