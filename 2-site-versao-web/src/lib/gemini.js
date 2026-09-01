@@ -159,8 +159,8 @@ Retorne EXCLUSIVAMENTE um objeto JSON válido com a seguinte estrutura:
         parts: [
           { text: promptText },
           {
-            inline_data: {
-              mime_type: "image/jpeg",
+            inlineData: {
+              mimeType: "image/jpeg",
               data: base64Data
             }
           }
@@ -168,7 +168,7 @@ Retorne EXCLUSIVAMENTE um objeto JSON válido com a seguinte estrutura:
       }
     ],
     generationConfig: {
-      response_mime_type: "application/json",
+      responseMimeType: "application/json",
       temperature: 0.1
     }
   };
