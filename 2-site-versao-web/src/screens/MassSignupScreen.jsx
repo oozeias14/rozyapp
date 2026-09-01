@@ -42,11 +42,7 @@ export default function MassSignupScreen({ profile }) {
   const [apiKeyInput, setApiKeyInput] = useState(getGeminiApiKey());
 
   // Estados do Modal de Conferência da IA
-  const [batchIndicatorSearch, setBatchIndicatorSearch] = useState('');
-  const [batchSelectedIndicator, setBatchSelectedIndicator] = useState(null);
-  const [batchFoundIndicators, setBatchFoundIndicators] = useState([]);
-  const [batchShowDropdown, setBatchShowDropdown] = useState(false);
-  const [batchDefaultCity, setBatchDefaultCity] = useState('Brasília');
+  const [batchDefaultCity, setBatchDefaultCity] = useState(profile?.city || 'Brasília');
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentName: '' });
   const [batchResult, setBatchResult] = useState(null);
@@ -92,39 +88,6 @@ export default function MassSignupScreen({ profile }) {
     return () => clearTimeout(timer);
   }, [refSearch, selectedRef]);
 
-  // Busca de indicador no modal de lote da IA
-  useEffect(() => {
-    if (batchSelectedIndicator) {
-      setBatchFoundIndicators([]);
-      setBatchShowDropdown(false);
-      return;
-    }
-    if (batchIndicatorSearch.trim().length < 3) {
-      setBatchFoundIndicators([]);
-      setBatchShowDropdown(false);
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      try {
-        const query = batchIndicatorSearch.trim();
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('id, name, username, role, coord_id')
-          .or(`username.ilike.%${query}%,name.ilike.%${query}%`)
-          .limit(6);
-
-        if (!error && data) {
-          setBatchFoundIndicators(data);
-          setBatchShowDropdown(true);
-        }
-      } catch (err) {
-        console.error('Error searching batch indicators:', err);
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [batchIndicatorSearch, batchSelectedIndicator]);
 
   function formatPhoneDisplay(val) {
     let cleaned = (val || '').replace(/\D/g, '');
@@ -296,12 +259,13 @@ export default function MassSignupScreen({ profile }) {
       return;
     }
 
-    if (!batchSelectedIndicator) {
-      alert('Por favor, selecione quem será o Indicador / Patrocinador padrão destes novos membros.');
+    const targetIndicator = profile;
+    if (!targetIndicator?.id) {
+      alert('Erro: Usuário autenticado não encontrado.');
       return;
     }
 
-    const confirmed = window.confirm(`Deseja cadastrar ${valid.length} pessoas na rede sob o indicador ${batchSelectedIndicator.name} (@${batchSelectedIndicator.username})?`);
+    const confirmed = window.confirm(`Deseja cadastrar ${valid.length} pessoas na rede sob o seu indicador @${targetIndicator.username} na cidade ${batchDefaultCity}?`);
     if (!confirmed) return;
 
     setBatchLoading(true);
@@ -326,7 +290,7 @@ export default function MassSignupScreen({ profile }) {
       });
 
       const cleanedPhone = item.phone.replace(/\D/g, '');
-      const itemCity = item.city || batchDefaultCity || 'Brasília';
+      const itemCity = batchDefaultCity || 'Brasília';
 
       try {
         // 1) Checa duplicidade de WhatsApp
@@ -382,16 +346,16 @@ export default function MassSignupScreen({ profile }) {
         }
 
         // 4) Encontra slot na árvore binária / spillover
-        const { data: foundSlot, error: slotErr } = await supabase.rpc('find_slot', { ref_id: batchSelectedIndicator.id });
+        const { data: foundSlot, error: slotErr } = await supabase.rpc('find_slot', { ref_id: targetIndicator.id });
         if (slotErr) {
           console.error(`Erro slot para ${item.name}:`, slotErr);
           errorCount++;
           continue;
         }
 
-        const coordId = (batchSelectedIndicator.role === 'coord' || batchSelectedIndicator.role === 'admin') 
-          ? batchSelectedIndicator.id 
-          : batchSelectedIndicator.coord_id;
+        const coordId = (targetIndicator.role === 'coord' || targetIndicator.role === 'admin' || targetIndicator.role === 'admin2') 
+          ? targetIndicator.id 
+          : targetIndicator.coord_id;
 
         // 5) Insere Profile
         const { error: profErr } = await supabase.from('profiles').insert({
@@ -403,7 +367,7 @@ export default function MassSignupScreen({ profile }) {
           role: 'user',
           coord_id: coordId,
           parent_id: foundSlot,
-          referrer_id: batchSelectedIndicator.id,
+          referrer_id: targetIndicator.id,
           username: finalUsername,
           city: itemCity || null
         });
@@ -432,6 +396,7 @@ export default function MassSignupScreen({ profile }) {
     const newCount = await fetchTotalUsersCount();
     setTotalUsers(newCount);
   }
+
 
   // --- Cadastro Manual Individual ---
   async function handleCadastro(e) {
@@ -866,59 +831,31 @@ export default function MassSignupScreen({ profile }) {
               </button>
             </div>
 
-            {/* Configurações em Lote (Indicador e Cidade) */}
-            <div style={{ background: 'var(--panel2)', padding: '12px 14px', borderRadius: 12, border: '1px solid var(--line)', marginBottom: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            {/* Configurações em Lote: Indicador Fixo (Você) e Cidade Padrão para Todos */}
+            <div style={{ background: 'var(--panel2)', padding: '12px 14px', borderRadius: 12, border: '1.5px solid rgba(61, 217, 179, 0.25)', marginBottom: 12, display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 12, alignItems: 'center' }}>
               <div>
-                <label className="lbl" style={{ fontSize: 10 }}>Indicador / Patrocinador Padrão <span className="req">*</span></label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    placeholder="Buscar indicador (mín. 3 letras)..."
-                    value={batchIndicatorSearch}
-                    onChange={(e) => {
-                      setBatchIndicatorSearch(e.target.value);
-                      if (batchSelectedIndicator) setBatchSelectedIndicator(null);
-                    }}
-                    style={{ fontSize: 12, padding: '7px 9px', margin: 0 }}
-                  />
-                  {batchSelectedIndicator && (
-                    <div style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'var(--teal-dim)', color: 'var(--teal)', fontSize: 10.5, fontWeight: '700', padding: '2px 6px', borderRadius: 6 }}>
-                      ✓ {batchSelectedIndicator.name.split(' ')[0]}
-                    </div>
-                  )}
-
-                  {batchShowDropdown && batchFoundIndicators.length > 0 && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#090d16', border: '1px solid var(--line)', borderRadius: 8, zIndex: 1000, maxHeight: 140, overflowY: 'auto', marginTop: 4, boxShadow: '0 8px 24px rgba(0,0,0,0.6)' }}>
-                      {batchFoundIndicators.map(ind => (
-                        <div
-                          key={ind.id}
-                          onClick={() => {
-                            setBatchSelectedIndicator(ind);
-                            setBatchIndicatorSearch(`@${ind.username} - ${ind.name}`);
-                            setBatchShowDropdown(false);
-                          }}
-                          style={{ padding: '8px 10px', cursor: 'pointer', borderBottom: '1px solid var(--line)', color: 'var(--ink1)', fontSize: 12 }}
-                        >
-                          <strong>@{ind.username}</strong> - {ind.name}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                <label className="lbl" style={{ fontSize: 10, color: 'var(--ink2)', marginBottom: 3 }}>INDICADOR (SEU LOGIN)</label>
+                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>👤 @{profile?.username || 'admin'}</span>
+                  <span style={{ fontSize: 9.5, background: 'var(--teal-dim)', color: 'var(--teal)', padding: '2px 6px', borderRadius: 6, fontWeight: 700 }}>VOCÊ</span>
                 </div>
               </div>
 
               <div>
-                <label className="lbl" style={{ fontSize: 10 }}>Cidade Padrão</label>
+                <label className="lbl" style={{ fontSize: 10, color: 'var(--gold)', marginBottom: 3 }}>CIDADE / RA PADRÃO (TODOS) <span className="req">*</span></label>
                 <select
                   value={batchDefaultCity}
                   onChange={(e) => setBatchDefaultCity(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '7px 9px',
-                    fontSize: 12,
-                    background: 'rgba(255, 255, 255, 0.04)',
+                    padding: '8px 10px',
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    background: 'rgba(255, 255, 255, 0.06)',
                     color: '#fff',
-                    border: '1px solid var(--line)',
-                    borderRadius: 8
+                    border: '1.5px solid rgba(232, 197, 71, 0.35)',
+                    borderRadius: 8,
+                    cursor: 'pointer'
                   }}
                 >
                   {CITIES.map(c => (
@@ -1018,7 +955,7 @@ export default function MassSignupScreen({ profile }) {
                 type="button"
                 className="btn btn-teal"
                 onClick={handleBatchRegister}
-                disabled={batchLoading || !batchSelectedIndicator}
+                disabled={batchLoading}
                 style={{ flex: 1.3, margin: 0, padding: '10px 12px', fontSize: 12.5, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
               >
                 <span>⚡ Cadastrar Todos na Rede</span>
