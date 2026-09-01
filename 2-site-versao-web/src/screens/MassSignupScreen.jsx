@@ -815,9 +815,9 @@ Acesse agora para acompanhar seus dados e indicações!`;
                 className="btn btn-ghost"
                 onClick={handleExportScannedVCF}
                 disabled={batchLoading}
-                style={{ flex: 1, margin: 0, padding: '10px 12px', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, border: '1px solid var(--teal)', color: 'var(--teal)' }}
+                style={{ flex: 1, margin: 0, padding: '10px 12px', fontSize: 12.5, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, border: '1.5px solid var(--teal)', color: 'var(--teal)' }}
               >
-                <span>📥 Baixar Lista vCard (.VCF)</span>
+                <span>📲 Importar para o WhatsApp</span>
               </button>
 
               <button
@@ -926,10 +926,10 @@ Acesse agora para acompanhar seus dados e indicações!`;
           <div className="modal" style={{ maxWidth: 440, width: '92%', padding: '20px 18px', textAlign: 'center' }}>
             <div style={{ fontSize: 40, marginBottom: 8 }}>📲</div>
             <h2 style={{ fontSize: 17, fontWeight: 800, color: 'var(--teal)', margin: '0 0 6px 0' }}>
-              Lista vCard Gerada!
+              Contatos Prontos para o WhatsApp!
             </h2>
             <div style={{ fontSize: 12, color: 'var(--ink2)', marginBottom: 14 }}>
-              <strong>{vcfSuccessData.count} contatos</strong> prontos no arquivo baixado com prefixo <strong>T1</strong>.
+              <strong>{vcfSuccessData.count} contatos</strong> prontos para salvar na agenda com o prefixo <strong>T1</strong>.
             </div>
 
             {/* Caixa com a mensagem de boas-vindas */}
@@ -944,10 +944,10 @@ Acesse agora para acompanhar seus dados e indicações!`;
             </div>
 
             {/* Passos rápidos */}
-            <div style={{ background: 'var(--panel2)', borderRadius: 8, padding: '10px 12px', textAlign: 'left', marginBottom: 16, fontSize: 11, color: 'var(--ink2)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div><strong>1.</strong> Abra o arquivo <code>.vcf</code> baixado para salvar na agenda do celular.</div>
-              <div><strong>2.</strong> No WhatsApp, crie uma <strong>Lista de Transmissão</strong> com esses contatos (<code>T1...</code>).</div>
-              <div><strong>3.</strong> Copie a mensagem abaixo e envie para todos de uma vez!</div>
+            <div style={{ background: 'var(--panel2)', borderRadius: 8, padding: '10px 12px', textAlign: 'left', marginBottom: 16, fontSize: 11, color: 'var(--ink2)', display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <div><strong>1.</strong> Toque no arquivo baixado para <strong>Salvar todos os contatos na agenda</strong> do celular.</div>
+              <div><strong>2.</strong> No WhatsApp, abra uma <strong>Lista de Transmissão</strong> e selecione esses contatos (<code>T1...</code>).</div>
+              <div><strong>3.</strong> Copie a mensagem abaixo e envie para todos de uma só vez!</div>
             </div>
 
             {/* Botões de Ação */}
