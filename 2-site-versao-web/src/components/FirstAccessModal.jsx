@@ -56,7 +56,8 @@ export default function FirstAccessModal({ profile, onClose }) {
     waPhone = '55' + waPhone;
   }
 
-  const messageText = `Olá Dr. Cândido! Acabei de fazer meu primeiro acesso no Amigos Dr Cândido. *Meu usuário:* @${profile.username}`;
+  const userLogin = profile.whatsapp || profile.phone || profile.username;
+  const messageText = `Olá Dr. Cândido! Acabei de fazer meu primeiro acesso no Amigos Dr Cândido. *Nome:* ${profile.name} | *Login:* ${userLogin}`;
   const waUrl = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
     ? `whatsapp://send?phone=${waPhone}&text=${encodeURIComponent(messageText)}`
     : `https://web.whatsapp.com/send?phone=${waPhone}&text=${encodeURIComponent(messageText)}`;
@@ -89,8 +90,8 @@ export default function FirstAccessModal({ profile, onClose }) {
         </p>
 
         <div style={{ background: 'var(--panel2)', borderRadius: 12, padding: 14, marginBottom: 20, textAlign: 'left', border: '1px solid var(--line)' }}>
-          <div style={{ fontSize: 12, color: 'var(--ink3)' }}>Seu Usuário:</div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--teal)', marginBottom: 8 }}>@{profile.username}</div>
+          <div style={{ fontSize: 12, color: 'var(--ink3)' }}>Seu Login:</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--teal)', marginBottom: 8 }}>{userLogin}</div>
           
           <div style={{ fontSize: 12, color: 'var(--ink3)' }}>Dr. Cândido WhatsApp:</div>
           <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>
