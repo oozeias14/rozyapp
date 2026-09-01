@@ -153,6 +153,53 @@ export default function AuthScreen({ onLoggedIn }) {
     }
   }, []);
 
+  function extractPhoneVariations(input) {
+    if (!input) return [];
+    const digitsOnly = input.replace(/\D/g, '');
+    if (digitsOnly.length < 8) return [];
+
+    let clean = digitsOnly;
+    if (clean.startsWith('55') && clean.length > 11) {
+      clean = clean.slice(2);
+    }
+    if (clean.startsWith('0')) {
+      clean = clean.replace(/^0+/, '');
+    }
+
+    let full11 = clean;
+    if (clean.length === 8) {
+      full11 = '619' + clean;
+    } else if (clean.length === 9) {
+      full11 = '61' + clean;
+    } else if (clean.length === 10 && clean.startsWith('61')) {
+      full11 = '619' + clean.slice(2);
+    }
+
+    const variations = new Set();
+    variations.add(digitsOnly);
+    variations.add(clean);
+    variations.add(full11);
+
+    if (full11.length === 11) {
+      const ddd = full11.slice(0, 2);
+      const p1 = full11.slice(2, 7);
+      const p2 = full11.slice(7);
+      const nineDigits = full11.slice(2);
+      const eightDigits = full11.slice(3);
+
+      variations.add(nineDigits); // 993106490
+      variations.add(eightDigits); // 93106490
+      variations.add(`0${full11}`); // 061993106490
+      variations.add(`55${full11}`); // 5561993106490
+      variations.add(`(${ddd}) ${p1}-${p2}`); // (61) 99310-6490
+      variations.add(`(${ddd}) ${p1}${p2}`);
+      variations.add(`${ddd}${p1}-${p2}`);
+      variations.add(`${ddd} ${p1}-${p2}`);
+    }
+
+    return Array.from(variations).filter(Boolean);
+  }
+
   async function handleLogin(e) {
     e.preventDefault();
     if (!email.trim() || !password) { alert('Preencha todos os campos.'); return; }
@@ -161,24 +208,45 @@ export default function AuthScreen({ onLoggedIn }) {
     try {
       let loginEmail = email.trim();
       if (loginEmail && !loginEmail.includes('@')) {
-        // É um nome de usuário! Busca o e-mail correspondente
-        const { data: foundProfile, error: profileError } = await supabase
-          .from('profiles')
-          .select('email')
-          .eq('username', loginEmail.toLowerCase())
-          .maybeSingle();
-        
-        if (profileError) {
-          setLoading(false);
-          alert('Erro ao buscar usuário: ' + translateError(profileError));
-          return;
+        let foundProfile = null;
+
+        // 1. Tenta buscar por WhatsApp (aceita 061..., 61..., 993106490, etc.)
+        const phoneVariants = extractPhoneVariations(loginEmail);
+        if (phoneVariants.length > 0) {
+          const { data: phoneProfile } = await supabase
+            .from('profiles')
+            .select('email, username, whatsapp, phone')
+            .or(`whatsapp.in.(${phoneVariants.join(',')}),phone.in.(${phoneVariants.join(',')})`)
+            .limit(1)
+            .maybeSingle();
+
+          if (phoneProfile) {
+            foundProfile = phoneProfile;
+          }
         }
 
-        if (foundProfile) {
+        // 2. Se não encontrou por WhatsApp, busca por nome de usuário
+        if (!foundProfile) {
+          const cleanUser = loginEmail.toLowerCase().replace(/\s/g, '');
+          const { data: userProfile, error: profileError } = await supabase
+            .from('profiles')
+            .select('email')
+            .eq('username', cleanUser)
+            .maybeSingle();
+
+          if (profileError) {
+            setLoading(false);
+            alert('Erro ao buscar usuário: ' + translateError(profileError));
+            return;
+          }
+          foundProfile = userProfile;
+        }
+
+        if (foundProfile && foundProfile.email) {
           loginEmail = foundProfile.email;
         } else {
           setLoading(false);
-          alert('Este nome de usuário não existe.');
+          alert('WhatsApp ou Usuário não encontrado. Verifique se digitou o número ou nome corretamente.');
           return;
         }
       }
@@ -543,8 +611,8 @@ export default function AuthScreen({ onLoggedIn }) {
         )}
         {mode === 'login' && (
           <>
-            <label className="lbl">E-mail ou Nome de usuário</label>
-            <input type="text" placeholder="voce@email.com ou seu_usuario" value={email} onChange={(e) => setEmail(e.target.value)} autoCapitalize="none" />
+            <label className="lbl">WhatsApp, Usuário ou E-mail</label>
+            <input type="text" placeholder="WhatsApp (ex: 61993106490), usuário ou e-mail" value={email} onChange={(e) => setEmail(e.target.value)} autoCapitalize="none" />
           </>
         )}
         {mode === 'login' && (
