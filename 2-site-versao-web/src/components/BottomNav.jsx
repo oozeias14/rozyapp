@@ -31,7 +31,7 @@ export default function BottomNav({ active, onChange, profile, hasNewMuralMessag
     { key: 'home', label: 'Mural' },
     { key: 'network', label: 'Rede' },
     { key: 'agenda', label: 'Eventos' },
-    { key: 'mass_signup', label: 'Cadastro' },
+    isStaff && { key: 'mass_signup', label: 'Cadastro' },
     { key: 'qrcode', label: 'QR Code' },
     { key: 'profile', label: 'Perfil' },
   ].filter(Boolean);
