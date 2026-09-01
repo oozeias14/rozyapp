@@ -183,13 +183,25 @@ export default function MassSignupScreen({ profile }) {
     }
   }
 
+  function normalizePhoneWithDDD61(raw) {
+    let digits = (raw || '').replace(/\D/g, '');
+    if (digits.length === 8) {
+      digits = '619' + digits;
+    } else if (digits.length === 9) {
+      digits = '61' + digits;
+    } else if (digits.length === 10 && digits.startsWith('61')) {
+      digits = '619' + digits.slice(2);
+    }
+    return digits;
+  }
+
   // --- Manipulação dos Contatos Escaneados no Modal ---
   function updateScannedContact(id, field, value) {
     setScannedContacts(prev => prev.map(c => {
       if (c.id === id) {
         const updated = { ...c, [field]: value };
         if (field === 'phone') {
-          const digits = value.replace(/\D/g, '');
+          const digits = normalizePhoneWithDDD61(value);
           updated.needs_review = digits.length < 10;
         }
         return updated;
@@ -208,7 +220,7 @@ export default function MassSignupScreen({ profile }) {
       {
         id: Date.now(),
         name: '',
-        phone: '',
+        phone: '61',
         city: batchDefaultCity,
         needs_review: true,
         notes: 'Adicionado manualmente'
@@ -227,7 +239,7 @@ export default function MassSignupScreen({ profile }) {
     const cards = valid.map((u, index) => {
       const listIndex = Math.floor(index / 250) + 1;
       const fullName = `T${listIndex} ${u.name.trim()}`;
-      let tel = (u.phone || '').replace(/\D/g, '');
+      let tel = normalizePhoneWithDDD61(u.phone);
       const cleanTel = tel.length === 10 || tel.length === 11 ? '55' + tel : tel;
       
       return [
@@ -289,7 +301,7 @@ export default function MassSignupScreen({ profile }) {
         currentName: item.name
       });
 
-      const cleanedPhone = item.phone.replace(/\D/g, '');
+      const cleanedPhone = normalizePhoneWithDDD61(item.phone);
       const itemCity = batchDefaultCity || 'Brasília';
 
       try {

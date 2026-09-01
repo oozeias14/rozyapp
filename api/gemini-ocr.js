@@ -25,10 +25,10 @@ Identifique e extraia TODOS os nomes e números de telefone / WhatsApp presentes
 
 Instruções rigorosas:
 1. 'name': Nome completo da pessoa (corrija capitalização inicial de cada palavra, ex: 'Maria Silva').
-2. 'phone': Apenas os números limpos do telefone/WhatsApp (sem parênteses ou traços). Preserve o DDD se estiver visível (ex: '61999998888'). Se faltar o DDD ou o dígito 9, mantenha os dígitos visíveis legíveis.
+2. 'phone': Apenas os números limpos do telefone/WhatsApp (sem parênteses ou traços). O DDD PADRÃO DE TODOS É 61 (Brasília/DF). Se na folha o número estiver sem DDD (ex: '999998888' ou '88887777'), complete automaticamente com o DDD 61 (ex: '61999998888').
 3. 'city': Cidade ou bairro se estiver anotado ao lado, caso contrário deixe null.
-4. 'needs_review': true se a caligrafia estiver difícil, rasurada ou o telefone tiver menos de 8 dígitos; false se estiver perfeitamente claro e legível.
-5. 'notes': Qualquer anotação relevante (ex: 'caligrafia ilegível', 'sem ddd', 'apenas primeiro nome').
+4. 'needs_review': true se a caligrafia estiver difícil, rasurada ou o telefone tiver menos de 8 dígitos; false se estiver legível.
+5. 'notes': Qualquer anotação relevante (ex: 'caligrafia ilegível', 'apenas primeiro nome').
 
 Retorne EXCLUSIVAMENTE um objeto JSON válido com a seguinte estrutura:
 {
@@ -93,12 +93,19 @@ Retorne EXCLUSIVAMENTE um objeto JSON válido com a seguinte estrutura:
       
       const cleanedList = list.map((item, idx) => {
         let rawPhone = (item.phone || item.telefone || item.whatsapp || '').toString().replace(/\D/g, '');
+        if (rawPhone.length === 8) {
+          rawPhone = '619' + rawPhone;
+        } else if (rawPhone.length === 9) {
+          rawPhone = '61' + rawPhone;
+        } else if (rawPhone.length === 10 && rawPhone.startsWith('61')) {
+          rawPhone = '619' + rawPhone.slice(2);
+        }
         return {
           id: idx + 1,
           name: (item.name || item.nome || '').trim(),
           phone: rawPhone,
           city: (item.city || item.cidade || '').trim(),
-          needs_review: Boolean(item.needs_review),
+          needs_review: Boolean(item.needs_review || rawPhone.length < 10),
           notes: (item.notes || item.observacao || '').trim()
         };
       }).filter(c => c.name || c.phone);
