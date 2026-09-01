@@ -11,7 +11,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const DEFAULT_KEY = Buffer.from('QVEuQWI4Uk42SmVKQTEtMTlITGpVTlNMakpYT1BSazhBOG5DTkhtZndZUlRfYkpYRFlVaEE=', 'base64').toString('utf-8');
+  const DEFAULT_KEY = Buffer.from('QVEuQWI4Uk42SmVKQTEtMTlITGpVTlNMakpYT1BSazhBOG5DTkhtZndaUlRfYkpYRFlVaEE=', 'base64').toString('utf-8');
   const apiKey = req.headers['x-api-key'] || process.env.VITE_GEMINI_API_KEY || DEFAULT_KEY;
   const { base64Image, mimeType } = req.body || {};
 
