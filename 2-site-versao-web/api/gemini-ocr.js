@@ -43,63 +43,72 @@ Retorne EXCLUSIVAMENTE um objeto JSON válido com a seguinte estrutura:
   ]
 }`;
 
-  try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
-    const geminiRes = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: promptText },
-              {
-                inlineData: {
-                  mimeType: mimeType || 'image/jpeg',
-                  data: base64Image
+  const candidateModels = ['gemini-flash-lite-latest', 'gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.7-flash'];
+  let lastError = null;
+
+  for (const model of candidateModels) {
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const geminiRes = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: promptText },
+                {
+                  inlineData: {
+                    mimeType: mimeType || 'image/jpeg',
+                    data: base64Image
+                  }
                 }
-              }
-            ]
+              ]
+            }
+          ],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.1
           }
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.1
-        }
-      })
-    });
+        })
+      });
 
-    const geminiData = await geminiRes.json();
-    if (!geminiRes.ok) {
-      const msg = geminiData?.error?.message || `Erro HTTP ${geminiRes.status}`;
-      return res.status(geminiRes.status).json({ error: msg });
+      const geminiData = await geminiRes.json();
+      if (!geminiRes.ok) {
+        lastError = geminiData?.error?.message || `Erro HTTP ${geminiRes.status}`;
+        console.warn(`Modelo ${model} falhou com: ${lastError}, tentando próximo...`);
+        continue;
+      }
+
+      const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawText) {
+        lastError = 'A IA não identificou nenhum texto na imagem.';
+        continue;
+      }
+
+      const parsed = JSON.parse(rawText);
+      const list = Array.isArray(parsed) ? parsed : (parsed.contatos || parsed.contacts || parsed.participantes || []);
+      
+      const cleanedList = list.map((item, idx) => {
+        let rawPhone = (item.phone || item.telefone || item.whatsapp || '').toString().replace(/\D/g, '');
+        return {
+          id: idx + 1,
+          name: (item.name || item.nome || '').trim(),
+          phone: rawPhone,
+          city: (item.city || item.cidade || '').trim(),
+          needs_review: Boolean(item.needs_review),
+          notes: (item.notes || item.observacao || '').trim()
+        };
+      }).filter(c => c.name || c.phone);
+
+      return res.status(200).json({ contatos: cleanedList });
+    } catch (err) {
+      lastError = err.message;
+      console.warn(`Erro no modelo ${model}:`, err);
     }
-
-    const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!rawText) {
-      return res.status(400).json({ error: 'A IA não identificou nenhum texto na imagem.' });
-    }
-
-    const parsed = JSON.parse(rawText);
-    const list = Array.isArray(parsed) ? parsed : (parsed.contatos || parsed.contacts || parsed.participantes || []);
-    
-    const cleanedList = list.map((item, idx) => {
-      let rawPhone = (item.phone || item.telefone || item.whatsapp || '').toString().replace(/\D/g, '');
-      return {
-        id: idx + 1,
-        name: (item.name || item.nome || '').trim(),
-        phone: rawPhone,
-        city: (item.city || item.cidade || '').trim(),
-        needs_review: Boolean(item.needs_review),
-        notes: (item.notes || item.observacao || '').trim()
-      };
-    }).filter(c => c.name || c.phone);
-
-    return res.status(200).json({ contatos: cleanedList });
-  } catch (err) {
-    console.error('Erro na função serverless gemini-ocr:', err);
-    return res.status(500).json({ error: err.message || 'Erro interno ao processar OCR' });
   }
+
+  return res.status(500).json({ error: lastError || 'Erro ao processar imagem da folha com os modelos disponíveis.' });
 }
