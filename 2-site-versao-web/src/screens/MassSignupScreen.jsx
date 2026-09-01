@@ -777,7 +777,7 @@ Acesse agora para acompanhar seus dados e indicações!`;
                 }}
               />
               <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 4, lineHeight: 1.35 }}>
-                📱 Ao salvar no celular todos contatos terão esse nome de lista (ex: <strong>{scannedContacts[0]?.name ? scannedContacts[0].name.trim() : 'Ozeias'} {broadcastListName.trim() || 'Reunião Casa Camilla'}</strong>)
+                📱 Ao salvar no celular todos contatos terão esse nome de lista.
               </div>
             </div>
 
