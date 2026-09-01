@@ -42,6 +42,7 @@ export default function MassSignupScreen({ profile }) {
   const [apiKeyInput, setApiKeyInput] = useState(getGeminiApiKey());
 
   // Estados do Modal de Conferência da IA
+  const [broadcastListName, setBroadcastListName] = useState('');
   const [batchDefaultCity, setBatchDefaultCity] = useState(profile?.city || 'Brasília');
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentName: '' });
@@ -242,15 +243,21 @@ Acesse agora para acompanhar seus dados e indicações!`;
 
   // --- Exportar vCard direto da Folha Lida ---
   function handleExportScannedVCF() {
+    const listTag = broadcastListName.trim();
+    if (!listTag) {
+      alert('⚠️ Campo Obrigatório:\nPor favor, digite o Nome da Reunião / Lista de Transmissão (ex: Reunião Casa Camilla) para identificar e buscar os contatos no seu WhatsApp!');
+      return;
+    }
+
     const valid = (scannedContacts || []).filter(c => c.name.trim() && c.phone.replace(/\D/g, ''));
     if (valid.length === 0) {
       alert('Nenhum contato válido para exportar.');
       return;
     }
 
-    const cards = valid.map((u, index) => {
-      const listIndex = Math.floor(index / 250) + 1;
-      const fullName = `T${listIndex} ${u.name.trim()}`;
+    const cards = valid.map((u) => {
+      const cleanName = u.name.trim();
+      const fullName = `${cleanName} ${listTag}`.trim();
       let tel = normalizePhoneWithDDD61(u.phone);
       const cleanTel = tel.length === 10 || tel.length === 11 ? '55' + tel : tel;
       
@@ -267,12 +274,13 @@ Acesse agora para acompanhar seus dados e indicações!`;
     const blob = new Blob([vcfContent], { type: 'text/vcard;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     
+    const safeTag = listTag.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/gi, '_');
     const link = document.createElement('a');
-    link.download = `folha_presenca_transmissao_${Date.now()}.vcf`;
+    link.download = `contatos_${safeTag}_${Date.now()}.vcf`;
     link.href = url;
     link.click();
 
-    setVcfSuccessData({ count: valid.length });
+    setVcfSuccessData({ count: valid.length, listTag });
     setCopiedMessage(false);
   }
 
@@ -701,7 +709,7 @@ Acesse agora para acompanhar seus dados e indicações!`;
             </div>
 
             {/* Configurações em Lote: Indicador Fixo (Você) e Cidade Padrão para Todos */}
-            <div style={{ background: 'var(--panel2)', padding: '12px 14px', borderRadius: 12, border: '1.5px solid rgba(61, 217, 179, 0.25)', marginBottom: 12, display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 12, alignItems: 'center' }}>
+            <div style={{ background: 'var(--panel2)', padding: '12px 14px', borderRadius: 12, border: '1.5px solid rgba(61, 217, 179, 0.25)', marginBottom: 10, display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: 12, alignItems: 'center' }}>
               <div>
                 <label className="lbl" style={{ fontSize: 10, color: 'var(--ink2)', marginBottom: 3 }}>INDICADOR (SEU LOGIN)</label>
                 <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -731,6 +739,45 @@ Acesse agora para acompanhar seus dados e indicações!`;
                     <option key={c} value={c} style={{ background: '#090d16', color: '#fff' }}>{c}</option>
                   ))}
                 </select>
+              </div>
+            </div>
+
+            {/* Campo Obrigatório: Nome da Reunião / Lista de Transmissão */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(232, 197, 71, 0.12), rgba(61, 217, 179, 0.06))',
+              padding: '11px 14px',
+              borderRadius: 12,
+              border: broadcastListName.trim() ? '1.5px solid var(--teal)' : '1.5px solid rgba(232, 197, 71, 0.55)',
+              marginBottom: 12,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.2)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <label className="lbl" style={{ fontSize: 10.5, color: 'var(--gold)', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span>🏷️ NOME DA REUNIÃO / LISTA NO WHATSAPP</span>
+                </label>
+                <span style={{ color: '#FFA000', fontSize: 9.5, background: 'rgba(255, 160, 0, 0.15)', padding: '2px 6px', borderRadius: 4, fontWeight: 800, letterSpacing: '0.5px' }}>
+                  OBRIGATÓRIO *
+                </span>
+              </div>
+              <input
+                type="text"
+                placeholder="Ex: Reunião Casa Camilla, Evento Taguatinga..."
+                value={broadcastListName}
+                onChange={(e) => setBroadcastListName(e.target.value)}
+                style={{
+                  width: '100%',
+                  margin: 0,
+                  padding: '9px 12px',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  background: 'rgba(5, 7, 13, 0.85)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: 8,
+                  color: '#fff'
+                }}
+              />
+              <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 4, lineHeight: 1.35 }}>
+                📱 Ao salvar no celular, ficará: <strong>{scannedContacts[0]?.name ? scannedContacts[0].name.trim() : 'Ozeias'} {broadcastListName.trim() || 'Reunião Casa Camilla'}</strong>
               </div>
             </div>
 
@@ -929,7 +976,7 @@ Acesse agora para acompanhar seus dados e indicações!`;
               Contatos Prontos para o WhatsApp!
             </h2>
             <div style={{ fontSize: 12, color: 'var(--ink2)', marginBottom: 14 }}>
-              <strong>{vcfSuccessData.count} contatos</strong> prontos para salvar na agenda com o prefixo <strong>T1</strong>.
+              <strong>{vcfSuccessData.count} contatos</strong> salvos com o identificador: <strong style={{ color: 'var(--teal)' }}>"{vcfSuccessData.listTag || 'Reunião'}"</strong>.
             </div>
 
             {/* Caixa com a mensagem de boas-vindas */}
@@ -946,7 +993,7 @@ Acesse agora para acompanhar seus dados e indicações!`;
             {/* Passos rápidos */}
             <div style={{ background: 'var(--panel2)', borderRadius: 8, padding: '10px 12px', textAlign: 'left', marginBottom: 16, fontSize: 11, color: 'var(--ink2)', display: 'flex', flexDirection: 'column', gap: 5 }}>
               <div><strong>1.</strong> Toque no arquivo baixado para <strong>Salvar todos os contatos na agenda</strong> do celular.</div>
-              <div><strong>2.</strong> No WhatsApp, abra uma <strong>Lista de Transmissão</strong> e selecione esses contatos (<code>T1...</code>).</div>
+              <div><strong>2.</strong> No WhatsApp, abra uma <strong>Nova Lista de Transmissão</strong> e busque por <strong>"{vcfSuccessData.listTag || 'Reunião'}"</strong> para selecionar todos em segundos!</div>
               <div><strong>3.</strong> Copie a mensagem abaixo e envie para todos de uma só vez!</div>
             </div>
 
