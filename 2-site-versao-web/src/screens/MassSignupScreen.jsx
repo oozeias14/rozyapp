@@ -587,66 +587,77 @@ Acesse agora para acompanhar seus dados e indicações!`;
     <div className="screen">
       <TopBar totalUsers={totalUsers} />
 
-      {/* --- BANNER DE DIGITALIZAÇÃO COM IA (EXCLUSIVO ADMIN) --- */}
-      {isAdmin && (
-        <div style={{
-          marginBottom: 18,
-          padding: '16px 18px',
-          background: 'linear-gradient(135deg, rgba(232, 197, 71, 0.14), rgba(61, 217, 179, 0.08))',
-          border: '1.5px solid rgba(232, 197, 71, 0.4)',
-          borderRadius: 16,
-          boxShadow: '0 8px 30px rgba(0, 0, 0, 0.3)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12
-        }}>
-          <div>
-            <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>📸 Digitalização Inteligente (OCR)</span>
-              <span style={{ fontSize: 10, background: 'rgba(232, 197, 71, 0.25)', color: 'var(--gold)', padding: '2px 8px', borderRadius: 6, fontWeight: 800 }}>ADMIN</span>
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 4, lineHeight: 1.45 }}>
-              Tire uma foto da folha de presença física e a IA identificará todos os nomes e telefones automaticamente.
-            </div>
+      {/* --- BANNER DE DIGITALIZAÇÃO COM IA (CENTRALIZADO EM CAIXA ALTA) --- */}
+      <div style={{
+        margin: '10px 0 20px 0',
+        padding: '24px 20px',
+        background: 'linear-gradient(135deg, rgba(232, 197, 71, 0.14), rgba(61, 217, 179, 0.08))',
+        border: '1.5px solid rgba(232, 197, 71, 0.4)',
+        borderRadius: 18,
+        boxShadow: '0 8px 30px rgba(0, 0, 0, 0.35)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
+        gap: 16
+      }}>
+        <div style={{ textAlign: 'center', width: '100%' }}>
+          <h2 style={{
+            fontSize: 16.5,
+            fontWeight: 900,
+            letterSpacing: '1.2px',
+            color: '#fff',
+            textTransform: 'uppercase',
+            margin: '0 0 6px 0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8
+          }}>
+            <span>📸 DIGITALIZAÇÃO INTELIGENTE</span>
+          </h2>
+          <div style={{ fontSize: 13, color: 'var(--ink2)', lineHeight: 1.5, maxWidth: 480, margin: '0 auto' }}>
+            Tire uma foto da folha de presença física e a IA identificará todos os nomes e telefones automaticamente.
           </div>
-
-          <button
-            type="button"
-            className="btn btn-teal"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={scanning}
-            style={{
-              margin: 0,
-              padding: '15px 20px',
-              fontSize: 15,
-              fontWeight: 800,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 10,
-              background: 'linear-gradient(135deg, #3DD9B3, #25D366)',
-              color: '#051A14',
-              border: 'none',
-              borderRadius: 12,
-              boxShadow: '0 6px 20px rgba(61, 217, 179, 0.35)',
-              cursor: 'pointer',
-              width: '100%'
-            }}
-          >
-            <span style={{ fontSize: 20 }}>📸</span>
-            <span>{scanning ? '⏳ Analisando Folha de Presença...' : 'Ler Folha de Presença'}</span>
-          </button>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            style={{ display: 'none' }}
-            onChange={handleAttendanceSheetCapture}
-          />
         </div>
-      )}
+
+        <button
+          type="button"
+          className="btn btn-teal"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={scanning}
+          style={{
+            margin: 0,
+            padding: '16px 24px',
+            fontSize: 15.5,
+            fontWeight: 900,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+            background: 'linear-gradient(135deg, #3DD9B3, #25D366)',
+            color: '#051A14',
+            border: 'none',
+            borderRadius: 14,
+            boxShadow: '0 6px 24px rgba(61, 217, 179, 0.4)',
+            cursor: 'pointer',
+            width: '100%',
+            maxWidth: 420
+          }}
+        >
+          <span style={{ fontSize: 22 }}>📸</span>
+          <span>{scanning ? '⏳ Analisando Folha de Presença...' : 'Ler Folha de Presença'}</span>
+        </button>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={handleAttendanceSheetCapture}
+        />
+      </div>
 
       {/* --- OVERLAY DE PROCESSAMENTO DA IA --- */}
       {scanning && (
@@ -660,179 +671,6 @@ Acesse agora para acompanhar seus dados e indicações!`;
           </div>
         </div>
       )}
-
-      {/* --- FORMULÁRIO PADRÃO DE CADASTRO EM MASSA (INDIVIDUAL) --- */}
-      <div className="card" style={{ background: 'linear-gradient(135deg, rgba(22, 28, 44, 0.95), rgba(13, 17, 28, 0.98))', border: '1.5px solid rgba(123, 108, 244, 0.18)', boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)', borderRadius: 16 }}>
-        <div className="card-title" style={{ color: 'var(--violet)' }}>⚡ Cadastro em Massa de Membros</div>
-        
-        <form onSubmit={handleCadastro}>
-          {/* Indicator search */}
-          <label className="lbl">Buscar Indicador <span className="req">*</span></label>
-          <div style={{ position: 'relative', marginBottom: 12 }}>
-            <input 
-              placeholder="Digite ao menos 3 letras do nome ou username..." 
-              value={refSearch}
-              onChange={(e) => {
-                setRefSearch(e.target.value);
-                if (selectedRef) setSelectedRef(null);
-              }}
-              required={!selectedRef}
-            />
-            {selectedRef && (
-              <div style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'var(--teal-dim)', color: 'var(--teal)', fontSize: 11, fontWeight: '700', padding: '3px 8px', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                ✓ {selectedRef.name} (@{selectedRef.username})
-                <span style={{ color: 'var(--warn)', cursor: 'pointer', marginLeft: 4 }} onClick={() => { setSelectedRef(null); setRefSearch(''); }}>✕</span>
-              </div>
-            )}
-
-            {showDropdown && foundIndicators.length > 0 && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, zIndex: 1000, maxHeight: 180, overflowY: 'auto', marginTop: 4, boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-                {foundIndicators.map(ind => (
-                  <div
-                    key={ind.id}
-                    onClick={() => {
-                      setSelectedRef(ind);
-                      setRefSearch(`@${ind.username} - ${ind.name}`);
-                      setShowDropdown(false);
-                    }}
-                    style={{ padding: '10px 12px', cursor: 'pointer', borderBottom: '1px solid var(--line)', color: 'var(--ink1)', fontSize: 13, display: 'flex', justifyContent: 'space-between' }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--panel2)'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                  >
-                    <span><strong>@{ind.username}</strong> - {ind.name}</span>
-                    <span className="id-badge">#{ind.id}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {showDropdown && foundIndicators.length === 0 && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, zIndex: 1000, padding: '10px 12px', color: 'var(--ink3)', fontSize: 12.5 }}>
-                Nenhum indicador encontrado.
-              </div>
-            )}
-          </div>
-
-          <label className="lbl">Nome Completo do Novo Membro <span className="req">*</span></label>
-          <input 
-            placeholder="Nome Completo" 
-            value={name} 
-            onChange={(e) => setName(e.target.value)} 
-            required 
-          />
-
-          <label className="lbl">WhatsApp <span className="req">*</span></label>
-          <input 
-            placeholder="(61) 99999-9999" 
-            value={phone} 
-            onChange={(e) => handlePhoneChange(e.target.value)} 
-            required 
-          />
-
-          <label className="lbl">Selecione sua cidade ou a mais próxima <span className="req">*</span></label>
-          <div style={{ position: 'relative', marginBottom: '16px' }}>
-            <div 
-              onClick={() => setCityDropdownOpen(true)}
-              style={{
-                padding: '12px 14px',
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1.5px solid rgba(123, 108, 244, 0.25)',
-                borderRadius: '12px',
-                color: city ? '#fff' : 'var(--ink3)',
-                fontSize: '14px',
-                textAlign: 'left',
-                cursor: 'pointer',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}
-            >
-              <span>{city || "Clique para selecionar..."}</span>
-              <span style={{ fontSize: '10px', color: 'var(--ink3)' }}>▼</span>
-            </div>
-            
-            {cityDropdownOpen && (
-              <>
-                <div 
-                  style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, background: 'transparent' }} 
-                  onClick={() => setCityDropdownOpen(false)} 
-                />
-                <div style={{
-                  position: 'absolute',
-                  top: '100%',
-                  left: 0,
-                  right: 0,
-                  background: '#090d16',
-                  border: '1px solid var(--line)',
-                  borderRadius: '12px',
-                  maxHeight: '200px',
-                  overflowY: 'auto',
-                  zIndex: 1001,
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
-                  marginTop: '4px'
-                }}>
-                  <div style={{ padding: '8px', borderBottom: '1px solid var(--line)', display: 'flex', gap: '6px', background: '#05070d', position: 'sticky', top: 0, zIndex: 2 }}>
-                    <input
-                      type="text"
-                      placeholder="Buscar cidade (min. 3 letras)..."
-                      value={citySearch}
-                      onChange={(e) => setCitySearch(e.target.value)}
-                      style={{ padding: '6px 10px', fontSize: '12px', margin: 0, width: '100%', background: 'rgba(255,255,255,0.02)', color: '#fff' }}
-                      autoFocus
-                    />
-                    {citySearch && (
-                      <button 
-                        type="button" 
-                        className="btn btn-ghost" 
-                        style={{ padding: '0 8px', fontSize: '11px', margin: 0, width: 'auto' }}
-                        onClick={() => setCitySearch('')}
-                      >
-                        Limpar
-                      </button>
-                    )}
-                  </div>
-                  
-                  {(() => {
-                    const searchVal = citySearch.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                    const filteredCities = searchVal.length >= 3
-                      ? CITIES.filter(c => c.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(searchVal))
-                      : CITIES;
-
-                    if (filteredCities.length === 0) {
-                      return <div style={{ padding: '12px', fontSize: '12px', color: 'var(--ink3)', textAlign: 'center' }}>Nenhuma cidade encontrada</div>;
-                    }
-
-                    return filteredCities.map((c) => (
-                      <div
-                        key={c}
-                        onClick={() => {
-                          setCity(c);
-                          setCitySearch('');
-                          setCityDropdownOpen(false);
-                        }}
-                        style={{
-                          padding: '10px 14px',
-                          fontSize: '13px',
-                          cursor: 'pointer',
-                          color: city === c ? 'var(--teal)' : '#fff',
-                          background: city === c ? 'rgba(0, 242, 254, 0.05)' : 'transparent',
-                          borderBottom: '1px solid rgba(255,255,255,0.02)',
-                          textAlign: 'left'
-                        }}
-                      >
-                        {c}
-                      </div>
-                    ));
-                  })()}
-                </div>
-              </>
-            )}
-          </div>
-
-          <button className="btn btn-teal" type="submit" disabled={loading} style={{ marginTop: 8 }}>
-            {loading ? 'Cadastrando...' : 'Cadastrar Membro'}
-          </button>
-        </form>
-      </div>
 
       {/* --- MODAL DE CONFERÊNCIA E IMPORTAÇÃO DOS CONTATOS ESCONEADOS COM IA --- */}
       {scannedContacts && (
