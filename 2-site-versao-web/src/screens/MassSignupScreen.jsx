@@ -191,13 +191,22 @@ Acesse agora para acompanhar seus dados e indicações!`;
       const cleanName = u.name.trim();
       const fullName = `${cleanName} ${tag}`.trim();
       let tel = normalizePhoneWithDDD61(u.phone);
-      const cleanTel = tel.length === 10 || tel.length === 11 ? '55' + tel : tel;
+      
+      let intlTel = tel;
+      if (!intlTel.startsWith('55') && (intlTel.length === 10 || intlTel.length === 11)) {
+        intlTel = '55' + intlTel;
+      }
+      if (!intlTel.startsWith('+')) {
+        intlTel = '+' + intlTel;
+      }
       
       return [
         'BEGIN:VCARD',
         'VERSION:3.0',
+        `N:;${fullName};;;`,
         `FN:${fullName}`,
-        `TEL;TYPE=CELL:${cleanTel}`,
+        `TEL;TYPE=CELL;TYPE=PREF:${intlTel}`,
+        `TEL;TYPE=CELL,VOICE:${intlTel}`,
         'END:VCARD'
       ].join('\n');
     });
