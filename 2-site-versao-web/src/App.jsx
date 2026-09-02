@@ -411,9 +411,7 @@ export default function App() {
           {tab === 'profile' && (
             <ProfileScreen profile={profile} onProfileUpdated={setProfile} onOpenAdmin={() => openAdmin('users')} onLogout={handleLogout} />
           )}
-          {tab === 'mass_signup' && (profile?.role === 'admin' || profile?.role === 'coord') && (
-            <MassSignupScreen profile={profile} />
-          )}
+          {tab === 'mass_signup' && <MassSignupScreen profile={profile} />}
           {tab === 'owner' && <OwnerScreen profile={profile} onOpenAdminOwner={() => openAdmin('owner')} />}
           <BottomNav active={tab} onChange={handleTabChange} profile={profile} hasNewMuralMessage={hasNewMuralMessage} />
         </>
