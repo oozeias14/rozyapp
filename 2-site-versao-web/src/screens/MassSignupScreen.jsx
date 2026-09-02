@@ -182,11 +182,14 @@ Acesse agora para acompanhar seus dados e indicações!`;
     setTimeout(() => setCopiedMessage(false), 3000);
   }
 
-  // --- Gerar e Baixar vCard (.vcf) ---
-  function downloadVCardFile(validList, listTag) {
+  // --- Gerar e Baixar vCard (.vcf) ou Compartilhar direto no Celular ---
+  async function downloadVCardFile(validList, listTag) {
+    if (!validList || validList.length === 0) return;
+    
+    const tag = listTag || 'Reunião';
     const cards = validList.map((u) => {
       const cleanName = u.name.trim();
-      const fullName = `${cleanName} ${listTag}`.trim();
+      const fullName = `${cleanName} ${tag}`.trim();
       let tel = normalizePhoneWithDDD61(u.phone);
       const cleanTel = tel.length === 10 || tel.length === 11 ? '55' + tel : tel;
       
@@ -200,14 +203,47 @@ Acesse agora para acompanhar seus dados e indicações!`;
     });
 
     const vcfContent = cards.join('\n');
+    const safeTag = tag.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/gi, '_');
+    const fileName = `contatos_${safeTag}_${Date.now()}.vcf`;
+
     const blob = new Blob([vcfContent], { type: 'text/vcard;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
     
-    const safeTag = listTag.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/gi, '_');
+    // Tenta Web Share API nativa no Android / iPhone
+    try {
+      const file = new File([blob], fileName, { type: 'text/vcard' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `Contatos ${tag}`,
+          text: `Salvar contatos da ${tag}`
+        });
+        return;
+      }
+    } catch (e) {
+      console.log('Web share skipped or not supported:', e);
+    }
+
+    // Fallback padrão: Download do arquivo .vcf
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.download = `contatos_${safeTag}_${Date.now()}.vcf`;
     link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
     link.click();
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 1000);
+  }
+
+  async function handleManualDownloadContacts() {
+    const listTag = batchResult?.listTag || broadcastListName.trim() || 'Reunião';
+    const valid = (scannedContacts || []).filter(c => c.name.trim() && c.phone.replace(/\D/g, ''));
+    if (valid.length === 0) {
+      alert('Nenhum contato encontrado para salvar.');
+      return;
+    }
+    await downloadVCardFile(valid, listTag);
   }
 
   // --- BOTÃO MÁGICO: CADASTRAR NA REDE E SALVAR NO WHATSAPP DE UMA VEZ ---
@@ -989,21 +1025,57 @@ Acesse agora para acompanhar seus dados e indicações!`;
           </div>
 
           {/* Botões Finais */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
             <button
               type="button"
               className="btn btn-teal"
-              onClick={handleCopyBroadcastMessage}
-              style={{ width: '100%', margin: 0, padding: '13px', fontSize: 13.5, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+              onClick={handleManualDownloadContacts}
+              style={{
+                width: '100%',
+                margin: 0,
+                padding: '16px',
+                fontSize: 15,
+                fontWeight: 900,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 10,
+                background: 'linear-gradient(135deg, #3DD9B3, #25D366)',
+                color: '#051A14',
+                borderRadius: 14,
+                boxShadow: '0 6px 22px rgba(61, 217, 179, 0.4)'
+              }}
             >
-              <span>{copiedMessage ? '✅ Mensagem Copiada!' : '📋 Copiar Mensagem Novamente'}</span>
+              <span style={{ fontSize: 22 }}>📲</span>
+              <span>SALVAR CONTATOS NO MEU CELULAR</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={handleCopyBroadcastMessage}
+              style={{
+                width: '100%',
+                margin: 0,
+                padding: '12px',
+                fontSize: 13,
+                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                border: '1px solid var(--teal)',
+                color: 'var(--teal)'
+              }}
+            >
+              <span>{copiedMessage ? '✅ Mensagem Copiada!' : '📋 Copiar Mensagem de Boas-Vindas'}</span>
             </button>
 
             <button
               type="button"
               className="btn btn-ghost"
               onClick={resetFlow}
-              style={{ width: '100%', margin: 0, padding: '12px', fontSize: 13, fontWeight: 700, color: '#fff', border: '1px solid var(--line)' }}
+              style={{ width: '100%', margin: 0, padding: '11px', fontSize: 12.5, fontWeight: 700, color: 'var(--ink2)' }}
             >
               ✨ Cadastrar Outra Folha de Presença
             </button>
