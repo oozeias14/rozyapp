@@ -5,12 +5,14 @@ const STORAGE_KEY_URL = 'evolution_api_url';
 const STORAGE_KEY_KEY = 'evolution_api_key';
 const STORAGE_KEY_INSTANCE = 'evolution_api_instance';
 
+export const DEFAULT_SERVER_URL = 'https://evolution-api-production-2522.up.railway.app';
+export const DEFAULT_API_KEY = '6a76cbf204380d04e7ce897ac00e4f204cafea39bc9b';
 export const DEFAULT_INSTANCE_NAME = 'dr_candido';
 
 export function getEvolutionConfig() {
   return {
-    serverUrl: (localStorage.getItem(STORAGE_KEY_URL) || '').replace(/\/+$/, ''),
-    apiKey: localStorage.getItem(STORAGE_KEY_KEY) || '',
+    serverUrl: (localStorage.getItem(STORAGE_KEY_URL) || DEFAULT_SERVER_URL).replace(/\/+$/, ''),
+    apiKey: localStorage.getItem(STORAGE_KEY_KEY) || DEFAULT_API_KEY,
     instanceName: localStorage.getItem(STORAGE_KEY_INSTANCE) || DEFAULT_INSTANCE_NAME,
   };
 }
