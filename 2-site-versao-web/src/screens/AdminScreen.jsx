@@ -148,6 +148,7 @@ function UsersTab({ users, onSelect, reload }) {
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState(false);
   const [page, setPage] = useState(1);
+  const [show100Modal, setShow100Modal] = useState(false);
 
   const filtered = users.filter((u) =>
     u.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -159,12 +160,31 @@ function UsersTab({ users, onSelect, reload }) {
   const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE) || 1;
   const paginatedUsers = filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
 
-  const unexportedCount = users.filter(u => u.role !== 'admin' && u.role !== 'admin2' && !u.vcf_exported).length;
-  const exportedCount = users.filter(u => u.role !== 'admin' && u.role !== 'admin2' && u.vcf_exported).length;
+  const validExportUsers = users.filter(u => u.role !== 'admin' && u.role !== 'admin2');
+  const unexportedCount = validExportUsers.filter(u => !u.vcf_exported).length;
+  const exportedCount = validExportUsers.filter(u => u.vcf_exported).length;
 
-  function generateVcfFromUsers(userList, prefixWithBatch = true) {
+  const BATCH_SIZE_100 = 100;
+  const totalBatches100 = Math.ceil(validExportUsers.length / BATCH_SIZE_100) || 1;
+  const batches100 = [];
+  for (let i = 0; i < totalBatches100; i++) {
+    const chunk = validExportUsers.slice(i * BATCH_SIZE_100, (i + 1) * BATCH_SIZE_100);
+    const startNum = i * BATCH_SIZE_100 + 1;
+    const endNum = i * BATCH_SIZE_100 + chunk.length;
+    batches100.push({
+      batchNum: i + 1,
+      id: `T${i + 1}`,
+      name: `Lote ${i + 1} (#${startNum} ao #${endNum})`,
+      count: chunk.length,
+      users: chunk,
+      startNum,
+      endNum
+    });
+  }
+
+  function generateVcfFromUsers(userList, prefixWithBatch = true, customFileName = null) {
     const cards = userList.map((u, index) => {
-      const listIndex = Math.floor(index / 250) + 1;
+      const listIndex = Math.floor(index / 100) + 1;
       const cleanName = (u.name || 'Sem Nome').trim();
       const fullName = prefixWithBatch ? `T${listIndex} ${cleanName}` : cleanName;
       const tel = (u.phone || u.whatsapp || '').replace(/\D/g, '');
@@ -191,7 +211,7 @@ function UsersTab({ users, onSelect, reload }) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `contatos_transmissao_T_${Date.now()}.vcf`);
+    link.setAttribute('download', customFileName || `contatos_transmissao_T_${Date.now()}.vcf`);
     document.body.appendChild(link);
     link.click();
     setTimeout(() => {
@@ -209,19 +229,28 @@ function UsersTab({ users, onSelect, reload }) {
     }
   }
 
+  async function handleExportSingle100Batch(batch) {
+    try {
+      generateVcfFromUsers(batch.users, true, `contatos_lote_${batch.batchNum}_(${batch.startNum}_a_${batch.endNum}).vcf`);
+      const batchIds = batch.users.map(u => u.id);
+      await updateVcfStatusInChunks(batchIds, true);
+      if (reload) await reload();
+    } catch (err) {
+      alert('Erro ao baixar lote: ' + err.message);
+    }
+  }
+
   async function handleExportAllVCF() {
-    const validUsers = users.filter(u => u.role !== 'admin' && u.role !== 'admin2');
-    if (validUsers.length === 0) {
+    if (validExportUsers.length === 0) {
       alert('Nenhum contato encontrado para exportar.');
       return;
     }
 
     setExporting(true);
     try {
-      generateVcfFromUsers(validUsers, true);
+      generateVcfFromUsers(validExportUsers, true);
 
-      // Marca todos como exportados no banco em lotes seguros
-      const allIds = validUsers.map(u => u.id);
+      const allIds = validExportUsers.map(u => u.id);
       await updateVcfStatusInChunks(allIds, true);
       if (reload) await reload();
     } catch (err) {
@@ -232,7 +261,7 @@ function UsersTab({ users, onSelect, reload }) {
   }
 
   async function handleExportNewVCF() {
-    const toExport = users.filter(u => u.role !== 'admin' && u.role !== 'admin2' && !u.vcf_exported);
+    const toExport = validExportUsers.filter(u => !u.vcf_exported);
     if (toExport.length === 0) {
       if (window.confirm('Todos os contatos já foram marcados como exportados. Deseja baixar TODOS os contatos novamente?')) {
         return handleExportAllVCF();
@@ -258,7 +287,7 @@ function UsersTab({ users, onSelect, reload }) {
     if (!window.confirm('Deseja marcar todos os contatos como PENDENTES de exportação novamente?')) return;
     setExporting(true);
     try {
-      const allIds = users.filter(u => u.role !== 'admin' && u.role !== 'admin2').map(u => u.id);
+      const allIds = validExportUsers.map(u => u.id);
       await updateVcfStatusInChunks(allIds, false);
       alert('Contador resetado com sucesso! Todos os contatos agora constam como pendentes.');
       if (reload) await reload();
@@ -273,44 +302,120 @@ function UsersTab({ users, onSelect, reload }) {
     <div>
       <div className="card-title">Todos os cadastros ({users.length})</div>
 
-      {/* Painel de Exportação vCard */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px', alignItems: 'center', background: 'var(--panel2)', padding: '12px 14px', borderRadius: '12px', border: '1px solid var(--line)' }}>
-        <div style={{ flex: 1, minWidth: '160px' }}>
-          <div style={{ fontSize: '11px', color: 'var(--ink3)', textTransform: 'uppercase', fontWeight: 700 }}>Exportação vCard (Listas T1, T2...)</div>
-          <div style={{ fontSize: '12.5px', color: 'var(--ink2)', marginTop: '4px' }}>
-            Pendentes: <strong style={{ color: 'var(--teal)' }}>{unexportedCount}</strong> · Exportados: <strong style={{ color: 'var(--ink1)' }}>{exportedCount}</strong>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px', background: 'var(--panel2)', padding: '14px 16px', borderRadius: '16px', border: '1.5px solid var(--violet)', boxShadow: '0 4px 20px rgba(123, 108, 244, 0.15)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+          <div>
+            <div style={{ fontSize: '11px', color: 'var(--teal)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: 0.5 }}>
+              📥 Exportação de Agenda (.VCF)
+            </div>
+            <div style={{ fontSize: '12.5px', color: 'var(--ink2)', marginTop: '2px' }}>
+              Pendentes: <strong style={{ color: 'var(--teal)' }}>{unexportedCount}</strong> · Exportados: <strong style={{ color: '#fff' }}>{exportedCount}</strong>
+            </div>
           </div>
-        </div>
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-          <button 
-            className="btn btn-teal" 
-            onClick={handleExportAllVCF}
-            disabled={exporting}
-            style={{ margin: 0, padding: '8px 12px', fontSize: '12px', width: 'auto' }}
-            title="Baixar todos os contatos do sistema organizados em lotes T1, T2, T3..."
-          >
-            {exporting ? '⏳ Baixando...' : '📥 Baixar Todos (T1, T2...)'}
-          </button>
-          <button 
-            className="btn btn-ghost" 
-            onClick={handleExportNewVCF}
-            disabled={exporting}
-            style={{ margin: 0, padding: '8px 10px', fontSize: '12px', width: 'auto' }}
-            title="Baixar apenas novos contatos pendentes"
-          >
-            📥 Apenas Novos ({unexportedCount})
-          </button>
+          
           <button 
             className="btn btn-ghost" 
             onClick={handleResetExportStatus}
             disabled={exporting}
-            style={{ margin: 0, padding: '8px 10px', fontSize: '12px', width: 'auto', color: 'var(--ink3)' }}
-            title="Resetar status de exportação"
+            style={{ margin: 0, padding: '4px 10px', fontSize: '11px', width: 'auto', color: 'var(--ink3)' }}
+            title="Resetar contador de exportados"
           >
-            🔄
+            🔄 Resetar Contador
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button 
+            className="btn btn-teal" 
+            onClick={() => setShow100Modal(true)}
+            style={{ flex: '1 1 200px', margin: 0, padding: '10px 14px', fontSize: '12.5px', fontWeight: 800 }}
+            title="Abre a lista com os lotes de 100 contatos cada para baixar sem erro no celular"
+          >
+            📱 Baixar em Lotes de 100 (Celular)
+          </button>
+
+          <button 
+            className="btn btn-ghost" 
+            onClick={handleExportAllVCF}
+            disabled={exporting}
+            style={{ flex: '1 1 140px', margin: 0, padding: '10px 12px', fontSize: '12px' }}
+            title="Baixar arquivo único completo com todos os contatos (Google Contatos / PC)"
+          >
+            {exporting ? '⏳ Baixando...' : '📥 Baixar Tudo (.vcf)'}
+          </button>
+
+          <button 
+            className="btn btn-ghost" 
+            onClick={handleExportNewVCF}
+            disabled={exporting}
+            style={{ flex: '1 1 140px', margin: 0, padding: '10px 12px', fontSize: '12px' }}
+            title="Baixar apenas contatos novos que ainda não foram exportados"
+          >
+            📥 Apenas Novos ({unexportedCount})
           </button>
         </div>
       </div>
+
+      {show100Modal && (
+        <div className="modal-bg" style={{ zIndex: 12000 }}>
+          <div className="modal" style={{ maxWidth: 460, padding: 22 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h3 style={{ fontSize: 16, color: '#fff', margin: 0, fontWeight: 800 }}>
+                📱 Lotes de 100 Contatos (Celular)
+              </h3>
+              <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 12, margin: 0 }} onClick={() => setShow100Modal(false)}>
+                ✕ Fechar
+              </button>
+            </div>
+
+            <p style={{ fontSize: 12, color: 'var(--ink2)', marginBottom: 16, lineHeight: 1.4 }}>
+              Baixe os lotes abaixo individualmente. Como cada arquivo tem no máximo <strong>100 contatos</strong>, seu celular vai salvar na hora sem apresentar limite!
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '55vh', overflowY: 'auto', paddingRight: 4 }}>
+              {batches100.map((b) => (
+                <div 
+                  key={b.id} 
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between', 
+                    background: 'var(--panel2)', 
+                    padding: '10px 14px', 
+                    borderRadius: 12, 
+                    border: '1px solid var(--line)',
+                    gap: 10
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: 13, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ background: 'var(--teal-dim)', color: 'var(--teal)', padding: '1px 6px', borderRadius: 4, fontSize: 11 }}>
+                        {b.id}
+                      </span>
+                      <span>{b.name}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 2 }}>
+                      👥 {b.count} contatos
+                    </div>
+                  </div>
+
+                  <button 
+                    className="btn btn-teal"
+                    style={{ margin: 0, padding: '6px 12px', fontSize: 11.5, width: 'auto', whiteSpace: 'nowrap' }}
+                    onClick={() => handleExportSingle100Batch(b)}
+                  >
+                    📥 Baixar .vcf
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <button className="btn btn-ghost" style={{ width: '100%', marginTop: 14, margin: 0 }} onClick={() => setShow100Modal(false)}>
+              Concluir
+            </button>
+          </div>
+        </div>
+      )}
 
       <input 
         placeholder="Buscar nome, e-mail ou ID..." 
