@@ -182,11 +182,16 @@ function UsersTab({ users, onSelect, reload }) {
     });
   }
 
-  function generateVcfFromUsers(userList, prefixWithBatch = true, customFileName = null) {
+  function generateVcfFromUsers(userList, batchPrefix = null, customFileName = null) {
     const cards = userList.map((u, index) => {
-      const listIndex = Math.floor(index / 100) + 1;
       const cleanName = (u.name || 'Sem Nome').trim();
-      const fullName = prefixWithBatch ? `T${listIndex} ${cleanName}` : cleanName;
+      let fullName = cleanName;
+      if (typeof batchPrefix === 'string' && batchPrefix.trim()) {
+        fullName = `${batchPrefix.trim()} ${cleanName}`;
+      } else {
+        const listIndex = Math.floor(index / 100) + 1;
+        fullName = `T${listIndex} ${cleanName}`;
+      }
       const tel = (u.phone || u.whatsapp || '').replace(/\D/g, '');
       let intlTel = tel;
       if (!intlTel.startsWith('55') && (intlTel.length === 10 || intlTel.length === 11)) {
@@ -231,7 +236,7 @@ function UsersTab({ users, onSelect, reload }) {
 
   async function handleExportSingle100Batch(batch) {
     try {
-      generateVcfFromUsers(batch.users, true, `contatos_lote_${batch.batchNum}_(${batch.startNum}_a_${batch.endNum}).vcf`);
+      generateVcfFromUsers(batch.users, batch.id, `contatos_lote_${batch.id}_(${batch.startNum}_a_${batch.endNum}).vcf`);
       const batchIds = batch.users.map(u => u.id);
       await updateVcfStatusInChunks(batchIds, true);
       if (reload) await reload();
@@ -248,7 +253,7 @@ function UsersTab({ users, onSelect, reload }) {
 
     setExporting(true);
     try {
-      generateVcfFromUsers(validExportUsers, true);
+      generateVcfFromUsers(validExportUsers, null);
 
       const allIds = validExportUsers.map(u => u.id);
       await updateVcfStatusInChunks(allIds, true);
@@ -271,7 +276,7 @@ function UsersTab({ users, onSelect, reload }) {
 
     setExporting(true);
     try {
-      generateVcfFromUsers(toExport, true);
+      generateVcfFromUsers(toExport, null);
 
       const exportedIds = toExport.map(u => u.id);
       await updateVcfStatusInChunks(exportedIds, true);
