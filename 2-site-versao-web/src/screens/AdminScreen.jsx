@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import PersonModal from '../components/PersonModal';
+import { EvolutionBotTab } from './EvolutionBotTab';
 import { supabase, MAX_PHOTO_BYTES, compressImageWeb, CITIES } from '../lib/supabase';
 import {
   fetchAllProfiles, updateProfile, deleteProfile, promoteToCoordinator, demoteToUser,
@@ -72,6 +73,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
     ...(isAdmin ? [['messages', '📣 Mensagens']] : []),
     ...(isAdmin ? [['owner', '👨‍⚕️ Dr. Candido']] : []),
     ['stats', '📊 Estatísticas'],
+    ...(isAdmin ? [['evolution', '🤖 Robô WhatsApp']] : []),
     ...(isAdmin ? [['settings', '⚙️ Conta']] : []),
   ];
 
@@ -118,6 +120,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         {tab === 'messages' && <MessagesTab messages={messages} profile={profile} reload={load} />}
         {tab === 'owner' && isAdmin && owner && <OwnerTab owner={owner} reload={load} />}
         {tab === 'stats' && <StatsTab users={users} meetings={meetings} messages={messages} />}
+        {tab === 'evolution' && isAdmin && <EvolutionBotTab users={users} reload={load} />}
         {tab === 'settings' && isAdmin && settings && <SettingsTab settings={settings} profile={profile} reload={load} users={users} />}
       </div>
 
