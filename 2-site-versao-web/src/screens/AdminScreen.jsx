@@ -71,9 +71,9 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
     ['users', '👥 Cadastros'],
     ['ranking', '🏆 Ranking'],
     ...(isAdmin ? [['messages', '📣 Mensagens']] : []),
+    ...(isAdmin ? [['evolution', '🤖 Robô WhatsApp']] : []),
     ...(isAdmin ? [['owner', '👨‍⚕️ Dr. Candido']] : []),
     ['stats', '📊 Estatísticas'],
-    ...(isAdmin ? [['evolution', '🤖 Robô WhatsApp']] : []),
     ...(isAdmin ? [['settings', '⚙️ Conta']] : []),
   ];
 
@@ -118,9 +118,9 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         {tab === 'users' && <UsersTab users={users} onSelect={(u) => setSelected(u)} reload={load} />}
         {tab === 'ranking' && <RankingTab users={users} meetings={meetings} onSelect={(u) => setModalPerson(u)} />}
         {tab === 'messages' && <MessagesTab messages={messages} profile={profile} reload={load} />}
+        {tab === 'evolution' && isAdmin && <EvolutionBotTab users={users} reload={load} />}
         {tab === 'owner' && isAdmin && owner && <OwnerTab owner={owner} reload={load} />}
         {tab === 'stats' && <StatsTab users={users} meetings={meetings} messages={messages} />}
-        {tab === 'evolution' && isAdmin && <EvolutionBotTab users={users} reload={load} />}
         {tab === 'settings' && isAdmin && settings && <SettingsTab settings={settings} profile={profile} reload={load} users={users} />}
       </div>
 
