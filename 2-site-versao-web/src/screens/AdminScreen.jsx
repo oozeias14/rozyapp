@@ -72,6 +72,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
     ...(isAdmin ? [['messages', '📣 Mensagens']] : []),
     ...(isAdmin ? [['owner', '👨‍⚕️ Dr. Candido']] : []),
     ['stats', '📊 Estatísticas'],
+    ['contacts', '📱 Contatos Dr. Cândido'],
     ...(isAdmin ? [['settings', '⚙️ Conta']] : []),
   ];
 
@@ -118,6 +119,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         {tab === 'messages' && <MessagesTab messages={messages} profile={profile} reload={load} />}
         {tab === 'owner' && isAdmin && owner && <OwnerTab owner={owner} reload={load} />}
         {tab === 'stats' && <StatsTab users={users} meetings={meetings} messages={messages} />}
+        {tab === 'contacts' && <ContactsTab users={users} reload={load} />}
         {tab === 'settings' && isAdmin && settings && <SettingsTab settings={settings} profile={profile} reload={load} users={users} />}
       </div>
 
@@ -140,51 +142,17 @@ function Avatar({ person, size = 36 }) {
   );
 }
 
-function getContactStatus(p) {
-  if (p.contact_saved && p.first_access_sent) {
-    return { key: 'confirmed', label: 'Salvo & Confirmado', color: '#25D366', bg: 'rgba(37, 211, 102, 0.15)', border: 'rgba(37, 211, 102, 0.4)', icon: '🟢' };
-  }
-  if (p.contact_saved && !p.first_access_sent) {
-    return { key: 'saved_only', label: 'Baixou Contato (Pendente Envio)', color: '#FFA000', bg: 'rgba(255, 160, 0, 0.15)', border: 'rgba(255, 160, 0, 0.4)', icon: '🟡' };
-  }
-  if (!p.contact_saved && p.first_access_sent) {
-    return { key: 'msg_only', label: 'Mandou WhatsApp', color: '#3DD9B3', bg: 'rgba(61, 217, 179, 0.15)', border: 'rgba(61, 217, 179, 0.4)', icon: '🔵' };
-  }
-  return { key: 'not_saved', label: 'Não Salvo', color: '#F06B4C', bg: 'rgba(240, 107, 76, 0.15)', border: 'rgba(240, 107, 76, 0.4)', icon: '🔴' };
-}
-
+/* ===== CADASTROS ===== */
 function UsersTab({ users, onSelect, reload }) {
   const [search, setSearch] = useState('');
   const [exporting, setExporting] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'not_saved', 'saved_only', 'confirmed'
   const [page, setPage] = useState(1);
 
-  // Contadores de status de contato
-  const confirmedCount = users.filter(u => u.contact_saved && u.first_access_sent).length;
-  const savedOnlyCount = users.filter(u => u.contact_saved && !u.first_access_sent).length;
-  const notSavedCount = users.filter(u => !u.contact_saved && !u.first_access_sent).length;
-
-  const filtered = users.filter((u) => {
-    const matchesSearch = 
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      String(u.id).includes(search) ||
-      (u.phone || '').includes(search) ||
-      (u.whatsapp || '').includes(search) ||
-      (u.email || '').toLowerCase().includes(search.toLowerCase());
-
-    if (!matchesSearch) return false;
-
-    if (statusFilter === 'not_saved') {
-      return !u.contact_saved && !u.first_access_sent;
-    }
-    if (statusFilter === 'saved_only') {
-      return u.contact_saved && !u.first_access_sent;
-    }
-    if (statusFilter === 'confirmed') {
-      return u.contact_saved && u.first_access_sent;
-    }
-    return true;
-  });
+  const filtered = users.filter((u) =>
+    u.name.toLowerCase().includes(search.toLowerCase()) ||
+    String(u.id).includes(search) ||
+    (u.email || '').toLowerCase().includes(search.toLowerCase())
+  );
 
   const ITEMS_PER_PAGE = 10;
   const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE) || 1;
@@ -192,30 +160,6 @@ function UsersTab({ users, onSelect, reload }) {
 
   const unexportedCount = users.filter(u => u.role !== 'admin' && u.role !== 'admin2' && !u.vcf_exported).length;
   const exportedCount = users.filter(u => u.role !== 'admin' && u.role !== 'admin2' && u.vcf_exported).length;
-
-  function handleCobrarWhatsapp(p, e) {
-    if (e) e.stopPropagation();
-    const phone = (p.whatsapp || p.phone || '').replace(/\D/g, '');
-    if (!phone) {
-      alert(`O usuário ${p.name} não possui número de telefone cadastrado.`);
-      return;
-    }
-    const fullPhone = (phone.length === 10 || phone.length === 11) ? '55' + phone : phone;
-    const firstName = (p.name || 'Amigo(a)').split(' ')[0];
-    const msg = `Olá ${firstName}! Tudo bem? 
-
-Notamos que você ainda não adicionou o WhatsApp oficial do Dr. Cândido aos seus contatos.
-
-📱 Por favor, salve nosso número na sua agenda para receber vídeos, novidades e informativos no seu celular!
-
-🔗 Link de Acesso: https://amigosdrcandido.com.br`;
-
-    const waUrl = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-      ? `whatsapp://send?phone=${fullPhone}&text=${encodeURIComponent(msg)}`
-      : `https://web.whatsapp.com/send?phone=${fullPhone}&text=${encodeURIComponent(msg)}`;
-
-    window.open(waUrl, '_blank');
-  }
 
   async function handleExportVCF() {
     const toExport = users.filter(u => u.role !== 'admin' && u.role !== 'admin2' && !u.vcf_exported);
@@ -303,83 +247,8 @@ Notamos que você ainda não adicionou o WhatsApp oficial do Dr. Cândido aos se
         </button>
       </div>
 
-      {/* Filtros de Status do Contato */}
-      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 6, marginBottom: 12 }}>
-        <button
-          type="button"
-          onClick={() => { setStatusFilter('all'); setPage(1); }}
-          style={{
-            padding: '6px 10px',
-            borderRadius: 8,
-            fontSize: 11.5,
-            fontWeight: 700,
-            whiteSpace: 'nowrap',
-            background: statusFilter === 'all' ? 'var(--teal)' : 'var(--panel2)',
-            color: statusFilter === 'all' ? '#051A14' : 'var(--ink2)',
-            border: '1px solid ' + (statusFilter === 'all' ? 'var(--teal)' : 'var(--line)'),
-            cursor: 'pointer'
-          }}
-        >
-          Todos ({users.length})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => { setStatusFilter('not_saved'); setPage(1); }}
-          style={{
-            padding: '6px 10px',
-            borderRadius: 8,
-            fontSize: 11.5,
-            fontWeight: 700,
-            whiteSpace: 'nowrap',
-            background: statusFilter === 'not_saved' ? 'rgba(240, 107, 76, 0.25)' : 'var(--panel2)',
-            color: statusFilter === 'not_saved' ? '#FF8A65' : 'var(--ink2)',
-            border: '1px solid ' + (statusFilter === 'not_saved' ? '#F06B4C' : 'var(--line)'),
-            cursor: 'pointer'
-          }}
-        >
-          🔴 Não Salvo ({notSavedCount})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => { setStatusFilter('saved_only'); setPage(1); }}
-          style={{
-            padding: '6px 10px',
-            borderRadius: 8,
-            fontSize: 11.5,
-            fontWeight: 700,
-            whiteSpace: 'nowrap',
-            background: statusFilter === 'saved_only' ? 'rgba(255, 160, 0, 0.25)' : 'var(--panel2)',
-            color: statusFilter === 'saved_only' ? '#FFD54F' : 'var(--ink2)',
-            border: '1px solid ' + (statusFilter === 'saved_only' ? '#FFA000' : 'var(--line)'),
-            cursor: 'pointer'
-          }}
-        >
-          🟡 Baixou Contato ({savedOnlyCount})
-        </button>
-
-        <button
-          type="button"
-          onClick={() => { setStatusFilter('confirmed'); setPage(1); }}
-          style={{
-            padding: '6px 10px',
-            borderRadius: 8,
-            fontSize: 11.5,
-            fontWeight: 700,
-            whiteSpace: 'nowrap',
-            background: statusFilter === 'confirmed' ? 'rgba(37, 211, 102, 0.25)' : 'var(--panel2)',
-            color: statusFilter === 'confirmed' ? '#25D366' : 'var(--ink2)',
-            border: '1px solid ' + (statusFilter === 'confirmed' ? '#25D366' : 'var(--line)'),
-            cursor: 'pointer'
-          }}
-        >
-          🟢 Confirmado ({confirmedCount})
-        </button>
-      </div>
-
       <input 
-        placeholder="Buscar nome, e-mail, telefone ou ID..." 
+        placeholder="Buscar nome, e-mail ou ID..." 
         value={search} 
         onChange={(e) => {
           setSearch(e.target.value);
@@ -387,90 +256,19 @@ Notamos que você ainda não adicionou o WhatsApp oficial do Dr. Cândido aos se
         }} 
       />
 
-      {paginatedUsers.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '24px 12px', color: 'var(--ink3)', fontSize: 13 }}>
-          Nenhum membro encontrado neste filtro.
+      {paginatedUsers.map((p) => (
+        <div key={p.id} className="data-row" onClick={() => onSelect(p)}>
+          <Avatar person={p} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+            <div className="muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+            <span className="id-badge">#{p.id}</span>
+            <span className={`role-badge ${roleClass(p.role)}`}>{roleLabel(p.role)}</span>
+          </div>
         </div>
-      ) : (
-        paginatedUsers.map((p) => {
-          const status = getContactStatus(p);
-          const needsReminder = status.key === 'not_saved' || status.key === 'saved_only';
-
-          return (
-            <div 
-              key={p.id} 
-              className="data-row" 
-              onClick={() => onSelect(p)}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px' }}
-            >
-              <Avatar person={p} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {p.name}
-                  </span>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
-                  <span 
-                    style={{ 
-                      fontSize: 10, 
-                      fontWeight: 800, 
-                      color: status.color, 
-                      background: status.bg, 
-                      border: `1px solid ${status.border}`, 
-                      padding: '1px 6px', 
-                      borderRadius: 4, 
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 3
-                    }}
-                  >
-                    <span>{status.icon}</span>
-                    <span>{status.label}</span>
-                  </span>
-
-                  <span className="muted" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {p.whatsapp || p.phone || p.email}
-                  </span>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span className="id-badge">#{p.id}</span>
-                  <span className={`role-badge ${roleClass(p.role)}`}>{roleLabel(p.role)}</span>
-                </div>
-
-                {needsReminder && (
-                  <button
-                    type="button"
-                    onClick={(e) => handleCobrarWhatsapp(p, e)}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      fontSize: 10.5,
-                      fontWeight: 800,
-                      background: 'rgba(37, 211, 102, 0.15)',
-                      color: '#25D366',
-                      border: '1px solid rgba(37, 211, 102, 0.4)',
-                      borderRadius: 6,
-                      padding: '3px 7px',
-                      cursor: 'pointer',
-                      margin: 0
-                    }}
-                    title="Mandar mensagem no WhatsApp lembrando para salvar o Dr. Cândido"
-                  >
-                    <span>📲</span>
-                    <span>Cobrar</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })
-      )}
+      ))}
 
       {/* Pagination Controls */}
       {totalPages > 1 && (
@@ -525,6 +323,362 @@ Notamos que você ainda não adicionou o WhatsApp oficial do Dr. Cândido aos se
             onClick={() => setPage(p => Math.min(p + 1, totalPages))}
           >
             Próxima <span>→</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ===== CONTATOS SALVOS DO DR. CÂNDIDO ===== */
+function ContactsTab({ users, reload }) {
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'not_saved', 'saved_only', 'confirmed'
+  const [updatingId, setUpdatingId] = useState(null);
+  const [page, setPage] = useState(1);
+
+  const confirmedCount = users.filter(u => u.contact_saved && u.first_access_sent).length;
+  const savedOnlyCount = users.filter(u => u.contact_saved && !u.first_access_sent).length;
+  const notSavedCount = users.filter(u => !u.contact_saved && !u.first_access_sent).length;
+
+  const filtered = users.filter((u) => {
+    const matchesSearch = 
+      u.name.toLowerCase().includes(search.toLowerCase()) ||
+      String(u.id).includes(search) ||
+      (u.phone || '').includes(search) ||
+      (u.whatsapp || '').includes(search) ||
+      (u.email || '').toLowerCase().includes(search.toLowerCase());
+
+    if (!matchesSearch) return false;
+
+    if (statusFilter === 'not_saved') {
+      return !u.contact_saved && !u.first_access_sent;
+    }
+    if (statusFilter === 'saved_only') {
+      return u.contact_saved && !u.first_access_sent;
+    }
+    if (statusFilter === 'confirmed') {
+      return u.contact_saved && u.first_access_sent;
+    }
+    return true;
+  });
+
+  const ITEMS_PER_PAGE = 15;
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE) || 1;
+  const paginatedUsers = filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
+
+  async function handleToggleStatus(user, markConfirmed) {
+    setUpdatingId(user.id);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          contact_saved: markConfirmed,
+          first_access_sent: markConfirmed
+        })
+        .eq('id', user.id);
+
+      if (error) {
+        alert('Erro ao atualizar status: ' + error.message);
+      } else {
+        if (reload) await reload();
+      }
+    } catch (err) {
+      alert('Erro: ' + err.message);
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  function handleCobrarWhatsapp(p) {
+    const phone = (p.whatsapp || p.phone || '').replace(/\D/g, '');
+    if (!phone) {
+      alert(`O usuário ${p.name} não possui número de WhatsApp cadastrado.`);
+      return;
+    }
+    const fullPhone = (phone.length === 10 || phone.length === 11) ? '55' + phone : phone;
+    const firstName = (p.name || 'Amigo(a)').split(' ')[0];
+    const msg = `Olá ${firstName}! Tudo bem? 
+
+Notamos que você ainda não adicionou o WhatsApp oficial do Dr. Cândido aos seus contatos.
+
+📱 Por favor, salve nosso número na sua agenda para receber vídeos, novidades e informativos no seu celular!
+
+🔗 Link de Acesso: https://amigosdrcandido.com.br`;
+
+    const waUrl = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+      ? `whatsapp://send?phone=${fullPhone}&text=${encodeURIComponent(msg)}`
+      : `https://web.whatsapp.com/send?phone=${fullPhone}&text=${encodeURIComponent(msg)}`;
+
+    window.open(waUrl, '_blank');
+  }
+
+  return (
+    <div>
+      <div className="card-title">📱 Contatos Salvos do Dr. Cândido</div>
+      <div style={{ fontSize: 12.5, color: 'var(--ink2)', marginBottom: 14 }}>
+        Acompanhe quais membros já salvaram o contato do Dr. Cândido na agenda e cobre quem ainda não salvou.
+      </div>
+
+      {/* Cards de Métricas */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
+        <div style={{ background: 'var(--panel2)', padding: '12px 14px', borderRadius: 12, border: '1px solid var(--line)' }}>
+          <div style={{ fontSize: 11, color: 'var(--ink3)', fontWeight: 700, textTransform: 'uppercase' }}>Total Membros</div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: '#fff', marginTop: 2 }}>{users.length}</div>
+        </div>
+
+        <div style={{ background: 'rgba(37, 211, 102, 0.1)', padding: '12px 14px', borderRadius: 12, border: '1px solid rgba(37, 211, 102, 0.3)' }}>
+          <div style={{ fontSize: 11, color: '#25D366', fontWeight: 700, textTransform: 'uppercase' }}>🟢 Confirmados</div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: '#25D366', marginTop: 2 }}>{confirmedCount}</div>
+        </div>
+
+        <div style={{ background: 'rgba(255, 160, 0, 0.1)', padding: '12px 14px', borderRadius: 12, border: '1px solid rgba(255, 160, 0, 0.3)' }}>
+          <div style={{ fontSize: 11, color: '#FFA000', fontWeight: 700, textTransform: 'uppercase' }}>🟡 Baixou Contato</div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: '#FFA000', marginTop: 2 }}>{savedOnlyCount}</div>
+        </div>
+
+        <div style={{ background: 'rgba(240, 107, 76, 0.1)', padding: '12px 14px', borderRadius: 12, border: '1px solid rgba(240, 107, 76, 0.3)' }}>
+          <div style={{ fontSize: 11, color: '#F06B4C', fontWeight: 700, textTransform: 'uppercase' }}>🔴 Não Salvos</div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: '#F06B4C', marginTop: 2 }}>{notSavedCount}</div>
+        </div>
+      </div>
+
+      {/* Filtros */}
+      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 6, marginBottom: 12 }}>
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('all'); setPage(1); }}
+          style={{
+            padding: '7px 12px',
+            borderRadius: 8,
+            fontSize: 12,
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+            background: statusFilter === 'all' ? 'var(--teal)' : 'var(--panel2)',
+            color: statusFilter === 'all' ? '#051A14' : 'var(--ink2)',
+            border: '1px solid ' + (statusFilter === 'all' ? 'var(--teal)' : 'var(--line)'),
+            cursor: 'pointer'
+          }}
+        >
+          Todos ({users.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('not_saved'); setPage(1); }}
+          style={{
+            padding: '7px 12px',
+            borderRadius: 8,
+            fontSize: 12,
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+            background: statusFilter === 'not_saved' ? 'rgba(240, 107, 76, 0.25)' : 'var(--panel2)',
+            color: statusFilter === 'not_saved' ? '#FF8A65' : 'var(--ink2)',
+            border: '1px solid ' + (statusFilter === 'not_saved' ? '#F06B4C' : 'var(--line)'),
+            cursor: 'pointer'
+          }}
+        >
+          🔴 Não Salvo ({notSavedCount})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('saved_only'); setPage(1); }}
+          style={{
+            padding: '7px 12px',
+            borderRadius: 8,
+            fontSize: 12,
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+            background: statusFilter === 'saved_only' ? 'rgba(255, 160, 0, 0.25)' : 'var(--panel2)',
+            color: statusFilter === 'saved_only' ? '#FFD54F' : 'var(--ink2)',
+            border: '1px solid ' + (statusFilter === 'saved_only' ? '#FFA000' : 'var(--line)'),
+            cursor: 'pointer'
+          }}
+        >
+          🟡 Baixou Contato ({savedOnlyCount})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setStatusFilter('confirmed'); setPage(1); }}
+          style={{
+            padding: '7px 12px',
+            borderRadius: 8,
+            fontSize: 12,
+            fontWeight: 700,
+            whiteSpace: 'nowrap',
+            background: statusFilter === 'confirmed' ? 'rgba(37, 211, 102, 0.25)' : 'var(--panel2)',
+            color: statusFilter === 'confirmed' ? '#25D366' : 'var(--ink2)',
+            border: '1px solid ' + (statusFilter === 'confirmed' ? '#25D366' : 'var(--line)'),
+            cursor: 'pointer'
+          }}
+        >
+          🟢 Confirmado ({confirmedCount})
+        </button>
+      </div>
+
+      <input 
+        placeholder="Buscar nome, telefone, e-mail ou ID..." 
+        value={search} 
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setPage(1);
+        }} 
+      />
+
+      {/* Lista de Usuários com Ações Rápidas */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+        {paginatedUsers.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '28px 12px', color: 'var(--ink3)', fontSize: 13 }}>
+            Nenhum membro encontrado neste filtro.
+          </div>
+        ) : (
+          paginatedUsers.map((p) => {
+            const isConfirmed = p.contact_saved && p.first_access_sent;
+            const isSavedOnly = p.contact_saved && !p.first_access_sent;
+            const isNotSaved = !p.contact_saved && !p.first_access_sent;
+
+            return (
+              <div 
+                key={p.id} 
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  padding: '12px 14px',
+                  background: 'var(--panel2)',
+                  borderRadius: 12,
+                  border: '1px solid var(--line)'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                  <Avatar person={p} size={40} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#fff' }}>
+                      {p.name}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--ink2)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span>📱 {p.whatsapp || p.phone || 'Sem telefone'}</span>
+                      <span>·</span>
+                      <span style={{ 
+                        fontSize: 10, 
+                        fontWeight: 800, 
+                        color: isConfirmed ? '#25D366' : isSavedOnly ? '#FFA000' : '#FF8A65',
+                        background: isConfirmed ? 'rgba(37, 211, 102, 0.15)' : isSavedOnly ? 'rgba(255, 160, 0, 0.15)' : 'rgba(240, 107, 76, 0.15)',
+                        border: '1px solid ' + (isConfirmed ? 'rgba(37, 211, 102, 0.4)' : isSavedOnly ? 'rgba(255, 160, 0, 0.4)' : 'rgba(240, 107, 76, 0.4)'),
+                        padding: '1px 6px',
+                        borderRadius: 4
+                      }}>
+                        {isConfirmed ? '🟢 Salvo & Confirmado' : isSavedOnly ? '🟡 Baixou Contato' : '🔴 Não Salvo'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Botões de Ação */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                  {!isConfirmed && (
+                    <button
+                      type="button"
+                      onClick={() => handleCobrarWhatsapp(p)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        fontSize: 11.5,
+                        fontWeight: 800,
+                        background: 'rgba(37, 211, 102, 0.15)',
+                        color: '#25D366',
+                        border: '1px solid rgba(37, 211, 102, 0.4)',
+                        borderRadius: 8,
+                        padding: '6px 10px',
+                        cursor: 'pointer',
+                        margin: 0
+                      }}
+                      title="Mandar mensagem cobrando para salvar o Dr. Cândido"
+                    >
+                      <span>📲</span>
+                      <span>Cobrar</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={updatingId === p.id}
+                    onClick={() => handleToggleStatus(p, !isConfirmed)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      background: isConfirmed ? 'rgba(255,255,255,0.05)' : 'var(--teal-dim)',
+                      color: isConfirmed ? 'var(--ink3)' : 'var(--teal)',
+                      border: '1px solid ' + (isConfirmed ? 'var(--line)' : 'var(--teal)'),
+                      borderRadius: 8,
+                      padding: '6px 10px',
+                      cursor: 'pointer',
+                      margin: 0
+                    }}
+                  >
+                    {updatingId === p.id ? '⏳...' : isConfirmed ? '❌ Desmarcar' : '✅ Marcar Salvo'}
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Paginação */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
+          <button 
+            className="btn" 
+            style={{ 
+              width: 'auto',
+              flexShrink: 0,
+              margin: 0,
+              padding: '8px 16px', 
+              fontSize: 13, 
+              fontWeight: 600,
+              borderRadius: 10, 
+              background: 'rgba(255, 255, 255, 0.04)', 
+              color: page === 1 ? 'var(--ink3)' : '#fff',
+              border: '1px solid ' + (page === 1 ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
+              cursor: page === 1 ? 'not-allowed' : 'pointer',
+              opacity: page === 1 ? 0.4 : 1
+            }}
+            disabled={page === 1}
+            onClick={() => setPage(p => Math.max(p - 1, 1))}
+          >
+            ← Anterior
+          </button>
+          <span style={{ fontSize: 13, color: 'var(--ink2)', fontWeight: 600 }}>
+            Página {page} de {totalPages}
+          </span>
+          <button 
+            className="btn" 
+            style={{ 
+              width: 'auto',
+              flexShrink: 0,
+              margin: 0,
+              padding: '8px 16px', 
+              fontSize: 13, 
+              fontWeight: 600,
+              borderRadius: 10, 
+              background: 'rgba(255, 255, 255, 0.04)', 
+              color: page === totalPages ? 'var(--ink3)' : '#fff',
+              border: '1px solid ' + (page === totalPages ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
+              cursor: page === totalPages ? 'not-allowed' : 'pointer',
+              opacity: page === totalPages ? 0.4 : 1
+            }}
+            disabled={page === totalPages}
+            onClick={() => setPage(p => Math.min(p + 1, totalPages))}
+          >
+            Próximo →
           </button>
         </div>
       )}
