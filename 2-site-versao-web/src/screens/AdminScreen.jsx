@@ -105,7 +105,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         <span className={`role-badge ${roleClass(profile.role)}`}>{roleLabel(profile.role)}</span>
       </div>
 
-      <div className="adm-tabs" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+      <div className="adm-tabs">
         {tabs.map(([key, label]) => (
           <button key={key} className={`adm-tab${tab === key ? ' on' : ''}`} onClick={() => setTab(key)}>{label}</button>
         ))}
