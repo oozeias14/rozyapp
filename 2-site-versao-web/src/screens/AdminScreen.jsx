@@ -200,6 +200,15 @@ function UsersTab({ users, onSelect, reload }) {
     }, 200);
   }
 
+  async function updateVcfStatusInChunks(ids, exportedValue) {
+    const CHUNK_SIZE = 100;
+    for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+      const chunk = ids.slice(i, i + CHUNK_SIZE);
+      const { error } = await supabase.from('profiles').update({ vcf_exported: exportedValue }).in('id', chunk);
+      if (error) console.warn('Chunk update error:', error);
+    }
+  }
+
   async function handleExportAllVCF() {
     const validUsers = users.filter(u => u.role !== 'admin' && u.role !== 'admin2');
     if (validUsers.length === 0) {
@@ -211,9 +220,9 @@ function UsersTab({ users, onSelect, reload }) {
     try {
       generateVcfFromUsers(validUsers, true);
 
-      // Marca todos como exportados no banco
+      // Marca todos como exportados no banco em lotes seguros
       const allIds = validUsers.map(u => u.id);
-      await supabase.from('profiles').update({ vcf_exported: true }).in('id', allIds);
+      await updateVcfStatusInChunks(allIds, true);
       if (reload) await reload();
     } catch (err) {
       alert('Erro ao exportar contatos: ' + err.message);
@@ -236,7 +245,7 @@ function UsersTab({ users, onSelect, reload }) {
       generateVcfFromUsers(toExport, true);
 
       const exportedIds = toExport.map(u => u.id);
-      await supabase.from('profiles').update({ vcf_exported: true }).in('id', exportedIds);
+      await updateVcfStatusInChunks(exportedIds, true);
       if (reload) await reload();
     } catch (err) {
       alert('Erro ao exportar: ' + err.message);
@@ -250,7 +259,8 @@ function UsersTab({ users, onSelect, reload }) {
     setExporting(true);
     try {
       const allIds = users.filter(u => u.role !== 'admin' && u.role !== 'admin2').map(u => u.id);
-      await supabase.from('profiles').update({ vcf_exported: false }).in('id', allIds);
+      await updateVcfStatusInChunks(allIds, false);
+      alert('Contador resetado com sucesso! Todos os contatos agora constam como pendentes.');
       if (reload) await reload();
     } catch (err) {
       alert('Erro ao resetar: ' + err.message);
