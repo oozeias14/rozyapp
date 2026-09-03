@@ -27,6 +27,51 @@ export function setEvolutionConfig({ serverUrl, apiKey, instanceName }) {
   if (instanceName !== undefined) localStorage.setItem(STORAGE_KEY_INSTANCE, (instanceName || DEFAULT_INSTANCE_NAME).trim());
 }
 
+// Carrega a configuração do Supabase para funcionar em todos os celulares/computadores
+export async function loadEvolutionConfig() {
+  const local = getEvolutionConfig();
+  try {
+    const { data } = await supabase.from('app_settings').select('*').eq('id', 1).maybeSingle();
+    if (data) {
+      const serverUrl = data.evolution_api_url || local.serverUrl;
+      const apiKey = data.evolution_api_key || local.apiKey;
+      const instanceName = data.evolution_api_instance || local.instanceName;
+
+      if (serverUrl) {
+        setEvolutionConfig({ serverUrl, apiKey, instanceName });
+        return {
+          serverUrl: (serverUrl || '').replace(/\/+$/, ''),
+          apiKey: apiKey || '',
+          instanceName: instanceName || DEFAULT_INSTANCE_NAME,
+        };
+      }
+    }
+  } catch (err) {
+    console.log('Sync evolution config from Supabase:', err);
+  }
+  return local;
+}
+
+// Salva a configuração localmente e no Supabase
+export async function saveEvolutionConfig({ serverUrl, apiKey, instanceName }) {
+  setEvolutionConfig({ serverUrl, apiKey, instanceName });
+  
+  let cleanUrl = (serverUrl || '').trim().replace(/\/+$/, '');
+  if (cleanUrl && !cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+    cleanUrl = 'https://' + cleanUrl;
+  }
+
+  try {
+    await supabase.from('app_settings').update({
+      evolution_api_url: cleanUrl,
+      evolution_api_key: (apiKey || '').trim(),
+      evolution_api_instance: (instanceName || DEFAULT_INSTANCE_NAME).trim(),
+    }).eq('id', 1);
+  } catch (err) {
+    console.log('Error updating app_settings for evolution:', err);
+  }
+}
+
 // Generic Evolution API request fetcher
 async function evolutionFetch(endpoint, options = {}) {
   const { serverUrl, apiKey } = getEvolutionConfig();

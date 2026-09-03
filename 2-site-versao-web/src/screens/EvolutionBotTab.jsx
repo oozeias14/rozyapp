@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   getEvolutionConfig, 
-  setEvolutionConfig, 
+  loadEvolutionConfig,
+  saveEvolutionConfig,
   fetchInstanceStatus, 
   createOrConnectInstance, 
   disconnectInstance, 
@@ -13,7 +14,7 @@ import { supabase } from '../lib/supabase';
 
 export function EvolutionBotTab({ users, reload }) {
   const [config, setConfig] = useState(getEvolutionConfig());
-  const [showConfigModal, setShowConfigModal] = useState(!getEvolutionConfig().serverUrl);
+  const [showConfigModal, setShowConfigModal] = useState(false);
   const [status, setStatus] = useState({ connected: false, state: 'checking' });
   const [qrCodeData, setQrCodeData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -27,13 +28,21 @@ export function EvolutionBotTab({ users, reload }) {
   // Gera os lotes de transmissão (T1, T2, T3... no máximo 250 por lote)
   const batches = generateTransmissionBatches(users, 250);
 
-  // Checa status da conexão ao carregar
+  // Carrega e sincroniza configuração do Supabase ao abrir
   useEffect(() => {
-    checkStatus();
+    async function init() {
+      const syncedConfig = await loadEvolutionConfig();
+      setConfig(syncedConfig);
+      if (!syncedConfig.serverUrl || !syncedConfig.apiKey) {
+        setShowConfigModal(true);
+      }
+      await checkStatus(syncedConfig);
+    }
+    init();
   }, []);
 
-  async function checkStatus() {
-    if (!config.serverUrl || !config.apiKey) {
+  async function checkStatus(cfg = config) {
+    if (!cfg.serverUrl || !cfg.apiKey) {
       setStatus({ connected: false, state: 'unconfigured' });
       return;
     }
@@ -45,9 +54,11 @@ export function EvolutionBotTab({ users, reload }) {
 
   async function handleSaveConfig(e) {
     e.preventDefault();
-    setEvolutionConfig(config);
+    setLoading(true);
+    await saveEvolutionConfig(config);
     setShowConfigModal(false);
-    await checkStatus();
+    await checkStatus(config);
+    setLoading(false);
   }
 
   async function handleConnect() {
