@@ -284,7 +284,7 @@ export function EvolutionBotTab({ users, reload }) {
                   URL do Servidor Railway
                 </label>
                 <input 
-                  type="url"
+                  type="text"
                   placeholder="https://sua-evolution-api.up.railway.app"
                   value={config.serverUrl}
                   onChange={(e) => setConfig({ ...config, serverUrl: e.target.value })}

@@ -16,7 +16,13 @@ export function getEvolutionConfig() {
 }
 
 export function setEvolutionConfig({ serverUrl, apiKey, instanceName }) {
-  if (serverUrl !== undefined) localStorage.setItem(STORAGE_KEY_URL, serverUrl.trim().replace(/\/+$/, ''));
+  if (serverUrl !== undefined) {
+    let cleanUrl = serverUrl.trim().replace(/\/+$/, '');
+    if (cleanUrl && !cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+      cleanUrl = 'https://' + cleanUrl;
+    }
+    localStorage.setItem(STORAGE_KEY_URL, cleanUrl);
+  }
   if (apiKey !== undefined) localStorage.setItem(STORAGE_KEY_KEY, apiKey.trim());
   if (instanceName !== undefined) localStorage.setItem(STORAGE_KEY_INSTANCE, (instanceName || DEFAULT_INSTANCE_NAME).trim());
 }
