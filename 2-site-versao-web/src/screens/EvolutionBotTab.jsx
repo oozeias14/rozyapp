@@ -23,10 +23,10 @@ export function EvolutionBotTab({ users, reload }) {
   const [customMsg, setCustomMsg] = useState(
     'Olá {nome}! Tudo bem? Aqui é o Dr. Cândido. Gostaria de saber se você já tem meu contato salvo na sua agenda? Responda com um "Sim" ou "Ok" por favor! 🙏'
   );
-  const [selectedBatch, setSelectedBatch] = useState(null);
+  const [batchSize, setBatchSize] = useState(100);
 
-  // Gera os lotes de transmissão (T1, T2, T3... no máximo 250 por lote)
-  const batches = generateTransmissionBatches(users, 250);
+  // Gera os lotes de transmissão (T1, T2, T3... padrão 100 por lote para compatibilidade celular)
+  const batches = generateTransmissionBatches(users, batchSize);
 
   // Carrega e sincroniza configuração do Supabase ao abrir
   useEffect(() => {
@@ -442,21 +442,44 @@ export function EvolutionBotTab({ users, reload }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 900, color: '#fff' }}>
-              📋 Listas de Transmissão Automáticas ({batches.length} Lotes de até 250 contatos)
+              📋 Listas de Transmissão Automáticas ({batches.length} Lotes de {batchSize} contatos)
             </div>
             <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
               Total: {users.length} membros cadastrados
             </div>
           </div>
-          <button 
-            type="button"
-            className="btn btn-teal"
-            style={{ fontSize: 12, padding: '7px 14px', margin: 0 }}
-            onClick={handleExportAllBatches}
-            title="Baixar arquivo único .vcf com todos os contatos já prefixados (T1, T2, T3...)"
-          >
-            📥 Baixar Todos os Lotes (.vcf)
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', padding: 3, borderRadius: 10, border: '1px solid var(--line)' }}>
+              <button 
+                type="button"
+                className={`btn ${batchSize === 100 ? 'btn-teal' : 'btn-ghost'}`}
+                style={{ fontSize: 11, padding: '4px 10px', margin: 0, borderRadius: 8 }}
+                onClick={() => setBatchSize(100)}
+                title="Lotes de até 100 contatos para importar sem erros no celular"
+              >
+                📱 100 / Lote (Celular)
+              </button>
+              <button 
+                type="button"
+                className={`btn ${batchSize === 250 ? 'btn-teal' : 'btn-ghost'}`}
+                style={{ fontSize: 11, padding: '4px 10px', margin: 0, borderRadius: 8 }}
+                onClick={() => setBatchSize(250)}
+                title="Lotes de até 250 contatos (Limite oficial do WhatsApp)"
+              >
+                💬 250 / Lote (WhatsApp)
+              </button>
+            </div>
+
+            <button 
+              type="button"
+              className="btn btn-teal"
+              style={{ fontSize: 12, padding: '7px 14px', margin: 0 }}
+              onClick={handleExportAllBatches}
+              title="Baixar arquivo único .vcf com todos os contatos já prefixados (T1, T2, T3...)"
+            >
+              📥 Baixar Todos (.vcf)
+            </button>
+          </div>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
