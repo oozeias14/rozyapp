@@ -305,12 +305,12 @@ label.lbl { font-size: 10.5px; color: var(--ink2); margin: 0 0 4px 2px; display:
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 8px;
-  padding: 8px;
-  background: rgba(15, 23, 42, 0.6);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
+  padding: 10px;
+  background: #161C2C;
+  border: 1.5px solid var(--violet);
+  border-radius: 20px;
   margin-bottom: 14px;
+  box-shadow: 0 4px 20px rgba(123, 108, 244, 0.2);
 }
 .adm-tab {
   width: 100%;
@@ -319,9 +319,9 @@ label.lbl { font-size: 10.5px; color: var(--ink2); margin: 0 0 4px 2px; display:
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  color: var(--ink2);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink1);
+  border: 1.5px solid rgba(123, 108, 244, 0.4);
+  background: rgba(15, 23, 42, 0.6);
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
@@ -331,15 +331,16 @@ label.lbl { font-size: 10.5px; color: var(--ink2); margin: 0 0 4px 2px; display:
   box-sizing: border-box;
 }
 .adm-tab:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(123, 108, 244, 0.2);
   color: #fff;
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--violet);
+  box-shadow: 0 0 10px rgba(123, 108, 244, 0.3);
 }
 .adm-tab.on {
   background: linear-gradient(135deg, #7B6CF4, #5D4FE6);
   color: #fff;
-  border-color: rgba(123, 108, 244, 0.8);
-  box-shadow: 0 4px 14px rgba(123, 108, 244, 0.35);
+  border: 1.5px solid #A396FF;
+  box-shadow: 0 4px 16px rgba(123, 108, 244, 0.5);
 }
 .sep { height: 1px; background: var(--line); margin: 14px 0; }
 .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
