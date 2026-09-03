@@ -101,34 +101,87 @@ export function EvolutionBotTab({ users, reload }) {
 
   // Exportar vCard da Lista T1, T2, etc. com prefixo no nome
   function handleExportBatchVcf(batch) {
-    const cards = batch.users.map((u) => {
-      const fullName = `${batch.id} ${u.name.trim()}`;
-      const tel = (u.phone || u.whatsapp || '').replace(/\D/g, '');
-      let intlTel = tel;
-      if (!intlTel.startsWith('55') && (intlTel.length === 10 || intlTel.length === 11)) {
-        intlTel = '55' + intlTel;
-      }
-      if (!intlTel.startsWith('+')) {
-        intlTel = '+' + intlTel;
-      }
-      return [
-        'BEGIN:VCARD',
-        'VERSION:3.0',
-        `N:;${fullName};;;`,
-        `FN:${fullName}`,
-        `TEL;TYPE=CELL;TYPE=PREF:${intlTel}`,
-        `TEL;TYPE=CELL,VOICE:${intlTel}`,
-        'END:VCARD'
-      ].join('\n');
-    });
+    try {
+      const cards = batch.users.map((u) => {
+        const cleanName = (u.name || 'Sem Nome').trim();
+        const fullName = `${batch.id} ${cleanName}`;
+        const tel = (u.phone || u.whatsapp || '').replace(/\D/g, '');
+        let intlTel = tel;
+        if (!intlTel.startsWith('55') && (intlTel.length === 10 || intlTel.length === 11)) {
+          intlTel = '55' + intlTel;
+        }
+        if (intlTel && !intlTel.startsWith('+')) {
+          intlTel = '+' + intlTel;
+        }
+        return [
+          'BEGIN:VCARD',
+          'VERSION:3.0',
+          `N:;${fullName};;;`,
+          `FN:${fullName}`,
+          ...(intlTel ? [`TEL;TYPE=CELL;TYPE=PREF:${intlTel}`, `TEL;TYPE=CELL,VOICE:${intlTel}`] : []),
+          'END:VCARD'
+        ].join('\r\n');
+      });
 
-    const vcfContent = cards.join('\n');
-    const blob = new Blob([vcfContent], { type: 'text/vcard;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.download = `${batch.name.toLowerCase().replace(/\s+/g, '_')}.vcf`;
-    link.href = url;
-    link.click();
+      const vcfContent = cards.join('\r\n');
+      const blob = new Blob([vcfContent], { type: 'text/vcard;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${batch.name.toLowerCase().replace(/\s+/g, '_')}.vcf`);
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 200);
+    } catch (err) {
+      alert('Erro ao exportar lote: ' + err.message);
+    }
+  }
+
+  // Exportar todos os lotes combinados (T1, T2, T3...)
+  function handleExportAllBatches() {
+    try {
+      const allCards = [];
+      batches.forEach((b) => {
+        b.users.forEach((u) => {
+          const cleanName = (u.name || 'Sem Nome').trim();
+          const fullName = `${b.id} ${cleanName}`;
+          const tel = (u.phone || u.whatsapp || '').replace(/\D/g, '');
+          let intlTel = tel;
+          if (!intlTel.startsWith('55') && (intlTel.length === 10 || intlTel.length === 11)) {
+            intlTel = '55' + intlTel;
+          }
+          if (intlTel && !intlTel.startsWith('+')) {
+            intlTel = '+' + intlTel;
+          }
+          allCards.push([
+            'BEGIN:VCARD',
+            'VERSION:3.0',
+            `N:;${fullName};;;`,
+            `FN:${fullName}`,
+            ...(intlTel ? [`TEL;TYPE=CELL;TYPE=PREF:${intlTel}`, `TEL;TYPE=CELL,VOICE:${intlTel}`] : []),
+            'END:VCARD'
+          ].join('\r\n'));
+        });
+      });
+
+      const vcfContent = allCards.join('\r\n');
+      const blob = new Blob([vcfContent], { type: 'text/vcard;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `contatos_todos_lotes_T_${Date.now()}.vcf`);
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 200);
+    } catch (err) {
+      alert('Erro ao exportar todos os lotes: ' + err.message);
+    }
   }
 
   // Disparo em lote com delay seguro para o lote selecionado
@@ -386,13 +439,24 @@ export function EvolutionBotTab({ users, reload }) {
 
       {/* Visualização dos Lotes T1, T2, T3... */}
       <div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: 900, color: '#fff' }}>
-            📋 Listas de Transmissão Automáticas ({batches.length} Lotes de até 250 contatos)
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 900, color: '#fff' }}>
+              📋 Listas de Transmissão Automáticas ({batches.length} Lotes de até 250 contatos)
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
+              Total: {users.length} membros cadastrados
+            </div>
           </div>
-          <span style={{ fontSize: 12, color: 'var(--ink2)' }}>
-            Total: {users.length} membros cadastrados
-          </span>
+          <button 
+            type="button"
+            className="btn btn-teal"
+            style={{ fontSize: 12, padding: '7px 14px', margin: 0 }}
+            onClick={handleExportAllBatches}
+            title="Baixar arquivo único .vcf com todos os contatos já prefixados (T1, T2, T3...)"
+          >
+            📥 Baixar Todos os Lotes (.vcf)
+          </button>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>

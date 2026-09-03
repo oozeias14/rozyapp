@@ -162,65 +162,98 @@ function UsersTab({ users, onSelect, reload }) {
   const unexportedCount = users.filter(u => u.role !== 'admin' && u.role !== 'admin2' && !u.vcf_exported).length;
   const exportedCount = users.filter(u => u.role !== 'admin' && u.role !== 'admin2' && u.vcf_exported).length;
 
-  async function handleExportVCF() {
-    const toExport = users.filter(u => u.role !== 'admin' && u.role !== 'admin2' && !u.vcf_exported);
-    
-    if (toExport.length === 0) {
-      alert('Todos os contatos cadastrados já foram exportados anteriormente!');
+  function generateVcfFromUsers(userList, prefixWithBatch = true) {
+    const cards = userList.map((u, index) => {
+      const listIndex = Math.floor(index / 250) + 1;
+      const cleanName = (u.name || 'Sem Nome').trim();
+      const fullName = prefixWithBatch ? `T${listIndex} ${cleanName}` : cleanName;
+      const tel = (u.phone || u.whatsapp || '').replace(/\D/g, '');
+      let intlTel = tel;
+      if (!intlTel.startsWith('55') && (intlTel.length === 10 || intlTel.length === 11)) {
+        intlTel = '55' + intlTel;
+      }
+      if (intlTel && !intlTel.startsWith('+')) {
+        intlTel = '+' + intlTel;
+      }
+      
+      return [
+        'BEGIN:VCARD',
+        'VERSION:3.0',
+        `N:;${fullName};;;`,
+        `FN:${fullName}`,
+        ...(intlTel ? [`TEL;TYPE=CELL;TYPE=PREF:${intlTel}`, `TEL;TYPE=CELL,VOICE:${intlTel}`] : []),
+        'END:VCARD'
+      ].join('\r\n');
+    });
+
+    const vcfContent = cards.join('\r\n');
+    const blob = new Blob([vcfContent], { type: 'text/vcard;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `contatos_transmissao_T_${Date.now()}.vcf`);
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 200);
+  }
+
+  async function handleExportAllVCF() {
+    const validUsers = users.filter(u => u.role !== 'admin' && u.role !== 'admin2');
+    if (validUsers.length === 0) {
+      alert('Nenhum contato encontrado para exportar.');
       return;
     }
 
-    const confirmExport = window.confirm(`Deseja exportar os ${toExport.length} novos contatos? Eles serão salvos em formato vCard (.VCF) e marcados como exportados no sistema.`);
-    if (!confirmExport) return;
+    setExporting(true);
+    try {
+      generateVcfFromUsers(validUsers, true);
+
+      // Marca todos como exportados no banco
+      const allIds = validUsers.map(u => u.id);
+      await supabase.from('profiles').update({ vcf_exported: true }).in('id', allIds);
+      if (reload) await reload();
+    } catch (err) {
+      alert('Erro ao exportar contatos: ' + err.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleExportNewVCF() {
+    const toExport = users.filter(u => u.role !== 'admin' && u.role !== 'admin2' && !u.vcf_exported);
+    if (toExport.length === 0) {
+      if (window.confirm('Todos os contatos já foram marcados como exportados. Deseja baixar TODOS os contatos novamente?')) {
+        return handleExportAllVCF();
+      }
+      return;
+    }
 
     setExporting(true);
     try {
-      const cards = toExport.map((u, index) => {
-        const listIndex = Math.floor(index / 250) + 1;
-        const fullName = `T${listIndex} ${u.name.trim()}`;
-        const tel = (u.phone || u.whatsapp || '').replace(/\D/g, '');
-        let intlTel = tel;
-        if (!intlTel.startsWith('55') && (intlTel.length === 10 || intlTel.length === 11)) {
-          intlTel = '55' + intlTel;
-        }
-        if (!intlTel.startsWith('+')) {
-          intlTel = '+' + intlTel;
-        }
-        
-        return [
-          'BEGIN:VCARD',
-          'VERSION:3.0',
-          `N:;${fullName};;;`,
-          `FN:${fullName}`,
-          `TEL;TYPE=CELL;TYPE=PREF:${intlTel}`,
-          `TEL;TYPE=CELL,VOICE:${intlTel}`,
-          'END:VCARD'
-        ].join('\n');
-      });
-
-      const vcfContent = cards.join('\n');
-      const blob = new Blob([vcfContent], { type: 'text/vcard;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.download = `contatos_transmissao_${Date.now()}.vcf`;
-      link.href = url;
-      link.click();
+      generateVcfFromUsers(toExport, true);
 
       const exportedIds = toExport.map(u => u.id);
-      const { error } = await supabase
-        .from('profiles')
-        .update({ vcf_exported: true })
-        .in('id', exportedIds);
-
-      if (error) {
-        alert('Contatos baixados, mas erro ao salvar status no banco: ' + error.message);
-      } else {
-        alert('Contatos exportados e marcados no sistema com sucesso!');
-        if (reload) await reload();
-      }
+      await supabase.from('profiles').update({ vcf_exported: true }).in('id', exportedIds);
+      if (reload) await reload();
     } catch (err) {
       alert('Erro ao exportar: ' + err.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleResetExportStatus() {
+    if (!window.confirm('Deseja marcar todos os contatos como PENDENTES de exportação novamente?')) return;
+    setExporting(true);
+    try {
+      const allIds = users.filter(u => u.role !== 'admin' && u.role !== 'admin2').map(u => u.id);
+      await supabase.from('profiles').update({ vcf_exported: false }).in('id', allIds);
+      if (reload) await reload();
+    } catch (err) {
+      alert('Erro ao resetar: ' + err.message);
     } finally {
       setExporting(false);
     }
@@ -232,20 +265,41 @@ function UsersTab({ users, onSelect, reload }) {
 
       {/* Painel de Exportação vCard */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px', alignItems: 'center', background: 'var(--panel2)', padding: '12px 14px', borderRadius: '12px', border: '1px solid var(--line)' }}>
-        <div style={{ flex: 1, minWidth: '150px' }}>
-          <div style={{ fontSize: '11px', color: 'var(--ink3)', textTransform: 'uppercase', fontWeight: 700 }}>Exportação vCard</div>
+        <div style={{ flex: 1, minWidth: '160px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--ink3)', textTransform: 'uppercase', fontWeight: 700 }}>Exportação vCard (Listas T1, T2...)</div>
           <div style={{ fontSize: '12.5px', color: 'var(--ink2)', marginTop: '4px' }}>
             Pendentes: <strong style={{ color: 'var(--teal)' }}>{unexportedCount}</strong> · Exportados: <strong style={{ color: 'var(--ink1)' }}>{exportedCount}</strong>
           </div>
         </div>
-        <button 
-          className="btn btn-teal" 
-          onClick={handleExportVCF}
-          disabled={exporting || unexportedCount === 0}
-          style={{ margin: 0, padding: '8px 12px', fontSize: '12px', width: 'auto' }}
-        >
-          {exporting ? '⏳ Exportando...' : '📥 Exportar Novos'}
-        </button>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          <button 
+            className="btn btn-teal" 
+            onClick={handleExportAllVCF}
+            disabled={exporting}
+            style={{ margin: 0, padding: '8px 12px', fontSize: '12px', width: 'auto' }}
+            title="Baixar todos os contatos do sistema organizados em lotes T1, T2, T3..."
+          >
+            {exporting ? '⏳ Baixando...' : '📥 Baixar Todos (T1, T2...)'}
+          </button>
+          <button 
+            className="btn btn-ghost" 
+            onClick={handleExportNewVCF}
+            disabled={exporting}
+            style={{ margin: 0, padding: '8px 10px', fontSize: '12px', width: 'auto' }}
+            title="Baixar apenas novos contatos pendentes"
+          >
+            📥 Apenas Novos ({unexportedCount})
+          </button>
+          <button 
+            className="btn btn-ghost" 
+            onClick={handleResetExportStatus}
+            disabled={exporting}
+            style={{ margin: 0, padding: '8px 10px', fontSize: '12px', width: 'auto', color: 'var(--ink3)' }}
+            title="Resetar status de exportação"
+          >
+            🔄
+          </button>
+        </div>
       </div>
 
       <input 
