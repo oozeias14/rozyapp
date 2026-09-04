@@ -6,13 +6,15 @@ const STORAGE_KEY_KEY = 'evolution_api_key';
 const STORAGE_KEY_INSTANCE = 'evolution_api_instance';
 
 export const DEFAULT_SERVER_URL = 'https://evolution-api-production-2522.up.railway.app';
-export const DEFAULT_API_KEY = '6a76cbf204380d04e7ce897ac00e4f204cafea39bc9b';
+export const DEFAULT_API_KEY = '6a76cbf204380d04e7ce897ac00e4f204cafea39bc9b7f74fd830a0fe74b8dec';
 export const DEFAULT_INSTANCE_NAME = 'dr_candido';
 
 export function getEvolutionConfig() {
+  const storedKey = localStorage.getItem(STORAGE_KEY_KEY);
+  const activeKey = (storedKey && storedKey.length >= 60) ? storedKey : DEFAULT_API_KEY;
   return {
     serverUrl: (localStorage.getItem(STORAGE_KEY_URL) || DEFAULT_SERVER_URL).replace(/\/+$/, ''),
-    apiKey: localStorage.getItem(STORAGE_KEY_KEY) || DEFAULT_API_KEY,
+    apiKey: activeKey,
     instanceName: localStorage.getItem(STORAGE_KEY_INSTANCE) || DEFAULT_INSTANCE_NAME,
   };
 }
@@ -36,14 +38,19 @@ export async function loadEvolutionConfig() {
     const { data } = await supabase.from('app_settings').select('*').eq('id', 1).maybeSingle();
     if (data) {
       const serverUrl = data.evolution_api_url || local.serverUrl;
-      const apiKey = data.evolution_api_key || local.apiKey;
+      let apiKey = data.evolution_api_key;
+      // Se a chave no banco for a antiga truncada, atualiza para a completa
+      if (!apiKey || apiKey.length < 60) {
+        apiKey = DEFAULT_API_KEY;
+        await supabase.from('app_settings').update({ evolution_api_key: DEFAULT_API_KEY }).eq('id', 1);
+      }
       const instanceName = data.evolution_api_instance || local.instanceName;
 
       if (serverUrl) {
         setEvolutionConfig({ serverUrl, apiKey, instanceName });
         return {
           serverUrl: (serverUrl || '').replace(/\/+$/, ''),
-          apiKey: apiKey || '',
+          apiKey: apiKey || DEFAULT_API_KEY,
           instanceName: instanceName || DEFAULT_INSTANCE_NAME,
         };
       }
