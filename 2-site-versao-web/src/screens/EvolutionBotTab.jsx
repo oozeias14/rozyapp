@@ -338,8 +338,8 @@ export function EvolutionBotTab({ users, reload }) {
     }
   }
 
-  // Exportar todos os lotes combinados (T1, T2, T3...)
-  function handleExportAllBatches() {
+  // Exportar todos os lotes combinados (T1, T2, T3...) em formato vCard (.vcf) compatível com iOS e Android
+  async function handleExportAllBatches() {
     try {
       const allCards = [];
       batches.forEach((b) => {
@@ -366,11 +366,30 @@ export function EvolutionBotTab({ users, reload }) {
       });
 
       const vcfContent = allCards.join('\r\n');
+      const fileName = `contatos_todos_lotes_${Date.now()}.vcf`;
       const blob = new Blob([vcfContent], { type: 'text/vcard;charset=utf-8;' });
+
+      // Tenta Web Share API nativa no celular (iOS / Android abre app de Contatos direto)
+      try {
+        const file = new File([blob], fileName, { type: 'text/vcard' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: 'Contatos Transmissão Dr. Cândido',
+            text: 'Salvar todos os contatos na agenda do celular'
+          });
+          return;
+        }
+      } catch (shareErr) {
+        if (shareErr.name === 'AbortError') return;
+        console.log('Web share ignorado ou não suportado, usando download padrão:', shareErr);
+      }
+
+      // Fallback padrão: Download do arquivo .vcf
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `contatos_todos_lotes_T_${Date.now()}.vcf`);
+      link.setAttribute('download', fileName);
       document.body.appendChild(link);
       link.click();
       setTimeout(() => {
@@ -844,67 +863,101 @@ export function EvolutionBotTab({ users, reload }) {
 
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, paddingRight: 2 }}>
               <p style={{ fontSize: 12.5, color: 'var(--ink2)', lineHeight: 1.5, margin: 0 }}>
-                Com o <strong>Google Contatos</strong>, todos os <strong>{validUsers.length} contatos</strong> entram de uma só vez na nuvem do Dr. Cândido e sincronizam automaticamente na agenda e no WhatsApp de qualquer celular (iPhone ou Android).
+                Escolha a forma mais fácil para adicionar todos os <strong>{validUsers.length} contatos</strong> no celular do Dr. Cândido:
               </p>
 
-              {/* Botões de Ação do Passo a Passo */}
-              <div style={{ background: 'rgba(255,255,255,0.03)', padding: 14, borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>
-                  1️⃣ Baixe a base completa formatada para o Google:
-                </div>
-                <button
-                  type="button"
-                  className="btn btn-teal"
-                  style={{ width: '100%', padding: '10px 14px', fontSize: 13, fontWeight: 800, margin: 0, borderRadius: 10 }}
-                  onClick={handleExportGoogleContactsCsv}
-                >
-                  📥 Baixar Arquivo Google Contatos (.csv)
-                </button>
-              </div>
-
-              <div style={{ background: 'rgba(255,255,255,0.03)', padding: 14, borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>
-                  2️⃣ Importe na conta Google do Dr. Cândido:
-                </div>
-                <a
-                  href="https://contacts.google.com/?hl=pt-BR"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn"
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    fontSize: 13,
-                    fontWeight: 800,
-                    margin: 0,
-                    borderRadius: 10,
-                    textDecoration: 'none',
-                    background: '#4285F4',
-                    color: '#fff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8
-                  }}
-                >
-                  🌐 Abrir Google Contatos (contacts.google.com) ➔
-                </a>
-                <div style={{ fontSize: 11.5, color: 'var(--ink3)' }}>
-                  No Google Contatos, clique em <strong>"Importar"</strong> (no menu lateral) e selecione o arquivo baixado acima.
-                </div>
-              </div>
-
-              {/* Guia para iPhone e Android */}
-              <div style={{ background: 'rgba(123, 108, 244, 0.08)', padding: 14, borderRadius: 12, border: '1px solid rgba(123, 108, 244, 0.25)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span>📱</span> Como funciona no iPhone e no Android:
+              {/* OPÇÃO 1: DIRETO NO CELULAR (IPHONE / ANDROID COM 1 TOQUE) */}
+              <div style={{ 
+                background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.12), rgba(15, 23, 42, 0.6))', 
+                padding: '16px', 
+                borderRadius: 14, 
+                border: '1px solid rgba(0, 229, 155, 0.35)', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: 10 
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                  <div style={{ fontSize: 13, fontWeight: 900, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>📲</span> Opção 1: Salvar Direto no Celular (Recomendado)
+                  </div>
+                  <span style={{ fontSize: 10, background: 'var(--teal)', color: '#081018', padding: '2px 8px', borderRadius: 20, fontWeight: 900 }}>
+                    1 TOQUE
+                  </span>
                 </div>
 
                 <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5 }}>
-                  🍏 <strong style={{ color: '#fff' }}>No iPhone (iOS):</strong><br />
-                  Vá em <strong>Ajustes</strong> ➔ <strong>Contatos</strong> ➔ <strong>Contas</strong> ➔ <strong>Adicionar Conta</strong> ➔ escolha <strong>Google</strong> e entre com o Gmail do Dr. Cândido. Ative a chave <strong>"Contatos"</strong>. Pronto! Todos os contatos aparecem na agenda e no WhatsApp.<br /><br />
-                  🤖 <strong style={{ color: '#fff' }}>No Android:</strong><br />
-                  Se o celular do Dr. Cândido já está conectado com a conta Google/Gmail dele, todos os contatos aparecem <strong>instantaneamente</strong> no WhatsApp sem precisar fazer nada!
+                  Gera o arquivo oficial de agenda (.vcf). Ao clicar abaixo no seu celular, ele abre <strong>direto o app de Contatos do iPhone ou Android</strong> perguntando se deseja salvar todos os contatos.
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-teal"
+                  style={{ width: '100%', padding: '11px 16px', fontSize: 13, fontWeight: 900, margin: 0, borderRadius: 10, boxShadow: '0 4px 14px rgba(0, 229, 155, 0.25)' }}
+                  onClick={handleExportAllBatches}
+                >
+                  📥 Salvar Todos no Celular (.vcf - 1 Toque)
+                </button>
+              </div>
+
+              {/* OPÇÃO 2: GOOGLE CONTATOS (NUVEM) */}
+              <div style={{ 
+                background: 'rgba(255, 255, 255, 0.03)', 
+                padding: '16px', 
+                borderRadius: 14, 
+                border: '1px solid rgba(255, 255, 255, 0.08)', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: 10 
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>☁️</span> Opção 2: Importar pela Nuvem Google (contacts.google.com)
+                </div>
+
+                <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5 }}>
+                  <strong style={{ color: '#FF8A65' }}>Atenção:</strong> Arquivos <strong style={{ color: '#fff' }}>.csv</strong> só funcionam quando importados <strong>dentro do site do Google Contatos</strong> no computador ou navegador. O celular não abre arquivos .csv diretamente.
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8, marginTop: 2 }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{
+                      padding: '9px 12px',
+                      fontSize: 12,
+                      fontWeight: 800,
+                      margin: 0,
+                      borderRadius: 10,
+                      background: 'rgba(255,255,255,0.06)',
+                      color: '#fff',
+                      border: '1px solid var(--line)'
+                    }}
+                    onClick={handleExportGoogleContactsCsv}
+                  >
+                    📥 Baixar Planilha (.csv)
+                  </button>
+
+                  <a
+                    href="https://contacts.google.com/?hl=pt-BR"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn"
+                    style={{
+                      padding: '9px 12px',
+                      fontSize: 12,
+                      fontWeight: 800,
+                      margin: 0,
+                      borderRadius: 10,
+                      textDecoration: 'none',
+                      background: '#4285F4',
+                      color: '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6
+                    }}
+                  >
+                    🌐 Abrir Google Contatos ➔
+                  </a>
                 </div>
               </div>
             </div>
