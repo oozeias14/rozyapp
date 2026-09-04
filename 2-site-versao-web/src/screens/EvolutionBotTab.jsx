@@ -51,6 +51,35 @@ export function EvolutionBotTab({ users, reload }) {
   const [modalSearch, setModalSearch] = useState('');
   const [modalPage, setModalPage] = useState(1);
 
+  function getPhoneSignatures(p) {
+    let clean = (p || '').replace(/\D/g, '');
+    if (!clean) return [];
+    if (clean.startsWith('55') && clean.length >= 12) clean = clean.substring(2);
+    if (clean.length === 11) {
+      const ddd = clean.substring(0, 2);
+      const rest = clean.substring(3);
+      return ['55' + clean, clean, '55' + ddd + rest, ddd + rest, rest];
+    } else if (clean.length === 10) {
+      const ddd = clean.substring(0, 2);
+      const rest = clean.substring(2);
+      return ['55' + clean, clean, '55' + ddd + '9' + rest, ddd + '9' + rest, rest];
+    }
+    return [clean, '55' + clean];
+  }
+
+  // Set reativo para checagem O(1) ultra-rápida de contatos
+  const savedPhonesSet = new Set();
+  savedPhones.forEach((p) => {
+    getPhoneSignatures(p).forEach((sig) => savedPhonesSet.add(sig));
+  });
+
+  function isUserInSaved(u) {
+    const raw = u.whatsapp || u.phone;
+    if (!raw) return false;
+    const sigs = getPhoneSignatures(raw);
+    return sigs.some((sig) => savedPhonesSet.has(sig));
+  }
+
   function normalizePhone(p) {
     let clean = (p || '').replace(/\D/g, '');
     if (!clean) return '';
@@ -60,14 +89,8 @@ export function EvolutionBotTab({ users, reload }) {
 
   // Filtragem de membros válidos
   const validUsers = users.filter((u) => u.role !== 'admin' && u.role !== 'admin2');
-  const withNumberUsers = validUsers.filter((u) => {
-    const p = normalizePhone(u.whatsapp || u.phone);
-    return p && savedPhones.includes(p);
-  });
-  const withoutNumberUsers = validUsers.filter((u) => {
-    const p = normalizePhone(u.whatsapp || u.phone);
-    return !p || !savedPhones.includes(p);
-  });
+  const withNumberUsers = validUsers.filter((u) => isUserInSaved(u));
+  const withoutNumberUsers = validUsers.filter((u) => !isUserInSaved(u));
   const coveragePercent = validUsers.length > 0 
     ? ((withNumberUsers.length / validUsers.length) * 100).toFixed(1) 
     : '0.0';
@@ -251,22 +274,30 @@ export function EvolutionBotTab({ users, reload }) {
       let newCount = 0;
 
       contacts.forEach((c) => {
-        const rawId = c.id || c.jid || '';
-        const phone = rawId.split('@')[0].replace(/\D/g, '');
-        if (phone && phone.length >= 10) {
-          let intl = phone;
-          if (intl.length === 10 || intl.length === 11) intl = '55' + intl;
-          if (!currentSavedSet.has(intl)) {
-            currentSavedSet.add(intl);
-            newCount++;
-          }
+        const rawJid = c.remoteJid || c.jid || (c.id && c.id.includes('@') ? c.id : '') || c.number || '';
+        const phone = rawJid.split('@')[0].replace(/\D/g, '');
+        if (phone && phone.length >= 10 && phone.length <= 13) {
+          getPhoneSignatures(phone).forEach((sig) => {
+            if (!currentSavedSet.has(sig)) {
+              currentSavedSet.add(sig);
+              newCount++;
+            }
+          });
         }
       });
 
       const updatedArr = Array.from(currentSavedSet);
       setSavedPhones(updatedArr);
       localStorage.setItem('wa_saved_phones', JSON.stringify(updatedArr));
-      alert(`Sincronização concluída!\nTotal de contatos identificados no WhatsApp: ${contacts.length}\nNovos contatos adicionados à lista de confirmados: ${newCount}`);
+
+      // Conta quantos membros dos cadastros foram identificados
+      const tempSet = new Set(updatedArr);
+      const matchedMembers = validUsers.filter((u) => {
+        const sigs = getPhoneSignatures(u.whatsapp || u.phone);
+        return sigs.some((s) => tempSet.has(s));
+      });
+
+      alert(`✅ Sincronização concluída com sucesso!\n\n📱 Contatos lidos no seu WhatsApp: ${contacts.length}\n🟢 Membros dos seus cadastros com número salvo: ${matchedMembers.length} de ${validUsers.length}`);
     } catch (err) {
       alert('Erro ao sincronizar contatos do WhatsApp: ' + err.message);
     } finally {
