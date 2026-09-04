@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   getEvolutionConfig, 
   loadEvolutionConfig,
@@ -51,6 +51,32 @@ export function EvolutionBotTab({ users, reload }) {
   const [showLegacyBatches, setShowLegacyBatches] = useState(false);
   const [modalSearch, setModalSearch] = useState('');
   const [modalPage, setModalPage] = useState(1);
+
+  // Estados do Sistema de Teste e Validação de Transmissão
+  const [showBroadcastTestModal, setShowBroadcastTestModal] = useState(false);
+  const [testTargetType, setTestTargetType] = useState('quick_test'); // 'quick_test' | 'batch' | 'all_pending' | 'all'
+  const [selectedTestBatch, setSelectedTestBatch] = useState('T1');
+  const [testMessageText, setTestMessageText] = useState(
+    'Olá {primeiro_nome}, tudo bem? Aqui é da equipe oficial do Dr. Cândido Teles! 🤝\n\nEstamos confirmando nossa lista de transmissão no WhatsApp para envio de comunicados e novidades importantes.\n\nPor favor, salve nosso contato na sua agenda para não perder nada! Se você já salvou, responda com um "OK". 🙏'
+  );
+  const [isTestingRunning, setIsTestingRunning] = useState(false);
+  const [isTestingPaused, setIsTestingPaused] = useState(false);
+  const [testProgress, setTestProgress] = useState({ current: 0, total: 0, success: 0, failed: 0 });
+  const [testLogs, setTestLogs] = useState([]);
+  const testAbortRef = useRef(false);
+  const testPauseRef = useRef(false);
+  const logContainerRef = useRef(null);
+
+  function addLog(msg, type = 'info') {
+    const time = new Date().toLocaleTimeString('pt-BR');
+    setTestLogs(prev => [...prev.slice(-150), { time, msg, type }]);
+  }
+
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [testLogs]);
 
   function getPhoneSignatures(p) {
     let clean = (p || '').replace(/\D/g, '');
@@ -410,6 +436,134 @@ export function EvolutionBotTab({ users, reload }) {
       if (reload) await reload();
     } catch (err) {
       console.warn('Erro ao atualizar contato no Supabase:', err);
+    }
+  }
+
+  // ── EXECUTOR DO TESTE DE TRANSMISSÃO & DESCOBERTA DE CONTATOS SALVOS ──
+  async function handleStartBroadcastTest() {
+    if (!status.connected) {
+      alert('Conecte o WhatsApp pelo QR Code acima antes de iniciar o teste de transmissão!');
+      return;
+    }
+
+    let targetUsers = [];
+    if (testTargetType === 'quick_test') {
+      targetUsers = withoutNumberUsers.slice(0, 10);
+      if (targetUsers.length === 0) targetUsers = validUsers.slice(0, 10);
+    } else if (testTargetType === 'all_pending') {
+      targetUsers = withoutNumberUsers;
+    } else if (testTargetType === 'batch') {
+      const b = batches.find((item) => item.id === selectedTestBatch);
+      targetUsers = b ? b.users : [];
+    } else {
+      targetUsers = validUsers;
+    }
+
+    if (targetUsers.length === 0) {
+      alert('Nenhum contato encontrado para o grupo selecionado!');
+      return;
+    }
+
+    const confirmText = `🚀 Iniciar Teste de Transmissão para ${targetUsers.length} contatos?\n\n• O robô enviará a mensagem de teste com intervalo anti-ban (5 a 10s aleatórios entre cada contato).\n• Os contatos entregues serão salvos e marcados automaticamente no painel em tempo real.\n\nDeseja continuar?`;
+    if (!window.confirm(confirmText)) return;
+
+    setIsTestingRunning(true);
+    setIsTestingPaused(false);
+    testAbortRef.current = false;
+    testPauseRef.current = false;
+    setTestLogs([]);
+    setTestProgress({ current: 0, total: targetUsers.length, success: 0, failed: 0 });
+
+    addLog(`🚀 Iniciando teste de transmissão para ${targetUsers.length} contatos...`, 'info');
+
+    let successCount = 0;
+    let failedCount = 0;
+
+    for (let i = 0; i < targetUsers.length; i++) {
+      if (testAbortRef.current) {
+        addLog('⏹️ Teste interrompido pelo usuário.', 'delay');
+        break;
+      }
+
+      while (testPauseRef.current) {
+        await new Promise((r) => setTimeout(r, 600));
+        if (testAbortRef.current) break;
+      }
+      if (testAbortRef.current) break;
+
+      const user = targetUsers[i];
+      const rawPhone = user.whatsapp || user.phone || '';
+      const cleanPhone = normalizePhone(rawPhone);
+      const firstName = (user.name || '').trim().split(' ')[0] || 'Amigo(a)';
+      const fullName = (user.name || 'Amigo(a)').trim();
+      const city = user.city || 'DF';
+
+      if (!cleanPhone || cleanPhone.length < 10) {
+        failedCount++;
+        setTestProgress((p) => ({ ...p, current: i + 1, failed: failedCount }));
+        addLog(`❌ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone || 'Sem número'}): Número inválido`, 'error');
+        continue;
+      }
+
+      const personalizedMsg = testMessageText
+        .replace(/{primeiro_nome}/gi, firstName)
+        .replace(/{nome}/gi, fullName)
+        .replace(/{cidade}/gi, city);
+
+      addLog(`📤 [${i + 1}/${targetUsers.length}] Enviando para ${fullName} (${rawPhone})...`, 'sending');
+
+      try {
+        const res = await sendWhatsAppMessage(cleanPhone, personalizedMsg);
+        if (res?.error || res?.status === 400 || res?.status === 500) {
+          throw new Error(res.message || res.error || 'Erro no envio');
+        }
+
+        successCount++;
+
+        // Atualiza no banco Supabase imediatamente
+        await supabase.from('profiles').update({ vcf_exported: true }).eq('id', user.id);
+
+        // Atualiza localmente
+        setSavedPhones((prev) => {
+          const next = [...prev.filter((p) => p !== cleanPhone), cleanPhone];
+          localStorage.setItem('wa_saved_phones', JSON.stringify(next));
+          return next;
+        });
+
+        setTestProgress((p) => ({ ...p, current: i + 1, success: successCount }));
+        addLog(`✅ [${i + 1}/${targetUsers.length}] ${fullName}: Entregue com sucesso! Marcado como SALVO.`, 'success');
+      } catch (err) {
+        failedCount++;
+        setTestProgress((p) => ({ ...p, current: i + 1, failed: failedCount }));
+        addLog(`❌ [${i + 1}/${targetUsers.length}] ${fullName}: Falha no envio (${err.message || 'Sem WhatsApp'})`, 'error');
+      }
+
+      // Intervalo seguro anti-ban aleatório (5 a 10s)
+      if (i < targetUsers.length - 1 && !testAbortRef.current) {
+        const delaySeconds = Math.floor(Math.random() * (10 - 5 + 1)) + 5;
+        addLog(`⏳ Aguardando ${delaySeconds}s (intervalo anti-ban)...`, 'delay');
+        await new Promise((r) => setTimeout(r, delaySeconds * 1000));
+      }
+    }
+
+    if (reload) await reload();
+    setIsTestingRunning(false);
+    setIsTestingPaused(false);
+    addLog(`🏁 Teste concluído! Confirmados: ${successCount} | Falhas: ${failedCount}`, 'info');
+    alert(`🎉 Teste de transmissão finalizado!\n\n✅ Confirmados / Salvos: ${successCount}\n❌ Falhas: ${failedCount}\n\nO Painel de Alcance da Transmissão foi atualizado.`);
+  }
+
+  function handlePauseTest() {
+    testPauseRef.current = !testPauseRef.current;
+    setIsTestingPaused(testPauseRef.current);
+    addLog(testPauseRef.current ? '⏸️ Teste pausado pelo usuário.' : '▶️ Teste retomado.', 'delay');
+  }
+
+  function handleStopTest() {
+    if (window.confirm('Deseja realmente parar o teste de transmissão? Os contatos já testados permanecerão salvos.')) {
+      testAbortRef.current = true;
+      testPauseRef.current = false;
+      setIsTestingPaused(false);
     }
   }
 
@@ -1389,6 +1543,373 @@ export function EvolutionBotTab({ users, reload }) {
         </div>
       )}
 
+      {/* Modal Completo do Sistema de Teste e Validação de Transmissão */}
+      {showBroadcastTestModal && (
+        <div className="modal-bg" style={{ zIndex: 12000 }}>
+          <div className="modal" style={{ maxWidth: 540, maxHeight: '92vh', display: 'flex', flexDirection: 'column', padding: 22, gap: 14 }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.2), rgba(0, 180, 216, 0.2))',
+                  border: '1px solid var(--teal)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 20,
+                  flexShrink: 0
+                }}>
+                  🧪
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 900, color: '#fff', margin: 0, lineHeight: 1.2 }}>
+                    Teste de Transmissão & Descoberta de Salvos
+                  </h3>
+                  <div style={{ fontSize: 11.5, color: 'var(--ink2)', marginTop: 3 }}>
+                    Descubra quem recebe mensagens e atualize o painel automaticamente
+                  </div>
+                </div>
+              </div>
+
+              {!isTestingRunning && (
+                <button 
+                  type="button" 
+                  onClick={() => setShowBroadcastTestModal(false)}
+                  style={{
+                    width: 32,
+                    height: 32,
+                    minWidth: 32,
+                    borderRadius: '50%',
+                    background: 'rgba(255, 255, 255, 0.06)',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    color: 'var(--ink2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    padding: 0,
+                    margin: 0
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Conteúdo com Rolagem */}
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, paddingRight: 2 }}>
+              
+              {/* Card Explicativo de Como Funciona o Teste */}
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.08), rgba(15, 23, 42, 0.6))',
+                border: '1px solid rgba(0, 229, 155, 0.25)',
+                borderRadius: 12,
+                padding: '12px 14px',
+                fontSize: 12,
+                color: 'var(--ink2)',
+                lineHeight: 1.5
+              }}>
+                <strong style={{ color: '#fff' }}>🛡️ Como esse teste descobre quem te salvou:</strong><br />
+                O robô envia uma mensagem oficial de verificação com delay humano seguro anti-ban (5 a 10s aleatórios). Cada contato que recebe a mensagem com sucesso é <strong>imediatamente marcado como SALVO NA AGENDA</strong> no painel em tempo real!
+              </div>
+
+              {/* 1. Seleção do Público Alvo do Teste */}
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  1. Selecione o Grupo para Testar
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginTop: 6 }}>
+                  {/* Opção A: Teste Rápido 10 */}
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={isTestingRunning}
+                    style={{
+                      margin: 0,
+                      padding: '10px 8px',
+                      fontSize: 11.5,
+                      borderRadius: 10,
+                      textAlign: 'center',
+                      background: testTargetType === 'quick_test' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                      color: testTargetType === 'quick_test' ? '#fff' : 'var(--ink2)',
+                      border: '1px solid ' + (testTargetType === 'quick_test' ? 'var(--teal)' : 'var(--line)'),
+                      cursor: isTestingRunning ? 'not-allowed' : 'pointer'
+                    }}
+                    onClick={() => setTestTargetType('quick_test')}
+                  >
+                    <div style={{ fontSize: 16 }}>⚡</div>
+                    <div style={{ fontWeight: 800, marginTop: 2 }}>Teste Rápido</div>
+                    <div style={{ fontSize: 10, opacity: 0.7 }}>10 contatos de teste</div>
+                  </button>
+
+                  {/* Opção B: Por Lote de Transmissão */}
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={isTestingRunning}
+                    style={{
+                      margin: 0,
+                      padding: '10px 8px',
+                      fontSize: 11.5,
+                      borderRadius: 10,
+                      textAlign: 'center',
+                      background: testTargetType === 'batch' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                      color: testTargetType === 'batch' ? '#fff' : 'var(--ink2)',
+                      border: '1px solid ' + (testTargetType === 'batch' ? 'var(--teal)' : 'var(--line)'),
+                      cursor: isTestingRunning ? 'not-allowed' : 'pointer'
+                    }}
+                    onClick={() => setTestTargetType('batch')}
+                  >
+                    <div style={{ fontSize: 16 }}>📋</div>
+                    <div style={{ fontWeight: 800, marginTop: 2 }}>Por Lote (100)</div>
+                    <div style={{ fontSize: 10, opacity: 0.7 }}>Escolha T1, T2, T3...</div>
+                  </button>
+
+                  {/* Opção C: Todos os Pendentes */}
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={isTestingRunning}
+                    style={{
+                      margin: 0,
+                      padding: '10px 8px',
+                      fontSize: 11.5,
+                      borderRadius: 10,
+                      textAlign: 'center',
+                      background: testTargetType === 'all_pending' ? 'rgba(240, 107, 76, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                      color: testTargetType === 'all_pending' ? '#fff' : 'var(--ink2)',
+                      border: '1px solid ' + (testTargetType === 'all_pending' ? '#FF8A65' : 'var(--line)'),
+                      cursor: isTestingRunning ? 'not-allowed' : 'pointer'
+                    }}
+                    onClick={() => setTestTargetType('all_pending')}
+                  >
+                    <div style={{ fontSize: 16 }}>⏱</div>
+                    <div style={{ fontWeight: 800, marginTop: 2 }}>Pendentes</div>
+                    <div style={{ fontSize: 10, opacity: 0.7 }}>{withoutNumberUsers.length} contatos</div>
+                  </button>
+                </div>
+
+                {/* Se escolheu Lote específico */}
+                {testTargetType === 'batch' && (
+                  <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: 10, border: '1px solid var(--line)' }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>Selecionar Lote:</span>
+                    <select
+                      value={selectedTestBatch}
+                      onChange={(e) => setSelectedTestBatch(e.target.value)}
+                      disabled={isTestingRunning}
+                      style={{
+                        flex: 1,
+                        padding: '6px 10px',
+                        borderRadius: 8,
+                        background: 'rgba(0,0,0,0.4)',
+                        border: '1px solid var(--teal)',
+                        color: '#fff',
+                        fontSize: 12.5,
+                        fontWeight: 700
+                      }}
+                    >
+                      {batches.map((b) => (
+                        <option key={b.id} value={b.id} style={{ background: '#0F172A', color: '#fff' }}>
+                          {b.id} - {b.name} ({b.count} contatos #{b.startNumber} a #{b.endNumber})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* 2. Mensagem de Teste */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    2. Mensagem de Verificação
+                  </label>
+                  <div style={{ fontSize: 10, color: 'var(--teal)', display: 'flex', gap: 4 }}>
+                    <span style={{ cursor: 'pointer', background: 'rgba(0,229,155,0.1)', padding: '2px 6px', borderRadius: 4 }} onClick={() => setTestMessageText(t => t + ' {primeiro_nome}')}>+ Primeiro Nome</span>
+                    <span style={{ cursor: 'pointer', background: 'rgba(0,229,155,0.1)', padding: '2px 6px', borderRadius: 4 }} onClick={() => setTestMessageText(t => t + ' {cidade}')}>+ Cidade</span>
+                  </div>
+                </div>
+
+                <textarea
+                  rows={4}
+                  value={testMessageText}
+                  onChange={(e) => setTestMessageText(e.target.value)}
+                  disabled={isTestingRunning}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    fontSize: 12,
+                    lineHeight: 1.4,
+                    borderRadius: 10,
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid var(--line)',
+                    color: '#fff',
+                    boxSizing: 'border-box',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+
+              {/* Se o teste estiver rodando ou tiver progresso */}
+              {isTestingRunning && (
+                <div style={{
+                  background: 'linear-gradient(180deg, rgba(0, 229, 155, 0.08) 0%, rgba(15, 23, 42, 0.8) 100%)',
+                  borderRadius: 14,
+                  border: '1px solid var(--teal)',
+                  padding: '14px 16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12
+                }}>
+                  {/* Status Bar */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 16 }}>⏳</span>
+                      <span style={{ fontSize: 13, fontWeight: 900, color: '#fff' }}>
+                        {isTestingPaused ? '⏸️ Teste Pausado' : '🚀 Testando Transmissão ao Vivo...'}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 900, color: 'var(--teal)' }}>
+                      {testProgress.current} de {testProgress.total} ({testProgress.total > 0 ? Math.round((testProgress.current / testProgress.total) * 100) : 0}%)
+                    </span>
+                  </div>
+
+                  {/* Barra de Progresso Visual */}
+                  <div style={{ width: '100%', height: 7, background: 'rgba(255,255,255,0.08)', borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{
+                      width: `${testProgress.total > 0 ? (testProgress.current / testProgress.total) * 100 : 0}%`,
+                      height: '100%',
+                      background: 'linear-gradient(90deg, #25D366, var(--teal))',
+                      transition: 'width 0.3s ease'
+                    }} />
+                  </div>
+
+                  {/* Contadores ao vivo */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div style={{ background: 'rgba(37,211,102,0.12)', border: '1px solid rgba(37,211,102,0.3)', borderRadius: 8, padding: '6px 10px', textAlign: 'center' }}>
+                      <span style={{ fontSize: 10, color: '#25D366', fontWeight: 800, textTransform: 'uppercase' }}>✅ Confirmados (Salvos)</span>
+                      <div style={{ fontSize: 18, fontWeight: 900, color: '#25D366', marginTop: 2 }}>{testProgress.success}</div>
+                    </div>
+
+                    <div style={{ background: 'rgba(240,107,76,0.12)', border: '1px solid rgba(240,107,76,0.3)', borderRadius: 8, padding: '6px 10px', textAlign: 'center' }}>
+                      <span style={{ fontSize: 10, color: '#FF8A65', fontWeight: 800, textTransform: 'uppercase' }}>❌ Falhas / Sem Zap</span>
+                      <div style={{ fontSize: 18, fontWeight: 900, color: '#FF8A65', marginTop: 2 }}>{testProgress.failed}</div>
+                    </div>
+                  </div>
+
+                  {/* Terminal de Logs ao Vivo */}
+                  <div
+                    ref={logContainerRef}
+                    style={{
+                      height: 130,
+                      overflowY: 'auto',
+                      background: '#040910',
+                      borderRadius: 8,
+                      padding: '8px 10px',
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 4,
+                      border: '1px solid rgba(255,255,255,0.08)'
+                    }}
+                  >
+                    {testLogs.length === 0 ? (
+                      <span style={{ color: 'var(--ink3)' }}>Aguardando início...</span>
+                    ) : (
+                      testLogs.map((l, idx) => (
+                        <div key={idx} style={{
+                          color: l.type === 'success' ? '#25D366' : l.type === 'error' ? '#FF8A65' : l.type === 'delay' ? '#F59E0B' : 'var(--ink2)'
+                        }}>
+                          <span style={{ opacity: 0.5 }}>[{l.time}]</span> {l.msg}
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Botões de Controle durante Execução */}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      style={{
+                        flex: 1,
+                        margin: 0,
+                        padding: '9px',
+                        fontSize: 12,
+                        fontWeight: 800,
+                        borderRadius: 8,
+                        background: isTestingPaused ? 'var(--teal)' : 'rgba(255,255,255,0.08)',
+                        color: isTestingPaused ? '#081018' : '#fff'
+                      }}
+                      onClick={handlePauseTest}
+                    >
+                      {isTestingPaused ? '▶️ Continuar Teste' : '⏸️ Pausar'}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn"
+                      style={{
+                        flex: 1,
+                        margin: 0,
+                        padding: '9px',
+                        fontSize: 12,
+                        fontWeight: 800,
+                        borderRadius: 8,
+                        background: 'rgba(240,107,76,0.15)',
+                        color: '#FF8A65',
+                        border: '1px solid rgba(240,107,76,0.3)'
+                      }}
+                      onClick={handleStopTest}
+                    >
+                      ⏹️ Parar Teste
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Rodapé / Botão de Disparo */}
+            {!isTestingRunning && (
+              <div style={{ marginTop: 6, paddingTop: 12, borderTop: '1px solid var(--line)', display: 'flex', gap: 10 }}>
+                <button
+                  type="button"
+                  className="btn btn-teal"
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    fontSize: 13,
+                    fontWeight: 900,
+                    margin: 0,
+                    borderRadius: 10,
+                    background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
+                    color: '#081018',
+                    boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)'
+                  }}
+                  onClick={handleStartBroadcastTest}
+                >
+                  🚀 Iniciar Teste de Transmissão (Anti-Ban 5 a 10s)
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ width: 'auto', padding: '10px 18px', fontSize: 12, margin: 0 }}
+                  onClick={() => setShowBroadcastTestModal(false)}
+                >
+                  Fechar
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Dashboard Moderno de Estatísticas da Transmissão */}
       <div style={{
         background: 'linear-gradient(180deg, var(--panel2) 0%, rgba(15, 23, 42, 0.95) 100%)',
@@ -1440,11 +1961,15 @@ export function EvolutionBotTab({ users, reload }) {
                 alignItems: 'center',
                 gap: 8,
                 borderRadius: 10,
-                boxShadow: '0 4px 14px rgba(0, 229, 155, 0.25)'
+                background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
+                color: '#081018',
+                border: 'none',
+                boxShadow: '0 4px 14px rgba(0, 229, 155, 0.35)',
+                cursor: 'pointer'
               }}
-              onClick={() => setShowGoogleSyncModal(true)}
+              onClick={() => setShowBroadcastTestModal(true)}
             >
-              <span>☁️</span> Sincronizar Google / iPhone
+              <span>🧪</span> Testar Transmissão & Salvos
             </button>
 
             <button
@@ -1453,11 +1978,32 @@ export function EvolutionBotTab({ users, reload }) {
               style={{
                 fontSize: 12.5,
                 fontWeight: 700,
-                padding: '9px 16px',
+                padding: '9px 14px',
                 margin: 0,
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 8,
+                gap: 6,
+                borderRadius: 10,
+                background: 'rgba(255, 255, 255, 0.05)',
+                color: '#fff',
+                border: '1px solid var(--line)'
+              }}
+              onClick={() => setShowGoogleSyncModal(true)}
+            >
+              <span>☁️</span> Agenda
+            </button>
+
+            <button
+              type="button"
+              className="btn"
+              style={{
+                fontSize: 12.5,
+                fontWeight: 700,
+                padding: '9px 14px',
+                margin: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
                 borderRadius: 10,
                 background: 'rgba(255, 255, 255, 0.05)',
                 color: '#fff',
@@ -1478,7 +2024,7 @@ export function EvolutionBotTab({ users, reload }) {
               style={{
                 fontSize: 12.5,
                 fontWeight: 700,
-                padding: '9px 14px',
+                padding: '9px 12px',
                 margin: 0,
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1492,10 +2038,10 @@ export function EvolutionBotTab({ users, reload }) {
                 transition: 'all 0.2s ease'
               }}
               onClick={handleResetAnalyzedData}
-              disabled={resettingAnalysis || syncingContacts}
+              disabled={resettingAnalysis || syncingContacts || isTestingRunning}
               title="Limpar todos os dados analisados e resetar contatos para Pendentes"
             >
-              <span>🧹</span> {resettingAnalysis ? 'Limpando...' : 'Limpar Análise'}
+              <span>🧹</span> {resettingAnalysis ? 'Limpando...' : 'Limpar'}
             </button>
           </div>
         </div>
@@ -1867,15 +2413,38 @@ export function EvolutionBotTab({ users, reload }) {
                     Contatos do número #{b.startNumber} ao #{b.endNumber}
                   </div>
 
-                  <div style={{ marginTop: 4 }}>
+                  <div style={{ marginTop: 4, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <button 
                       type="button"
                       className="btn btn-teal"
-                      style={{ width: '100%', fontSize: 12, padding: '9px', margin: 0, borderRadius: 10 }}
+                      style={{ fontSize: 11.5, padding: '8px 10px', margin: 0, borderRadius: 10 }}
                       onClick={() => handleExportBatchVcf(b)}
                       title="Baixar lista em arquivo .vcf para importar nos contatos do celular"
                     >
-                      📥 Baixar vCard ({b.id})
+                      📥 Baixar ({b.id})
+                    </button>
+
+                    <button 
+                      type="button"
+                      className="btn"
+                      style={{
+                        fontSize: 11.5,
+                        fontWeight: 800,
+                        padding: '8px 10px',
+                        margin: 0,
+                        borderRadius: 10,
+                        background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.2), rgba(0, 180, 216, 0.2))',
+                        color: '#fff',
+                        border: '1px solid var(--teal)'
+                      }}
+                      onClick={() => {
+                        setSelectedTestBatch(b.id);
+                        setTestTargetType('batch');
+                        setShowBroadcastTestModal(true);
+                      }}
+                      title="Disparar teste de transmissão exclusivo para este lote de 100 contatos"
+                    >
+                      🧪 Testar Lote
                     </button>
                   </div>
                 </div>
