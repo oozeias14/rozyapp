@@ -572,54 +572,113 @@ export function EvolutionBotTab({ users, reload }) {
       {/* Modal de Lista Filtrada (Com Número / Sem Número) */}
       {contactFilterModal && (
         <div className="modal-bg" style={{ zIndex: 12000 }}>
-          <div className="modal" style={{ maxWidth: 540, maxHeight: '85vh', display: 'flex', flexDirection: 'column', padding: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 20 }}>{contactFilterModal === 'with_number' ? '🟢' : '🔴'}</span>
+          <div className="modal" style={{ maxWidth: 480, maxHeight: '88vh', display: 'flex', flexDirection: 'column', padding: 22 }}>
+            {/* Cabeçalho do Modal */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  background: contactFilterModal === 'with_number' ? 'rgba(37, 211, 102, 0.15)' : 'rgba(240, 107, 76, 0.15)',
+                  border: '1px solid ' + (contactFilterModal === 'with_number' ? 'rgba(37, 211, 102, 0.4)' : 'rgba(240, 107, 76, 0.4)'),
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 18,
+                  flexShrink: 0
+                }}>
+                  {contactFilterModal === 'with_number' ? '🟢' : '🔴'}
+                </div>
                 <div>
-                  <h3 style={{ fontSize: 16, color: '#fff', margin: 0 }}>
+                  <h3 style={{ fontSize: 15, fontWeight: 900, color: '#fff', margin: 0, lineHeight: 1.2 }}>
                     {contactFilterModal === 'with_number' ? 'Usuários com Número Adicionado' : 'Usuários SEM Número Adicionado'}
                   </h3>
-                  <div style={{ fontSize: 11.5, color: 'var(--ink2)', marginTop: 2 }}>
-                    Total: {filteredModalUsers.length} contatos encontrados
+                  <div style={{ fontSize: 11.5, color: 'var(--ink2)', marginTop: 3 }}>
+                    Total: <strong>{activeModalUsers.length}</strong> contatos neste grupo
                   </div>
                 </div>
               </div>
+
               <button 
                 type="button" 
-                className="btn btn-ghost" 
-                style={{ fontSize: 13, padding: '4px 8px', margin: 0 }}
                 onClick={() => setContactFilterModal(null)}
+                style={{
+                  width: 32,
+                  height: 32,
+                  minWidth: 32,
+                  borderRadius: '50%',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  color: 'var(--ink2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  padding: 0,
+                  margin: 0,
+                  transition: 'all 0.2s'
+                }}
+                title="Fechar"
               >
                 ✕
               </button>
             </div>
 
-            {/* Campo de Busca e Botão Baixar VCF */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            {/* Barra de Busca */}
+            <div style={{ position: 'relative', width: '100%', marginBottom: 10 }}>
+              <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13, opacity: 0.5, pointerEvents: 'none' }}>🔍</span>
               <input
                 type="text"
-                placeholder="🔍 Buscar por nome, telefone ou cidade..."
+                placeholder="Buscar por nome, telefone ou cidade..."
                 value={modalSearch}
                 onChange={(e) => { setModalSearch(e.target.value); setModalPage(1); }}
-                style={{ flex: 1, fontSize: 12.5 }}
+                style={{
+                  width: '100%',
+                  padding: '9px 12px 9px 34px',
+                  fontSize: 12.5,
+                  borderRadius: 10,
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid var(--line)',
+                  color: '#fff',
+                  margin: 0,
+                  boxSizing: 'border-box'
+                }}
               />
+            </div>
+
+            {/* Sub-header de contagem e botão de exportar */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 8 }}>
+              <span style={{ fontSize: 11.5, color: 'var(--ink2)' }}>
+                Exibindo <strong>{filteredModalUsers.length}</strong> resultado(s)
+              </span>
               <button
                 type="button"
                 className="btn btn-teal"
-                style={{ fontSize: 11.5, padding: '6px 12px', margin: 0, whiteSpace: 'nowrap' }}
+                style={{
+                  width: 'auto',
+                  padding: '6px 12px',
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  margin: 0,
+                  borderRadius: 8,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5
+                }}
                 onClick={handleExportModalUsers}
                 title="Baixar lista filtrada em arquivo .vcf"
               >
-                📥 Baixar .vcf
+                📥 Baixar Lista (.vcf)
               </button>
             </div>
 
-            {/* Lista com Rolagem */}
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, paddingRight: 4, minHeight: 200, maxHeight: '50vh' }}>
+            {/* Lista de Contatos com Rolagem */}
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, paddingRight: 2, minHeight: 180, maxHeight: '46vh' }}>
               {paginatedModalUsers.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--ink3)', fontSize: 13 }}>
-                  Nenhum usuário encontrado neste filtro.
+                <div style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--ink3)', fontSize: 12.5 }}>
+                  Nenhum usuário encontrado.
                 </div>
               ) : (
                 paginatedModalUsers.map((u) => {
@@ -661,23 +720,37 @@ export function EvolutionBotTab({ users, reload }) {
                             href={`https://wa.me/${norm}`} 
                             target="_blank" 
                             rel="noopener noreferrer"
-                            className="btn btn-ghost"
-                            style={{ padding: '4px 8px', fontSize: 11, margin: 0, textDecoration: 'none', color: '#25D366', borderColor: 'rgba(37,211,102,0.3)' }}
+                            style={{
+                              padding: '5px 9px',
+                              fontSize: 11,
+                              fontWeight: 600,
+                              margin: 0,
+                              textDecoration: 'none',
+                              color: '#25D366',
+                              background: 'rgba(37,211,102,0.1)',
+                              border: '1px solid rgba(37,211,102,0.3)',
+                              borderRadius: 8,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4
+                            }}
                             title="Conversar no WhatsApp"
                           >
-                            💬 WhatsApp
+                            💬 Conversar
                           </a>
                         )}
                         <button
                           type="button"
-                          className="btn"
                           style={{
-                            padding: '4px 8px',
+                            padding: '5px 9px',
                             fontSize: 11,
+                            fontWeight: 600,
                             margin: 0,
-                            background: isSaved ? 'rgba(240,107,76,0.15)' : 'rgba(37,211,102,0.15)',
+                            cursor: 'pointer',
+                            borderRadius: 8,
+                            background: isSaved ? 'rgba(240,107,76,0.12)' : 'rgba(37,211,102,0.12)',
                             color: isSaved ? '#FF8A65' : '#25D366',
-                            border: '1px solid ' + (isSaved ? '#F06B4C' : '#25D366')
+                            border: '1px solid ' + (isSaved ? 'rgba(240,107,76,0.3)' : 'rgba(37,211,102,0.3)')
                           }}
                           onClick={() => toggleUserSavedStatus(u)}
                           title={isSaved ? 'Remover dos confirmados' : 'Marcar como número adicionado'}
@@ -699,7 +772,7 @@ export function EvolutionBotTab({ users, reload }) {
                   style={{ 
                     width: 'auto',
                     margin: 0,
-                    padding: '6px 12px', 
+                    padding: '5px 12px', 
                     fontSize: 12, 
                     borderRadius: 8, 
                     background: 'rgba(255, 255, 255, 0.04)', 
@@ -712,7 +785,7 @@ export function EvolutionBotTab({ users, reload }) {
                 >
                   ←
                 </button>
-                <span style={{ fontSize: 12, color: 'var(--ink2)', fontWeight: 600 }}>
+                <span style={{ fontSize: 11.5, color: 'var(--ink2)', fontWeight: 600 }}>
                   Página {modalPage} de {totalModalPages}
                 </span>
                 <button 
@@ -720,7 +793,7 @@ export function EvolutionBotTab({ users, reload }) {
                   style={{ 
                     width: 'auto',
                     margin: 0,
-                    padding: '6px 12px', 
+                    padding: '5px 12px', 
                     fontSize: 12, 
                     borderRadius: 8, 
                     background: 'rgba(255, 255, 255, 0.04)', 
