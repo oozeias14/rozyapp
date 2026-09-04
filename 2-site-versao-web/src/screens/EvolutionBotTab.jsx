@@ -38,6 +38,7 @@ export function EvolutionBotTab({ users, reload }) {
   });
   const [syncingContacts, setSyncingContacts] = useState(false);
   const [contactFilterModal, setContactFilterModal] = useState(null); // 'with_number' | 'without_number' | null
+  const [showGoogleSyncModal, setShowGoogleSyncModal] = useState(false);
   const [modalSearch, setModalSearch] = useState('');
   const [modalPage, setModalPage] = useState(1);
 
@@ -238,6 +239,60 @@ export function EvolutionBotTab({ users, reload }) {
       }, 200);
     } catch (err) {
       alert('Erro ao exportar lista: ' + err.message);
+    }
+  }
+
+  // Exportar formato oficial CSV para Google Contatos (sem limites de importação)
+  function handleExportGoogleContactsCsv() {
+    try {
+      const headers = [
+        'Name',
+        'Given Name',
+        'Family Name',
+        'Group Membership',
+        'Phone 1 - Type',
+        'Phone 1 - Value',
+        'Address 1 - City',
+        'Notes'
+      ];
+
+      const rows = validUsers.map((u, i) => {
+        const batchNum = Math.floor(i / 100) + 1;
+        const batchPrefix = `T${batchNum}`;
+        const cleanName = (u.name || 'Sem Nome').trim();
+        const fullName = `${batchPrefix} ${cleanName}`;
+        let phone = normalizePhone(u.whatsapp || u.phone);
+        if (phone && !phone.startsWith('+')) phone = '+' + phone;
+        const group = `* myContacts ::: Candido lista ${batchPrefix}`;
+        const city = (u.city || '').replace(/,/g, ' ');
+        const notes = `Cadastrado Amigos Dr. Cândido (ID #${u.id})`;
+
+        return [
+          `"${fullName.replace(/"/g, '""')}"`,
+          `"${cleanName.replace(/"/g, '""')}"`,
+          `""`,
+          `"${group.replace(/"/g, '""')}"`,
+          `"Mobile"`,
+          `"${phone}"`,
+          `"${city.replace(/"/g, '""')}"`,
+          `"${notes.replace(/"/g, '""')}"`
+        ].join(',');
+      });
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `google_contatos_dr_candido_todos_${Date.now()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 200);
+    } catch (err) {
+      alert('Erro ao exportar CSV do Google Contatos: ' + err.message);
     }
   }
 
@@ -732,6 +787,141 @@ export function EvolutionBotTab({ users, reload }) {
         </div>
       )}
 
+      {/* Modal Google Contatos (Android & iPhone) */}
+      {showGoogleSyncModal && (
+        <div className="modal-bg" style={{ zIndex: 12000 }}>
+          <div className="modal" style={{ maxWidth: 520, maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: 22 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  background: 'rgba(66, 133, 244, 0.15)',
+                  border: '1px solid rgba(66, 133, 244, 0.4)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 20,
+                  flexShrink: 0
+                }}>
+                  ☁️
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 900, color: '#fff', margin: 0, lineHeight: 1.2 }}>
+                    Sincronização Google Contatos (iPhone & Android)
+                  </h3>
+                  <div style={{ fontSize: 11.5, color: 'var(--ink2)', marginTop: 3 }}>
+                    Importe todos os {validUsers.length} contatos de uma vez na nuvem
+                  </div>
+                </div>
+              </div>
+
+              <button 
+                type="button" 
+                onClick={() => setShowGoogleSyncModal(false)}
+                style={{
+                  width: 32,
+                  height: 32,
+                  minWidth: 32,
+                  borderRadius: '50%',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  color: 'var(--ink2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  padding: 0,
+                  margin: 0
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, paddingRight: 2 }}>
+              <p style={{ fontSize: 12.5, color: 'var(--ink2)', lineHeight: 1.5, margin: 0 }}>
+                Com o <strong>Google Contatos</strong>, todos os <strong>{validUsers.length} contatos</strong> entram de uma só vez na nuvem do Dr. Cândido e sincronizam automaticamente na agenda e no WhatsApp de qualquer celular (iPhone ou Android).
+              </p>
+
+              {/* Botões de Ação do Passo a Passo */}
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: 14, borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>
+                  1️⃣ Baixe a base completa formatada para o Google:
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-teal"
+                  style={{ width: '100%', padding: '10px 14px', fontSize: 13, fontWeight: 800, margin: 0, borderRadius: 10 }}
+                  onClick={handleExportGoogleContactsCsv}
+                >
+                  📥 Baixar Arquivo Google Contatos (.csv)
+                </button>
+              </div>
+
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: 14, borderRadius: 12, border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>
+                  2️⃣ Importe na conta Google do Dr. Cândido:
+                </div>
+                <a
+                  href="https://contacts.google.com/?hl=pt-BR"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn"
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    fontSize: 13,
+                    fontWeight: 800,
+                    margin: 0,
+                    borderRadius: 10,
+                    textDecoration: 'none',
+                    background: '#4285F4',
+                    color: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8
+                  }}
+                >
+                  🌐 Abrir Google Contatos (contacts.google.com) ➔
+                </a>
+                <div style={{ fontSize: 11.5, color: 'var(--ink3)' }}>
+                  No Google Contatos, clique em <strong>"Importar"</strong> (no menu lateral) e selecione o arquivo baixado acima.
+                </div>
+              </div>
+
+              {/* Guia para iPhone e Android */}
+              <div style={{ background: 'rgba(123, 108, 244, 0.08)', padding: 14, borderRadius: 12, border: '1px solid rgba(123, 108, 244, 0.25)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>📱</span> Como funciona no iPhone e no Android:
+                </div>
+
+                <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5 }}>
+                  🍏 <strong style={{ color: '#fff' }}>No iPhone (iOS):</strong><br />
+                  Vá em <strong>Ajustes</strong> ➔ <strong>Contatos</strong> ➔ <strong>Contas</strong> ➔ <strong>Adicionar Conta</strong> ➔ escolha <strong>Google</strong> e entre com o Gmail do Dr. Cândido. Ative a chave <strong>"Contatos"</strong>. Pronto! Todos os contatos aparecem na agenda e no WhatsApp.<br /><br />
+                  🤖 <strong style={{ color: '#fff' }}>No Android:</strong><br />
+                  Se o celular do Dr. Cândido já está conectado com a conta Google/Gmail dele, todos os contatos aparecem <strong>instantaneamente</strong> no WhatsApp sem precisar fazer nada!
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--line)', textAlign: 'right' }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ width: 'auto', padding: '7px 18px', fontSize: 12, margin: 0, borderRadius: 8 }}
+                onClick={() => setShowGoogleSyncModal(false)}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Dashboard de Estatísticas da Transmissão */}
       <div style={{
         background: 'var(--panel2)',
@@ -752,15 +942,26 @@ export function EvolutionBotTab({ users, reload }) {
             </div>
           </div>
 
-          <button
-            type="button"
-            className="btn btn-ghost"
-            style={{ fontSize: 12, padding: '7px 14px', margin: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
-            onClick={handleSyncWhatsAppContacts}
-            disabled={syncingContacts || !status.connected}
-          >
-            {syncingContacts ? '⏳ Sincronizando...' : '🔄 Sincronizar com WhatsApp'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-teal"
+              style={{ fontSize: 12, padding: '7px 14px', margin: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              onClick={() => setShowGoogleSyncModal(true)}
+            >
+              ☁️ Sincronizar Google Contatos (iPhone & Android)
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ fontSize: 12, padding: '7px 14px', margin: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              onClick={handleSyncWhatsAppContacts}
+              disabled={syncingContacts || !status.connected}
+            >
+              {syncingContacts ? '⏳ Sincronizando...' : '🔄 Sincronizar com WhatsApp'}
+            </button>
+          </div>
         </div>
 
         {/* Grid de Métricas */}
