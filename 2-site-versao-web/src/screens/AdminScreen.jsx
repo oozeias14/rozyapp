@@ -45,7 +45,16 @@ function notifyBrowser(title, body) {
 export default function AdminScreen({ profile, onBack, initialTab }) {
   const isAdmin = profile.role === 'admin' || profile.role === 'admin2';
   const isTrueAdmin = profile.role === 'admin';
-  const [tab, setTab] = useState(initialTab || 'users');
+  const [tab, setTab] = useState(() => {
+    return localStorage.getItem('admin_active_tab') || initialTab || 'users';
+  });
+
+  useEffect(() => {
+    if (tab) {
+      localStorage.setItem('admin_active_tab', tab);
+    }
+  }, [tab]);
+
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
   const [meetings, setMeetings] = useState([]);

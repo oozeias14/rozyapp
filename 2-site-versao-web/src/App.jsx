@@ -22,8 +22,8 @@ export default function App() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState(() => localStorage.getItem('active_tab') || 'owner');
-  const [mode, setMode] = useState('app');
-  const [adminInitialTab, setAdminInitialTab] = useState('users');
+  const [mode, setMode] = useState(() => localStorage.getItem('app_mode') || 'app');
+  const [adminInitialTab, setAdminInitialTab] = useState(() => localStorage.getItem('admin_active_tab') || 'users');
   const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [timeLeft, setTimeLeft] = useState(null);
   const [hasNewMuralMessage, setHasNewMuralMessage] = useState(false);
@@ -92,6 +92,10 @@ export default function App() {
     });
     window.scrollTo(0, 0);
   }, [tab]);
+
+  useEffect(() => {
+    localStorage.setItem('app_mode', mode);
+  }, [mode]);
 
   useEffect(() => {
     if (!profile) {
@@ -300,12 +304,16 @@ export default function App() {
     }
     localStorage.removeItem('session_start_time');
     localStorage.removeItem('active_tab');
+    localStorage.removeItem('app_mode');
+    localStorage.removeItem('admin_active_tab');
     await supabase.auth.signOut();
     window.location.reload();
   }
 
   function openAdmin(initialTab) {
-    setAdminInitialTab(initialTab || 'users');
+    const target = initialTab || localStorage.getItem('admin_active_tab') || 'users';
+    setAdminInitialTab(target);
+    localStorage.setItem('admin_active_tab', target);
     setMode('admin');
   }
 
