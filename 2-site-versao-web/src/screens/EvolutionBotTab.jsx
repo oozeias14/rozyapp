@@ -126,30 +126,47 @@ export function EvolutionBotTab({ users, reload }) {
     setLoading(false);
   }
 
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState(null);
+
   async function handleOpenConnectModal() {
     setShowConnectModal(true);
     await handleFetchQrCode();
   }
 
-  async function handleFetchQrCode() {
-    setLoading(true);
+  async function handleFetchQrCode(forceRestart = false) {
+    setQrLoading(true);
+    setQrError(null);
+    setQrCodeData(null);
     try {
+      if (forceRestart) {
+        await resetAndRecreateInstance();
+      }
       const res = await createOrConnectInstance();
-      if (res?.qrcode?.base64) {
-        setQrCodeData(res.qrcode.base64);
-      } else if (res?.base64) {
-        setQrCodeData(res.base64);
-      } else if (res?.instance?.state === 'open') {
+      const b64 = res?.qrcode?.base64 || res?.base64 || res?.qrcode;
+      if (typeof b64 === 'string' && b64.length > 50) {
+        setQrCodeData(b64);
+      } else if (res?.instance?.state === 'open' || res?.state === 'open') {
         setStatus({ connected: true, state: 'open' });
         setShowConnectModal(false);
-        alert('WhatsApp já está conectado com sucesso!');
+        alert('🎉 WhatsApp já está conectado!');
+      } else if (res?.pairingCode || res?.code) {
+        setPairingCodeResult(res.pairingCode || res.code);
+        setConnectTab('pairing');
       } else {
-        await checkStatus();
+        // Se a instância estiver no limite de tentativas de QR, tenta restart
+        const retryRes = await resetAndRecreateInstance();
+        const retryB64 = retryRes?.qrcode?.base64 || retryRes?.base64;
+        if (retryB64 && typeof retryB64 === 'string') {
+          setQrCodeData(retryB64);
+        } else {
+          setQrError('O WhatsApp atingiu o limite de tentativas de QR Code. Use a aba "Código (8 Dígitos)" para conectar!');
+        }
       }
     } catch (err) {
-      console.warn('Erro ao obter QR code:', err);
+      setQrError(err.message || 'Erro ao carregar QR Code');
     } finally {
-      setLoading(false);
+      setQrLoading(false);
     }
   }
 
@@ -624,7 +641,12 @@ export function EvolutionBotTab({ users, reload }) {
                   No WhatsApp do Dr. Cândido: <strong>Aparelhos Conectados</strong> ➔ <strong>Conectar Aparelho</strong> e aponte para o QR Code:
                 </p>
 
-                {qrCodeData ? (
+                {qrLoading ? (
+                  <div style={{ width: 210, height: 210, background: 'rgba(255,255,255,0.03)', borderRadius: 12, border: '1px dashed var(--teal)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--teal)', fontSize: 12 }}>
+                    <div style={{ fontSize: 24 }}>⏳</div>
+                    <div>Gerando QR Code...</div>
+                  </div>
+                ) : qrCodeData ? (
                   <div style={{ background: '#fff', padding: 10, borderRadius: 12, display: 'inline-block', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }}>
                     <img 
                       src={qrCodeData.startsWith('data:') ? qrCodeData : `data:image/png;base64,${qrCodeData}`} 
@@ -633,8 +655,14 @@ export function EvolutionBotTab({ users, reload }) {
                     />
                   </div>
                 ) : (
-                  <div style={{ width: 210, height: 210, background: 'rgba(255,255,255,0.03)', borderRadius: 12, border: '1px dashed var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink3)', fontSize: 12 }}>
-                    {loading ? 'Carregando QR Code...' : 'Clique para gerar QR Code'}
+                  <div style={{ width: 210, height: 210, background: 'rgba(255,255,255,0.03)', borderRadius: 12, border: '1px dashed var(--line)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--ink3)', fontSize: 12, padding: 12, textAlign: 'center' }}>
+                    {qrError ? (
+                      <div style={{ color: '#FF8A65', fontSize: 11.5, lineHeight: 1.4 }}>
+                        ⚠️ {qrError}
+                      </div>
+                    ) : (
+                      <div>Clique abaixo para gerar o QR Code</div>
+                    )}
                   </div>
                 )}
 
@@ -643,10 +671,10 @@ export function EvolutionBotTab({ users, reload }) {
                     type="button" 
                     className="btn btn-ghost" 
                     style={{ flex: 1, fontSize: 12, padding: '8px', margin: 0 }}
-                    onClick={handleFetchQrCode}
-                    disabled={loading}
+                    onClick={() => handleFetchQrCode(true)}
+                    disabled={qrLoading}
                   >
-                    🔄 Atualizar QR Code
+                    {qrLoading ? '⏳ Atualizando...' : '🔄 Atualizar QR Code'}
                   </button>
                   <button 
                     type="button" 
