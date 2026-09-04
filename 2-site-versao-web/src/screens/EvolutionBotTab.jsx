@@ -24,11 +24,6 @@ export function EvolutionBotTab({ users, reload }) {
   const [status, setStatus] = useState({ connected: false, state: 'checking' });
   const [qrCodeData, setQrCodeData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [sendingBatch, setSendingBatch] = useState(null);
-  const [sendProgress, setSendProgress] = useState({ current: 0, total: 0, sent: 0, failed: 0, currentName: '', statusInfo: '' });
-  const [customMsg, setCustomMsg] = useState(
-    'Olá {nome}! Tudo bem? Aqui é o Dr. Cândido. Gostaria de saber se você já tem meu contato salvo na sua agenda? Responda com um "Sim" ou "Ok" por favor! 🙏'
-  );
   const batchSize = 100;
   const [batchPage, setBatchPage] = useState(1);
   const BATCH_PAGE_SIZE = 5;
@@ -329,81 +324,6 @@ export function EvolutionBotTab({ users, reload }) {
     } catch (err) {
       alert('Erro ao exportar todos os lotes: ' + err.message);
     }
-  }
-
-  // Disparo em lote com verificação prévia e delay seguro anti-bloqueio
-  async function handleStartBatchSend(batch) {
-    if (!status.connected) {
-      alert('O WhatsApp precisa estar conectado antes de realizar disparos!');
-      return;
-    }
-
-    const confirmSend = window.confirm(
-      `🛡️ ATENÇÃO - SEGURANÇA MÁXIMA DO CHIP:\n\n` +
-      `Deseja iniciar o envio para a lista "${batch.name}" (${batch.count} contatos)?\n\n` +
-      `Protocolo de Proteção Ativo:\n` +
-      `1. Verificação prévia de existência de WhatsApp para cada número\n` +
-      `2. Simulação de digitação humana ("Digitando...")\n` +
-      `3. Intervalo randômico de 5 a 10 segundos por mensagem\n` +
-      `4. Pausa de resfriamento anti-aquecimento (25s) a cada 15 envios`
-    );
-    if (!confirmSend) return;
-
-    setSendingBatch(batch.id);
-    setSendProgress({ current: 0, total: batch.users.length, sent: 0, failed: 0, currentName: 'Iniciando verificação...', statusInfo: '' });
-
-    let sentCount = 0;
-    let failedCount = 0;
-
-    for (let i = 0; i < batch.users.length; i++) {
-      const u = batch.users[i];
-      const firstName = (u.name || 'Amigo(a)').split(' ')[0];
-      const personalizedMsg = customMsg.replace(/\{nome\}/gi, firstName);
-      const phone = u.whatsapp || u.phone;
-
-      setSendProgress({
-        current: i + 1,
-        total: batch.users.length,
-        sent: sentCount,
-        failed: failedCount,
-        currentName: u.name || phone,
-        statusInfo: 'Digitando e enviando...'
-      });
-
-      try {
-        await sendWhatsAppMessage(phone, personalizedMsg);
-        sentCount++;
-      } catch (err) {
-        console.error(`Falha ao enviar para ${u.name}:`, err);
-        failedCount++;
-      }
-
-      setSendProgress({
-        current: i + 1,
-        total: batch.users.length,
-        sent: sentCount,
-        failed: failedCount,
-        currentName: u.name || phone,
-        statusInfo: 'Aguardando próximo contato...'
-      });
-
-      // Pausa periódica de resfriamento a cada 15 envios (25 a 35 segundos)
-      if (i > 0 && (i + 1) % 15 === 0 && i < batch.users.length - 1) {
-        const cooldownSec = Math.floor(Math.random() * 10) + 25; // 25s a 35s
-        setSendProgress((prev) => ({
-          ...prev,
-          statusInfo: `☕ Pausa de resfriamento anti-bloqueio (${cooldownSec}s)...`
-        }));
-        await new Promise((r) => setTimeout(r, cooldownSec * 1000));
-      } else if (i < batch.users.length - 1) {
-        // Intervalo de segurança randômico (5 a 10 segundos entre mensagens)
-        const randomDelayMs = Math.floor(Math.random() * (10000 - 5000 + 1)) + 5000;
-        await new Promise((r) => setTimeout(r, randomDelayMs));
-      }
-    }
-
-    alert(`Disparo da lista ${batch.name} finalizado!\nEnviados: ${sentCount} | Falhas: ${failedCount}`);
-    setSendingBatch(null);
   }
 
   return (
@@ -912,66 +832,12 @@ export function EvolutionBotTab({ users, reload }) {
         </div>
       </div>
 
-      {/* Editor da Mensagem de Transmissão / Teste */}
-      <div style={{ background: 'var(--panel2)', padding: '16px', borderRadius: 14, border: '1px solid var(--line)' }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', marginBottom: 4 }}>
-          ✉️ Mensagem do Teste de Transmissão
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--ink2)', marginBottom: 10 }}>
-          Use a tag <code style={{ color: 'var(--teal)', background: 'rgba(61, 217, 179, 0.1)', padding: '2px 4px', borderRadius: 4 }}>{'{nome}'}</code> para personalizar com o primeiro nome do membro:
-        </div>
-        <textarea 
-          rows={3} 
-          value={customMsg} 
-          onChange={(e) => setCustomMsg(e.target.value)}
-          style={{ width: '100%', fontSize: 13, lineHeight: 1.4 }}
-        />
-      </div>
-
-      {/* Barra de Progresso durante Disparo Ativo */}
-      {sendingBatch && (
-        <div style={{ background: 'rgba(61, 217, 179, 0.1)', border: '1px solid var(--teal)', padding: 16, borderRadius: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
-            <div>
-              <span style={{ fontWeight: 800, fontSize: 13, color: '#fff' }}>
-                🚀 Enviando para {sendingBatch} ({sendProgress.current}/{sendProgress.total})
-              </span>
-              {sendProgress.currentName && (
-                <div style={{ fontSize: 11.5, color: 'var(--teal)', marginTop: 2 }}>
-                  👤 Contato: <strong>{sendProgress.currentName}</strong>
-                </div>
-              )}
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <span style={{ fontSize: 12, color: 'var(--teal)', fontWeight: 700 }}>
-                🟢 Sucesso: {sendProgress.sent} · 🔴 Falhas: {sendProgress.failed}
-              </span>
-              {sendProgress.statusInfo && (
-                <div style={{ fontSize: 11, color: '#FFD166', marginTop: 2 }}>
-                  {sendProgress.statusInfo}
-                </div>
-              )}
-            </div>
-          </div>
-          <div style={{ height: 8, width: '100%', background: 'rgba(255,255,255,0.1)', borderRadius: 4, overflow: 'hidden' }}>
-            <div 
-              style={{ 
-                height: '100%', 
-                background: 'var(--teal)', 
-                width: `${(sendProgress.current / sendProgress.total) * 100}%`,
-                transition: 'width 0.3s ease'
-              }} 
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Cartão Informativo de Proteção Anti-Bloqueio e Lista de Transmissão */}
+      {/* Guia de Transmissão Oficial */}
       <div style={{ 
-        background: 'linear-gradient(135deg, rgba(123, 108, 244, 0.12), rgba(15, 23, 42, 0.6))', 
+        background: 'linear-gradient(135deg, rgba(37, 211, 102, 0.08), rgba(15, 23, 42, 0.6))', 
         padding: '14px 16px', 
         borderRadius: 14, 
-        border: '1px solid rgba(123, 108, 244, 0.3)',
+        border: '1px solid rgba(37, 211, 102, 0.25)',
         display: 'flex',
         flexDirection: 'column',
         gap: 8
@@ -979,12 +845,13 @@ export function EvolutionBotTab({ users, reload }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 18 }}>🛡️</span>
           <span style={{ fontWeight: 800, fontSize: 13, color: '#fff' }}>
-            Proteção e Funcionamento das Listas de Transmissão
+            Guia da Lista de Transmissão Oficial (Risco ZERO de Bloqueio)
           </span>
         </div>
-        <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5 }}>
-          • <strong style={{ color: '#fff' }}>No WhatsApp do Celular (Lista Oficial):</strong> Risco <strong>ZERO</strong> de bloqueio. Pela regra oficial do WhatsApp, apenas os contatos que possuem o número do Dr. Cândido salvo na agenda recebem as mensagens da Lista de Transmissão.<br />
-          • <strong style={{ color: '#fff' }}>No Robô de Validação / Aquecimento:</strong> O robô atua com <strong>simulação de digitação humana</strong>, intervalo randômico de <strong>5 a 10 segundos</strong> e <strong>pausas de resfriamento periódicas (25s a cada 15 envios)</strong> para validar e aquecer o chip com segurança máxima.
+        <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.6 }}>
+          1. Clique em <strong style={{ color: '#fff' }}>📥 Baixar vCard</strong> no lote desejado (ex: <em>Lote T1</em>) e importe no celular do Dr. Cândido.<br />
+          2. No WhatsApp, vá em <strong style={{ color: '#fff' }}>Nova Transmissão</strong>, pesquise por <strong style={{ color: 'var(--teal)' }}>T1</strong> e selecione todos os contatos.<br />
+          3. Envie sua mensagem: o próprio WhatsApp entrega <strong>apenas para quem tem o número do Dr. Cândido salvo na agenda</strong>, garantindo total segurança e entrega sem denúncias de spam.
         </div>
       </div>
 
@@ -993,7 +860,7 @@ export function EvolutionBotTab({ users, reload }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 900, color: '#fff' }}>
-              📋 Listas de Transmissão Automáticas ({batches.length} Lotes de 100 contatos)
+              📋 Listas de Transmissão Oficiais ({batches.length} Lotes de 100 contatos)
             </div>
             <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
               Total: {users.length} membros cadastrados · Padrão seguro para celular (100 por lote)
@@ -1052,26 +919,15 @@ export function EvolutionBotTab({ users, reload }) {
                 Contatos do número #{b.startNumber} ao #{b.endNumber}
               </div>
 
-              <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                <button 
-                  type="button"
-                  className="btn btn-ghost"
-                  style={{ flex: 1, fontSize: 11.5, padding: '7px', margin: 0 }}
-                  onClick={() => handleExportBatchVcf(b)}
-                  title="Baixar lista em arquivo .vcf para importar nos contatos do celular"
-                >
-                  📥 Baixar vCard
-                </button>
-
+              <div style={{ marginTop: 4 }}>
                 <button 
                   type="button"
                   className="btn btn-teal"
-                  style={{ flex: 1, fontSize: 11.5, padding: '7px', margin: 0 }}
-                  onClick={() => handleStartBatchSend(b)}
-                  disabled={sendingBatch !== null || !status.connected}
-                  title="Enviar mensagem personalizada pelo WhatsApp conectado"
+                  style={{ width: '100%', fontSize: 12, padding: '9px', margin: 0, borderRadius: 10 }}
+                  onClick={() => handleExportBatchVcf(b)}
+                  title="Baixar lista em arquivo .vcf para importar nos contatos do celular"
                 >
-                  🚀 Disparar Teste
+                  📥 Baixar vCard ({b.id})
                 </button>
               </div>
             </div>
