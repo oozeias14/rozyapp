@@ -26,7 +26,7 @@ export function EvolutionBotTab({ users, reload }) {
   );
   const batchSize = 100;
   const [batchPage, setBatchPage] = useState(1);
-  const BATCH_PAGE_SIZE = 10;
+  const BATCH_PAGE_SIZE = 5;
 
   // Gera os lotes de transmissão (T1, T2, T3... padrão fixo 100 por lote para compatibilidade com celular)
   const batches = generateTransmissionBatches(users, batchSize);
