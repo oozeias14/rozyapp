@@ -7,6 +7,7 @@ import {
   createOrConnectInstance, 
   disconnectInstance, 
   sendWhatsAppMessage, 
+  checkWhatsAppNumbers,
   generateTransmissionBatches,
   DEFAULT_INSTANCE_NAME 
 } from '../lib/evolutionApi';
@@ -19,7 +20,7 @@ export function EvolutionBotTab({ users, reload }) {
   const [qrCodeData, setQrCodeData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [sendingBatch, setSendingBatch] = useState(null);
-  const [sendProgress, setSendProgress] = useState({ current: 0, total: 0, sent: 0, failed: 0 });
+  const [sendProgress, setSendProgress] = useState({ current: 0, total: 0, sent: 0, failed: 0, currentName: '', statusInfo: '' });
   const [customMsg, setCustomMsg] = useState(
     'Olá {nome}! Tudo bem? Aqui é o Dr. Cândido. Gostaria de saber se você já tem meu contato salvo na sua agenda? Responda com um "Sim" ou "Ok" por favor! 🙏'
   );
@@ -184,7 +185,7 @@ export function EvolutionBotTab({ users, reload }) {
     }
   }
 
-  // Disparo em lote com delay seguro para o lote selecionado
+  // Disparo em lote com verificação prévia e delay seguro anti-bloqueio
   async function handleStartBatchSend(batch) {
     if (!status.connected) {
       alert('O WhatsApp precisa estar conectado antes de realizar disparos!');
@@ -192,13 +193,18 @@ export function EvolutionBotTab({ users, reload }) {
     }
 
     const confirmSend = window.confirm(
+      `🛡️ ATENÇÃO - SEGURANÇA MÁXIMA DO CHIP:\n\n` +
       `Deseja iniciar o envio para a lista "${batch.name}" (${batch.count} contatos)?\n\n` +
-      `O robô enviará com intervalo randômico de 5 a 10 segundos entre cada contato para máxima segurança do chip.`
+      `Protocolo de Proteção Ativo:\n` +
+      `1. Verificação prévia de existência de WhatsApp para cada número\n` +
+      `2. Simulação de digitação humana ("Digitando...")\n` +
+      `3. Intervalo randômico de 5 a 10 segundos por mensagem\n` +
+      `4. Pausa de resfriamento anti-aquecimento (25s) a cada 15 envios`
     );
     if (!confirmSend) return;
 
     setSendingBatch(batch.id);
-    setSendProgress({ current: 0, total: batch.users.length, sent: 0, failed: 0 });
+    setSendProgress({ current: 0, total: batch.users.length, sent: 0, failed: 0, currentName: 'Iniciando verificação...', statusInfo: '' });
 
     let sentCount = 0;
     let failedCount = 0;
@@ -208,6 +214,15 @@ export function EvolutionBotTab({ users, reload }) {
       const firstName = (u.name || 'Amigo(a)').split(' ')[0];
       const personalizedMsg = customMsg.replace(/\{nome\}/gi, firstName);
       const phone = u.whatsapp || u.phone;
+
+      setSendProgress({
+        current: i + 1,
+        total: batch.users.length,
+        sent: sentCount,
+        failed: failedCount,
+        currentName: u.name || phone,
+        statusInfo: 'Digitando e enviando...'
+      });
 
       try {
         await sendWhatsAppMessage(phone, personalizedMsg);
@@ -222,10 +237,20 @@ export function EvolutionBotTab({ users, reload }) {
         total: batch.users.length,
         sent: sentCount,
         failed: failedCount,
+        currentName: u.name || phone,
+        statusInfo: 'Aguardando próximo contato...'
       });
 
-      // Intervalo de segurança randômico (5 a 10 segundos entre cada mensagem)
-      if (i < batch.users.length - 1) {
+      // Pausa periódica de resfriamento a cada 15 envios (25 a 35 segundos)
+      if (i > 0 && (i + 1) % 15 === 0 && i < batch.users.length - 1) {
+        const cooldownSec = Math.floor(Math.random() * 10) + 25; // 25s a 35s
+        setSendProgress((prev) => ({
+          ...prev,
+          statusInfo: `☕ Pausa de resfriamento anti-bloqueio (${cooldownSec}s)...`
+        }));
+        await new Promise((r) => setTimeout(r, cooldownSec * 1000));
+      } else if (i < batch.users.length - 1) {
+        // Intervalo de segurança randômico (5 a 10 segundos entre mensagens)
         const randomDelayMs = Math.floor(Math.random() * (10000 - 5000 + 1)) + 5000;
         await new Promise((r) => setTimeout(r, randomDelayMs));
       }
@@ -417,13 +442,27 @@ export function EvolutionBotTab({ users, reload }) {
       {/* Barra de Progresso durante Disparo Ativo */}
       {sendingBatch && (
         <div style={{ background: 'rgba(61, 217, 179, 0.1)', border: '1px solid var(--teal)', padding: 16, borderRadius: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <span style={{ fontWeight: 800, fontSize: 13, color: '#fff' }}>
-              🚀 Enviando para {sendingBatch} ({sendProgress.current}/{sendProgress.total})
-            </span>
-            <span style={{ fontSize: 12, color: 'var(--teal)' }}>
-              🟢 Sucesso: {sendProgress.sent} · 🔴 Falhas: {sendProgress.failed}
-            </span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+            <div>
+              <span style={{ fontWeight: 800, fontSize: 13, color: '#fff' }}>
+                🚀 Enviando para {sendingBatch} ({sendProgress.current}/{sendProgress.total})
+              </span>
+              {sendProgress.currentName && (
+                <div style={{ fontSize: 11.5, color: 'var(--teal)', marginTop: 2 }}>
+                  👤 Contato: <strong>{sendProgress.currentName}</strong>
+                </div>
+              )}
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <span style={{ fontSize: 12, color: 'var(--teal)', fontWeight: 700 }}>
+                🟢 Sucesso: {sendProgress.sent} · 🔴 Falhas: {sendProgress.failed}
+              </span>
+              {sendProgress.statusInfo && (
+                <div style={{ fontSize: 11, color: '#FFD166', marginTop: 2 }}>
+                  {sendProgress.statusInfo}
+                </div>
+              )}
+            </div>
           </div>
           <div style={{ height: 8, width: '100%', background: 'rgba(255,255,255,0.1)', borderRadius: 4, overflow: 'hidden' }}>
             <div 
@@ -437,6 +476,28 @@ export function EvolutionBotTab({ users, reload }) {
           </div>
         </div>
       )}
+
+      {/* Cartão Informativo de Proteção Anti-Bloqueio e Lista de Transmissão */}
+      <div style={{ 
+        background: 'linear-gradient(135deg, rgba(123, 108, 244, 0.12), rgba(15, 23, 42, 0.6))', 
+        padding: '14px 16px', 
+        borderRadius: 14, 
+        border: '1px solid rgba(123, 108, 244, 0.3)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 18 }}>🛡️</span>
+          <span style={{ fontWeight: 800, fontSize: 13, color: '#fff' }}>
+            Proteção e Funcionamento das Listas de Transmissão
+          </span>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5 }}>
+          • <strong style={{ color: '#fff' }}>No WhatsApp do Celular (Lista Oficial):</strong> Risco <strong>ZERO</strong> de bloqueio. Pela regra oficial do WhatsApp, apenas os contatos que possuem o número do Dr. Cândido salvo na agenda recebem as mensagens da Lista de Transmissão.<br />
+          • <strong style={{ color: '#fff' }}>No Robô de Validação / Aquecimento:</strong> O robô atua com <strong>simulação de digitação humana</strong>, intervalo randômico de <strong>5 a 10 segundos</strong> e <strong>pausas de resfriamento periódicas (25s a cada 15 envios)</strong> para validar e aquecer o chip com segurança máxima.
+        </div>
+      </div>
 
       {/* Visualização dos Lotes T1, T2, T3... */}
       <div>

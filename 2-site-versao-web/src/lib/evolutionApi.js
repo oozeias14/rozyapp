@@ -160,17 +160,44 @@ export async function sendWhatsAppMessage(number, text) {
     cleanNumber = '55' + cleanNumber;
   }
 
+  // Delay de digitação humano (1.5s a 3.0s)
+  const typingDelay = Math.floor(Math.random() * (3000 - 1500 + 1)) + 1500;
+
   return await evolutionFetch(`/message/sendText/${instanceName}`, {
     method: 'POST',
     body: JSON.stringify({
       number: cleanNumber,
       text: text,
       options: {
-        delay: 1200,
+        delay: typingDelay,
         presence: 'composing',
       }
     }),
   });
+}
+
+// ── CHECAGEM PRÉVIA DE NÚMEROS NO WHATSAPP ─────────────────────────
+
+export async function checkWhatsAppNumbers(numbersArray) {
+  const { instanceName } = getEvolutionConfig();
+  const cleanNumbers = numbersArray.map(n => {
+    let clean = (n || '').replace(/\D/g, '');
+    if (clean.length === 10 || clean.length === 11) clean = '55' + clean;
+    return clean;
+  }).filter(Boolean);
+
+  if (!cleanNumbers.length) return [];
+
+  try {
+    const data = await evolutionFetch(`/chat/whatsappNumbers/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({ numbers: cleanNumbers }),
+    });
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.error('Erro ao checar números no WhatsApp:', err);
+    return null;
+  }
 }
 
 // ── ORGANIZAÇÃO DAS LISTAS DE TRANSMISSÃO T1, T2, T3... ────────────
