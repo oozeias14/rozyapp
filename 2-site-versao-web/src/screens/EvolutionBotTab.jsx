@@ -55,17 +55,33 @@ export function EvolutionBotTab({ users, reload }) {
   function getPhoneSignatures(p) {
     let clean = (p || '').replace(/\D/g, '');
     if (!clean) return [];
+    if (clean.startsWith('0')) clean = clean.substring(1);
     if (clean.startsWith('55') && clean.length >= 12) clean = clean.substring(2);
     if (clean.length === 11) {
       const ddd = clean.substring(0, 2);
       const rest = clean.substring(3);
-      return ['55' + clean, clean, '55' + ddd + rest, ddd + rest, rest];
+      const digit9 = clean.substring(2, 3);
+      return [
+        '55' + clean,
+        clean,
+        '55' + ddd + rest,
+        ddd + rest,
+        clean.slice(-8),
+        ddd + clean.slice(-8)
+      ];
     } else if (clean.length === 10) {
       const ddd = clean.substring(0, 2);
       const rest = clean.substring(2);
-      return ['55' + clean, clean, '55' + ddd + '9' + rest, ddd + '9' + rest, rest];
+      return [
+        '55' + clean,
+        clean,
+        '55' + ddd + '9' + rest,
+        ddd + '9' + rest,
+        clean.slice(-8),
+        ddd + clean.slice(-8)
+      ];
     }
-    return [clean, '55' + clean];
+    return [clean, '55' + clean, clean.slice(-8)];
   }
 
   // Set reativo para checagem O(1) ultra-rápida de contatos
