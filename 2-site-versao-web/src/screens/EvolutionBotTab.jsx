@@ -923,114 +923,343 @@ export function EvolutionBotTab({ users, reload }) {
         </div>
       )}
 
-      {/* Dashboard de Estatísticas da Transmissão */}
+      {/* Dashboard Moderno de Estatísticas da Transmissão */}
       <div style={{
-        background: 'var(--panel2)',
-        padding: '16px 18px',
-        borderRadius: 16,
-        border: '1px solid var(--line)',
+        background: 'linear-gradient(180deg, var(--panel2) 0%, rgba(15, 23, 42, 0.95) 100%)',
+        padding: '20px 22px',
+        borderRadius: 20,
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.24)',
         display: 'flex',
         flexDirection: 'column',
-        gap: 14
+        gap: 16
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 900, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
-              📊 Estatísticas da Lista de Transmissão (Dr. Cândido)
+        {/* Cabeçalho com Título e Ações Rápidas */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.2), rgba(123, 108, 244, 0.2))',
+              border: '1px solid rgba(0, 229, 155, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 22,
+              flexShrink: 0
+            }}>
+              📊
             </div>
-            <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
-              Verifique quem já adicionou o número conectado pelo QR Code e quem ainda não possui o contato
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 900, color: '#fff', letterSpacing: '-0.2px' }}>
+                Painel de Alcance da Transmissão
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
+                Monitore os contatos aptos a receber mensagens oficiais no WhatsApp do Dr. Cândido
+              </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <button
               type="button"
               className="btn btn-teal"
-              style={{ fontSize: 12, padding: '7px 14px', margin: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              style={{
+                fontSize: 12.5,
+                fontWeight: 800,
+                padding: '9px 16px',
+                margin: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                borderRadius: 10,
+                boxShadow: '0 4px 14px rgba(0, 229, 155, 0.25)'
+              }}
               onClick={() => setShowGoogleSyncModal(true)}
             >
-              ☁️ Sincronizar Google Contatos (iPhone & Android)
+              <span>☁️</span> Sincronizar Google / iPhone
             </button>
 
             <button
               type="button"
-              className="btn btn-ghost"
-              style={{ fontSize: 12, padding: '7px 14px', margin: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              className="btn"
+              style={{
+                fontSize: 12.5,
+                fontWeight: 700,
+                padding: '9px 16px',
+                margin: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                borderRadius: 10,
+                background: 'rgba(255, 255, 255, 0.05)',
+                color: '#fff',
+                border: '1px solid var(--line)',
+                cursor: (syncingContacts || !status.connected) ? 'not-allowed' : 'pointer',
+                opacity: (syncingContacts || !status.connected) ? 0.5 : 1
+              }}
               onClick={handleSyncWhatsAppContacts}
               disabled={syncingContacts || !status.connected}
+              title={!status.connected ? 'Conecte o WhatsApp pelo QR Code acima primeiro' : 'Verificar contatos sincronizados no WhatsApp'}
             >
-              {syncingContacts ? '⏳ Sincronizando...' : '🔄 Sincronizar com WhatsApp'}
+              <span>🔄</span> {syncingContacts ? 'Verificando...' : 'Checar no WhatsApp'}
             </button>
           </div>
         </div>
 
-        {/* Grid de Métricas */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
-          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px 14px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
-            <div style={{ fontSize: 11, color: 'var(--ink3)', fontWeight: 700, textTransform: 'uppercase' }}>Total Cadastros</div>
-            <div style={{ fontSize: 22, fontWeight: 900, color: '#fff', marginTop: 4 }}>{validUsers.length}</div>
+        {/* Grid de Métricas Principais */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+          {/* Card: Total */}
+          <div style={{
+            background: 'rgba(255, 255, 255, 0.02)',
+            padding: '14px 16px',
+            borderRadius: 14,
+            border: '1px solid rgba(255, 255, 255, 0.06)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11, color: 'var(--ink3)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Total Membros
+              </span>
+              <span style={{ fontSize: 13 }}>👥</span>
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: '#fff', marginTop: 6 }}>
+              {validUsers.length.toLocaleString('pt-BR')}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 4 }}>
+              Base ativa cadastrada
+            </div>
           </div>
 
-          <div style={{ background: 'rgba(37, 211, 102, 0.08)', padding: '12px 14px', borderRadius: 12, border: '1px solid rgba(37, 211, 102, 0.25)' }}>
-            <div style={{ fontSize: 11, color: '#25D366', fontWeight: 700, textTransform: 'uppercase' }}>🟢 Com Número Salvo</div>
-            <div style={{ fontSize: 22, fontWeight: 900, color: '#25D366', marginTop: 4 }}>{withNumberUsers.length}</div>
+          {/* Card: Salvos */}
+          <div 
+            style={{
+              background: 'linear-gradient(145deg, rgba(37, 211, 102, 0.1), rgba(37, 211, 102, 0.03))',
+              padding: '14px 16px',
+              borderRadius: 14,
+              border: '1px solid rgba(37, 211, 102, 0.25)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              transition: 'transform 0.15s ease, border-color 0.15s ease'
+            }}
+            onClick={() => { setContactFilterModal('with_number'); setModalSearch(''); setModalPage(1); }}
+            title="Clique para ver a lista de contatos confirmados"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11, color: '#25D366', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Salvos na Agenda
+              </span>
+              <span style={{ fontSize: 10, background: 'rgba(37, 211, 102, 0.2)', color: '#25D366', padding: '2px 6px', borderRadius: 6, fontWeight: 800 }}>
+                Prontos
+              </span>
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: '#25D366', marginTop: 6 }}>
+              {withNumberUsers.length.toLocaleString('pt-BR')}
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(37, 211, 102, 0.8)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span>✓</span> Aptos para transmissão
+            </div>
           </div>
 
-          <div style={{ background: 'rgba(240, 107, 76, 0.08)', padding: '12px 14px', borderRadius: 12, border: '1px solid rgba(240, 107, 76, 0.25)' }}>
-            <div style={{ fontSize: 11, color: '#FF8A65', fontWeight: 700, textTransform: 'uppercase' }}>🔴 Sem Número (Pendentes)</div>
-            <div style={{ fontSize: 22, fontWeight: 900, color: '#FF8A65', marginTop: 4 }}>{withoutNumberUsers.length}</div>
+          {/* Card: Pendentes */}
+          <div 
+            style={{
+              background: 'linear-gradient(145deg, rgba(240, 107, 76, 0.1), rgba(240, 107, 76, 0.03))',
+              padding: '14px 16px',
+              borderRadius: 14,
+              border: '1px solid rgba(240, 107, 76, 0.25)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              cursor: 'pointer',
+              transition: 'transform 0.15s ease, border-color 0.15s ease'
+            }}
+            onClick={() => { setContactFilterModal('without_number'); setModalSearch(''); setModalPage(1); }}
+            title="Clique para ver a lista de contatos pendentes"
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11, color: '#FF8A65', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Pendentes
+              </span>
+              <span style={{ fontSize: 10, background: 'rgba(240, 107, 76, 0.2)', color: '#FF8A65', padding: '2px 6px', borderRadius: 6, fontWeight: 800 }}>
+                Aguardando
+              </span>
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: '#FF8A65', marginTop: 6 }}>
+              {withoutNumberUsers.length.toLocaleString('pt-BR')}
+            </div>
+            <div style={{ fontSize: 11, color: 'rgba(240, 107, 76, 0.8)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span>⏱</span> Sem o número salvo
+            </div>
           </div>
 
-          <div style={{ background: 'rgba(123, 108, 244, 0.08)', padding: '12px 14px', borderRadius: 12, border: '1px solid rgba(123, 108, 244, 0.25)' }}>
-            <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 700, textTransform: 'uppercase' }}>📈 Cobertura</div>
-            <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--teal)', marginTop: 4 }}>{coveragePercent}%</div>
+          {/* Card: Cobertura com Barra de Progresso */}
+          <div style={{
+            background: 'rgba(123, 108, 244, 0.06)',
+            padding: '14px 16px',
+            borderRadius: 14,
+            border: '1px solid rgba(123, 108, 244, 0.2)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Taxa de Alcance
+              </span>
+              <span style={{ fontSize: 13 }}>📈</span>
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: 'var(--teal)', marginTop: 6 }}>
+              {coveragePercent}%
+            </div>
+            <div style={{ marginTop: 6, width: '100%', height: 5, background: 'rgba(255, 255, 255, 0.08)', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ width: `${Math.min(parseFloat(coveragePercent) || 0, 100)}%`, height: '100%', background: 'linear-gradient(90deg, #25D366, var(--teal))', borderRadius: 3, transition: 'width 0.4s ease' }} />
+            </div>
           </div>
         </div>
 
-        {/* Dois Botões de Ação para Ver Quem São */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
-          <button
-            type="button"
-            className="btn"
+        {/* Cartões Interativos de Ação e Filtragem */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+          {/* Ação 1: Contatos Confirmados */}
+          <div
             style={{
-              background: 'linear-gradient(135deg, rgba(37, 211, 102, 0.2), rgba(37, 211, 102, 0.08))',
-              border: '1px solid #25D366',
-              color: '#25D366',
-              padding: '12px 16px',
-              fontWeight: 800,
-              fontSize: 13,
-              borderRadius: 12,
+              background: 'linear-gradient(135deg, rgba(37, 211, 102, 0.12) 0%, rgba(15, 23, 42, 0.6) 100%)',
+              border: '1px solid rgba(37, 211, 102, 0.35)',
+              borderRadius: 14,
+              padding: '16px 18px',
               display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              gap: 12,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              boxShadow: '0 4px 16px rgba(37, 211, 102, 0.05)'
             }}
             onClick={() => { setContactFilterModal('with_number'); setModalSearch(''); setModalPage(1); }}
           >
-            <span>🟢</span> Ver Quem Tem o Número ({withNumberUsers.length})
-          </button>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{
+                    fontSize: 14,
+                    width: 26,
+                    height: 26,
+                    borderRadius: 8,
+                    background: 'rgba(37, 211, 102, 0.2)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#25D366'
+                  }}>
+                    ✓
+                  </span>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>
+                    Contatos Prontos para Transmissão
+                  </span>
+                </div>
+                <span style={{
+                  fontSize: 12,
+                  fontWeight: 900,
+                  color: '#25D366',
+                  background: 'rgba(37, 211, 102, 0.15)',
+                  padding: '3px 9px',
+                  borderRadius: 20,
+                  border: '1px solid rgba(37, 211, 102, 0.3)'
+                }}>
+                  {withNumberUsers.length} contatos
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5 }}>
+                Membros com número do Dr. Cândido salvo na agenda. A entrega no WhatsApp é 100% garantida e segura.
+              </div>
+            </div>
 
-          <button
-            type="button"
-            className="btn"
-            style={{
-              background: 'linear-gradient(135deg, rgba(240, 107, 76, 0.2), rgba(240, 107, 76, 0.08))',
-              border: '1px solid #F06B4C',
-              color: '#FF8A65',
-              padding: '12px 16px',
-              fontWeight: 800,
-              fontSize: 13,
-              borderRadius: 12,
+            <div style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8
+              justifyContent: 'flex-end',
+              fontSize: 12.5,
+              fontWeight: 800,
+              color: '#25D366',
+              gap: 6
+            }}>
+              <span>Visualizar Lista Completa</span>
+              <span>→</span>
+            </div>
+          </div>
+
+          {/* Ação 2: Contatos Pendentes */}
+          <div
+            style={{
+              background: 'linear-gradient(135deg, rgba(240, 107, 76, 0.12) 0%, rgba(15, 23, 42, 0.6) 100%)',
+              border: '1px solid rgba(240, 107, 76, 0.35)',
+              borderRadius: 14,
+              padding: '16px 18px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              gap: 12,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              boxShadow: '0 4px 16px rgba(240, 107, 76, 0.05)'
             }}
             onClick={() => { setContactFilterModal('without_number'); setModalSearch(''); setModalPage(1); }}
           >
-            <span>🔴</span> Ver Quem NÃO Tem o Número ({withoutNumberUsers.length})
-          </button>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{
+                    fontSize: 14,
+                    width: 26,
+                    height: 26,
+                    borderRadius: 8,
+                    background: 'rgba(240, 107, 76, 0.2)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#FF8A65'
+                  }}>
+                    ⏱
+                  </span>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>
+                    Contatos Pendentes de Adição
+                  </span>
+                </div>
+                <span style={{
+                  fontSize: 12,
+                  fontWeight: 900,
+                  color: '#FF8A65',
+                  background: 'rgba(240, 107, 76, 0.15)',
+                  padding: '3px 9px',
+                  borderRadius: 20,
+                  border: '1px solid rgba(240, 107, 76, 0.3)'
+                }}>
+                  {withoutNumberUsers.length} contatos
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5 }}>
+                Membros que ainda não salvaram o contato. Sincronize a agenda Google para habilitá-los na transmissão.
+              </div>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              fontSize: 12.5,
+              fontWeight: 800,
+              color: '#FF8A65',
+              gap: 6
+            }}>
+              <span>Visualizar Lista de Pendentes</span>
+              <span>→</span>
+            </div>
+          </div>
         </div>
       </div>
 
