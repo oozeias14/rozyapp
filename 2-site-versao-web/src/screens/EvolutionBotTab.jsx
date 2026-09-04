@@ -45,6 +45,7 @@ export function EvolutionBotTab({ users, reload }) {
     }
   });
   const [syncingContacts, setSyncingContacts] = useState(false);
+  const [resettingAnalysis, setResettingAnalysis] = useState(false);
   const [contactFilterModal, setContactFilterModal] = useState(null); // 'with_number' | 'without_number' | null
   const [showGoogleSyncModal, setShowGoogleSyncModal] = useState(false);
   const [showLegacyBatches, setShowLegacyBatches] = useState(false);
@@ -68,12 +69,24 @@ export function EvolutionBotTab({ users, reload }) {
   }
 
   // Set reativo para checagem O(1) ultra-rápida de contatos
+  // Combina telefones salvos localmente com o status salvo no banco Supabase
   const savedPhonesSet = new Set();
   savedPhones.forEach((p) => {
     getPhoneSignatures(p).forEach((sig) => savedPhonesSet.add(sig));
   });
 
+  // Também adiciona ao set os telefones dos usuários que já estão marcados no banco de dados Supabase
+  users.forEach((u) => {
+    if (u.vcf_exported) {
+      const raw = u.whatsapp || u.phone;
+      if (raw) {
+        getPhoneSignatures(raw).forEach((sig) => savedPhonesSet.add(sig));
+      }
+    }
+  });
+
   function isUserInSaved(u) {
+    if (u.vcf_exported) return true;
     const raw = u.whatsapp || u.phone;
     if (!raw) return false;
     const sigs = getPhoneSignatures(raw);
@@ -270,34 +283,58 @@ export function EvolutionBotTab({ users, reload }) {
     setSyncingContacts(true);
     try {
       const contacts = await fetchWhatsAppContacts();
-      const currentSavedSet = new Set(savedPhones);
-      let newCount = 0;
+      const currentSavedSet = new Set();
 
       contacts.forEach((c) => {
         const rawJid = c.remoteJid || c.jid || (c.id && c.id.includes('@') ? c.id : '') || c.number || '';
         const phone = rawJid.split('@')[0].replace(/\D/g, '');
         if (phone && phone.length >= 10 && phone.length <= 13) {
           getPhoneSignatures(phone).forEach((sig) => {
-            if (!currentSavedSet.has(sig)) {
-              currentSavedSet.add(sig);
-              newCount++;
-            }
+            currentSavedSet.add(sig);
           });
         }
       });
 
+      // Identifica membros correspondentes nos cadastros
+      const matchedUserIds = [];
+      const unmatchedUserIds = [];
+
+      validUsers.forEach((u) => {
+        const sigs = getPhoneSignatures(u.whatsapp || u.phone);
+        const isMatch = sigs.some((s) => currentSavedSet.has(s));
+        if (isMatch) {
+          matchedUserIds.push(u.id);
+        } else {
+          unmatchedUserIds.push(u.id);
+        }
+      });
+
+      // Atualiza estado e cache local
       const updatedArr = Array.from(currentSavedSet);
       setSavedPhones(updatedArr);
       localStorage.setItem('wa_saved_phones', JSON.stringify(updatedArr));
 
-      // Conta quantos membros dos cadastros foram identificados
-      const tempSet = new Set(updatedArr);
-      const matchedMembers = validUsers.filter((u) => {
-        const sigs = getPhoneSignatures(u.whatsapp || u.phone);
-        return sigs.some((s) => tempSet.has(s));
-      });
+      // Sincroniza status no Supabase em lotes para persistir no banco central (sincronia Celular e Computador)
+      const CHUNK_SIZE = 100;
+      if (matchedUserIds.length > 0) {
+        for (let i = 0; i < matchedUserIds.length; i += CHUNK_SIZE) {
+          const chunk = matchedUserIds.slice(i, i + CHUNK_SIZE);
+          await supabase.from('profiles').update({ vcf_exported: true }).in('id', chunk);
+        }
+      }
+      if (unmatchedUserIds.length > 0) {
+        for (let i = 0; i < unmatchedUserIds.length; i += CHUNK_SIZE) {
+          const chunk = unmatchedUserIds.slice(i, i + CHUNK_SIZE);
+          await supabase.from('profiles').update({ vcf_exported: false }).in('id', chunk);
+        }
+      }
 
-      alert(`✅ Sincronização concluída com sucesso!\n\n📱 Contatos lidos no seu WhatsApp: ${contacts.length}\n🟢 Membros dos seus cadastros com número salvo: ${matchedMembers.length} de ${validUsers.length}`);
+      // Recarrega todos os dados no app
+      if (reload) {
+        await reload();
+      }
+
+      alert(`✅ Sincronização concluída com sucesso!\n\n📱 Contatos identificados no WhatsApp: ${contacts.length}\n🟢 Membros dos seus cadastros com número salvo: ${matchedUserIds.length} de ${validUsers.length}\n\n☁️ Os dados foram salvos na nuvem e sincronizados no Computador e no Celular!`);
     } catch (err) {
       alert('Erro ao sincronizar contatos do WhatsApp: ' + err.message);
     } finally {
@@ -305,18 +342,59 @@ export function EvolutionBotTab({ users, reload }) {
     }
   }
 
+  // Limpar e Resetar todos os dados analisados
+  async function handleResetAnalyzedData() {
+    const confirmMsg = `⚠️ Deseja realmente limpar e resetar todos os dados analisados?\n\nIsso vai:\n• Zerar os contatos salvos da análise\n• Marcar todos os ${validUsers.length} membros como Pendentes\n• Permitir testar novamente com outro WhatsApp do zero.\n\nDeseja continuar?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setResettingAnalysis(true);
+    try {
+      // 1. Limpa cache local
+      localStorage.removeItem('wa_saved_phones');
+      setSavedPhones([]);
+
+      // 2. Reseta status de todos os perfis no Supabase em lotes
+      const allIds = validUsers.map((u) => u.id);
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < allIds.length; i += CHUNK_SIZE) {
+        const chunk = allIds.slice(i, i + CHUNK_SIZE);
+        await supabase.from('profiles').update({ vcf_exported: false }).in('id', chunk);
+      }
+
+      // 3. Recarrega dados no app
+      if (reload) {
+        await reload();
+      }
+
+      alert('✅ Análise limpa com sucesso!\n\nTodos os membros voltaram para a lista de Pendentes (0 salvos). Agora você pode conectar outro número ou refazer os testes.');
+    } catch (err) {
+      alert('Erro ao resetar análise: ' + err.message);
+    } finally {
+      setResettingAnalysis(false);
+    }
+  }
+
   // Alternar manualmente se o usuário tem ou não o número
-  function toggleUserSavedStatus(user) {
+  async function toggleUserSavedStatus(user) {
     const p = normalizePhone(user.whatsapp || user.phone);
-    if (!p) return;
+    const currentlySaved = isUserInSaved(user);
+    const newStatus = !currentlySaved;
+
     let next;
-    if (savedPhones.includes(p)) {
-      next = savedPhones.filter((item) => item !== p);
+    if (newStatus && p) {
+      next = [...savedPhones.filter((item) => item !== p), p];
     } else {
-      next = [...savedPhones, p];
+      next = savedPhones.filter((item) => item !== p);
     }
     setSavedPhones(next);
     localStorage.setItem('wa_saved_phones', JSON.stringify(next));
+
+    try {
+      await supabase.from('profiles').update({ vcf_exported: newStatus }).eq('id', user.id);
+      if (reload) await reload();
+    } catch (err) {
+      console.warn('Erro ao atualizar contato no Supabase:', err);
+    }
   }
 
   // Filtragem e Paginação do Modal de Contatos
@@ -998,7 +1076,7 @@ export function EvolutionBotTab({ users, reload }) {
                 paginatedModalUsers.map((u) => {
                   const phone = u.whatsapp || u.phone || '';
                   const norm = normalizePhone(phone);
-                  const isSaved = norm && savedPhones.includes(norm);
+                  const isSaved = isUserInSaved(u);
                   return (
                     <div 
                       key={u.id}
@@ -1376,6 +1454,32 @@ export function EvolutionBotTab({ users, reload }) {
               title={!status.connected ? 'Conecte o WhatsApp pelo QR Code acima primeiro' : 'Verificar contatos sincronizados no WhatsApp'}
             >
               <span>🔄</span> {syncingContacts ? 'Verificando...' : 'Checar no WhatsApp'}
+            </button>
+
+            <button
+              type="button"
+              className="btn"
+              style={{
+                fontSize: 12.5,
+                fontWeight: 700,
+                padding: '9px 14px',
+                margin: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                borderRadius: 10,
+                background: 'rgba(240, 107, 76, 0.1)',
+                color: '#FF8A65',
+                border: '1px solid rgba(240, 107, 76, 0.3)',
+                cursor: resettingAnalysis ? 'not-allowed' : 'pointer',
+                opacity: resettingAnalysis ? 0.6 : 1,
+                transition: 'all 0.2s ease'
+              }}
+              onClick={handleResetAnalyzedData}
+              disabled={resettingAnalysis || syncingContacts}
+              title="Limpar todos os dados analisados e resetar contatos para Pendentes"
+            >
+              <span>🧹</span> {resettingAnalysis ? 'Limpando...' : 'Limpar Análise'}
             </button>
           </div>
         </div>
