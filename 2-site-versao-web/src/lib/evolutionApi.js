@@ -97,12 +97,15 @@ export async function saveEvolutionConfig({ serverUrl, apiKey, instanceName }) {
 
 // Generic Evolution API request fetcher
 async function evolutionFetch(endpoint, options = {}) {
-  const { serverUrl, apiKey } = getEvolutionConfig();
-  if (!serverUrl || !apiKey) {
-    throw new Error('Evolution API não configurada. Insira a URL e a Chave de API no painel.');
+  const cfg = getEvolutionConfig();
+  const serverUrl = (cfg.serverUrl || DEFAULT_SERVER_URL).trim().replace(/\/+$/, '');
+  
+  // Garante a chave oficial validada de 64 caracteres
+  let cleanKey = (cfg.apiKey || '').trim().replace(/^["']|["']$/g, '');
+  if (!cleanKey || cleanKey.length < 60) {
+    cleanKey = DEFAULT_API_KEY;
   }
 
-  const cleanKey = (apiKey || '').trim().replace(/^["']|["']$/g, '');
   const url = `${serverUrl}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
   
   const headers = {
@@ -123,7 +126,7 @@ async function evolutionFetch(endpoint, options = {}) {
     } catch (_) {}
 
     if (res.status === 401 || res.status === 403) {
-      errMsg = `Chave de API não autorizada (401 Unauthorized). Verifique em "⚙️ Configurar API" se a chave inserida é exatamente a AUTHENTICATION_API_KEY configurada nas variáveis do seu Railway.`;
+      errMsg = `Chave de API não autorizada (401 Unauthorized). Verifique a chave no Railway.`;
     }
 
     throw new Error(errMsg);
