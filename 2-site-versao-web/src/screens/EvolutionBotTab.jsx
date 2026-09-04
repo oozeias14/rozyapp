@@ -24,9 +24,9 @@ export function EvolutionBotTab({ users, reload }) {
   const [customMsg, setCustomMsg] = useState(
     'Olá {nome}! Tudo bem? Aqui é o Dr. Cândido. Gostaria de saber se você já tem meu contato salvo na sua agenda? Responda com um "Sim" ou "Ok" por favor! 🙏'
   );
-  const [batchSize, setBatchSize] = useState(100);
+  const batchSize = 100;
 
-  // Gera os lotes de transmissão (T1, T2, T3... padrão 100 por lote para compatibilidade celular)
+  // Gera os lotes de transmissão (T1, T2, T3... padrão fixo 100 por lote para compatibilidade com celular)
   const batches = generateTransmissionBatches(users, batchSize);
 
   // Carrega e sincroniza configuração do Supabase ao abrir
@@ -504,34 +504,13 @@ export function EvolutionBotTab({ users, reload }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 900, color: '#fff' }}>
-              📋 Listas de Transmissão Automáticas ({batches.length} Lotes de {batchSize} contatos)
+              📋 Listas de Transmissão Automáticas ({batches.length} Lotes de 100 contatos)
             </div>
             <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
-              Total: {users.length} membros cadastrados
+              Total: {users.length} membros cadastrados · Padrão seguro para celular (100 por lote)
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', padding: 3, borderRadius: 10, border: '1px solid var(--line)' }}>
-              <button 
-                type="button"
-                className={`btn ${batchSize === 100 ? 'btn-teal' : 'btn-ghost'}`}
-                style={{ fontSize: 11, padding: '4px 10px', margin: 0, borderRadius: 8 }}
-                onClick={() => setBatchSize(100)}
-                title="Lotes de até 100 contatos para importar sem erros no celular"
-              >
-                📱 100 / Lote (Celular)
-              </button>
-              <button 
-                type="button"
-                className={`btn ${batchSize === 250 ? 'btn-teal' : 'btn-ghost'}`}
-                style={{ fontSize: 11, padding: '4px 10px', margin: 0, borderRadius: 8 }}
-                onClick={() => setBatchSize(250)}
-                title="Lotes de até 250 contatos (Limite oficial do WhatsApp)"
-              >
-                💬 250 / Lote (WhatsApp)
-              </button>
-            </div>
-
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button 
               type="button"
               className="btn btn-teal"
