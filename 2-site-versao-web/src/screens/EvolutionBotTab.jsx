@@ -39,6 +39,7 @@ export function EvolutionBotTab({ users, reload }) {
   const [syncingContacts, setSyncingContacts] = useState(false);
   const [contactFilterModal, setContactFilterModal] = useState(null); // 'with_number' | 'without_number' | null
   const [showGoogleSyncModal, setShowGoogleSyncModal] = useState(false);
+  const [showLegacyBatches, setShowLegacyBatches] = useState(false);
   const [modalSearch, setModalSearch] = useState('');
   const [modalPage, setModalPage] = useState(1);
 
@@ -1033,165 +1034,192 @@ export function EvolutionBotTab({ users, reload }) {
         </div>
       </div>
 
-      {/* Guia de Transmissão Oficial */}
-      <div style={{ 
-        background: 'linear-gradient(135deg, rgba(37, 211, 102, 0.08), rgba(15, 23, 42, 0.6))', 
-        padding: '14px 16px', 
-        borderRadius: 14, 
-        border: '1px solid rgba(37, 211, 102, 0.25)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 18 }}>🛡️</span>
-          <span style={{ fontWeight: 800, fontSize: 13, color: '#fff' }}>
-            Guia da Lista de Transmissão Oficial (Risco ZERO de Bloqueio)
-          </span>
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.6 }}>
-          1. Clique em <strong style={{ color: '#fff' }}>📥 Baixar vCard</strong> no lote desejado (ex: <em>Lote T1</em>) e importe no celular do Dr. Cândido.<br />
-          2. No WhatsApp, vá em <strong style={{ color: '#fff' }}>Nova Transmissão</strong>, pesquise por <strong style={{ color: 'var(--teal)' }}>T1</strong> e selecione todos os contatos.<br />
-          3. Envie sua mensagem: o próprio WhatsApp entrega <strong>apenas para quem tem o número do Dr. Cândido salvo na agenda</strong>, garantindo total segurança e entrega sem denúncias de spam.
-        </div>
+      {/* Botão sutil para alternar opções manuais de lote vCard (oculto por padrão) */}
+      <div style={{ display: 'flex', justifyContent: 'center', marginTop: 6, marginBottom: 6 }}>
+        <button
+          type="button"
+          className="btn"
+          style={{
+            background: 'transparent',
+            border: '1px dashed var(--line)',
+            color: 'var(--ink3)',
+            fontSize: 12,
+            padding: '7px 16px',
+            borderRadius: 10,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6
+          }}
+          onClick={() => setShowLegacyBatches(!showLegacyBatches)}
+        >
+          {showLegacyBatches ? '▲ Ocultar Opções Manuais de Lotes vCard (.vcf)' : '⚙️ Exibir Lotes Manuais vCard (.vcf) [Opcional]'}
+        </button>
       </div>
 
-      {/* Visualização dos Lotes T1, T2, T3... */}
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+      {showLegacyBatches && (
+        <>
+          {/* Guia de Transmissão Oficial */}
+          <div style={{ 
+            background: 'linear-gradient(135deg, rgba(37, 211, 102, 0.08), rgba(15, 23, 42, 0.6))', 
+            padding: '14px 16px', 
+            borderRadius: 14, 
+            border: '1px solid rgba(37, 211, 102, 0.25)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 18 }}>🛡️</span>
+              <span style={{ fontWeight: 800, fontSize: 13, color: '#fff' }}>
+                Guia da Lista de Transmissão Oficial (Risco ZERO de Bloqueio)
+              </span>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.6 }}>
+              1. Clique em <strong style={{ color: '#fff' }}>📥 Baixar vCard</strong> no lote desejado (ex: <em>Lote T1</em>) e importe no celular do Dr. Cândido.<br />
+              2. No WhatsApp, vá em <strong style={{ color: '#fff' }}>Nova Transmissão</strong>, pesquise por <strong style={{ color: 'var(--teal)' }}>T1</strong> e selecione todos os contatos.<br />
+              3. Envie sua mensagem: o próprio WhatsApp entrega <strong>apenas para quem tem o número do Dr. Cândido salvo na agenda</strong>, garantindo total segurança e entrega sem denúncias de spam.
+            </div>
+          </div>
+
+          {/* Visualização dos Lotes T1, T2, T3... */}
           <div>
-            <div style={{ fontSize: 14, fontWeight: 900, color: '#fff' }}>
-              📋 Listas de Transmissão Oficiais ({batches.length} Lotes de 100 contatos)
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
-              Total: {users.length} membros cadastrados · Padrão seguro para celular (100 por lote)
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button 
-              type="button"
-              className="btn btn-teal"
-              style={{ fontSize: 12, padding: '7px 14px', margin: 0 }}
-              onClick={handleExportAllBatches}
-              title="Baixar arquivo único .vcf com todos os contatos já prefixados (T1, T2, T3...)"
-            >
-              📥 Baixar Todos (.vcf)
-            </button>
-          </div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
-          {pagedBatches.map((b) => (
-            <div 
-              key={b.id}
-              style={{
-                background: 'var(--panel2)',
-                borderRadius: 14,
-                padding: '14px 16px',
-                border: '1px solid var(--line)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 10
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ 
-                    fontSize: 12, 
-                    fontWeight: 900, 
-                    background: 'var(--teal-dim)', 
-                    color: 'var(--teal)', 
-                    padding: '2px 8px', 
-                    borderRadius: 6,
-                    border: '1px solid var(--teal)'
-                  }}>
-                    {b.id}
-                  </span>
-                  <span style={{ fontWeight: 800, fontSize: 14, color: '#fff' }}>
-                    {b.name}
-                  </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 900, color: '#fff' }}>
+                  📋 Listas de Transmissão Oficiais ({batches.length} Lotes de 100 contatos)
                 </div>
-                <span style={{ fontSize: 12, color: 'var(--ink2)', fontWeight: 700 }}>
-                  👥 {b.count} contatos
-                </span>
+                <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
+                  Total: {users.length} membros cadastrados · Padrão seguro para celular (100 por lote)
+                </div>
               </div>
-
-              <div style={{ fontSize: 11.5, color: 'var(--ink3)' }}>
-                Contatos do número #{b.startNumber} ao #{b.endNumber}
-              </div>
-
-              <div style={{ marginTop: 4 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button 
                   type="button"
                   className="btn btn-teal"
-                  style={{ width: '100%', fontSize: 12, padding: '9px', margin: 0, borderRadius: 10 }}
-                  onClick={() => handleExportBatchVcf(b)}
-                  title="Baixar lista em arquivo .vcf para importar nos contatos do celular"
+                  style={{ fontSize: 12, padding: '7px 14px', margin: 0 }}
+                  onClick={handleExportAllBatches}
+                  title="Baixar arquivo único .vcf com todos os contatos já prefixados (T1, T2, T3...)"
                 >
-                  📥 Baixar vCard ({b.id})
+                  📥 Baixar Todos (.vcf)
                 </button>
               </div>
             </div>
-          ))}
-        </div>
 
-        {/* Paginação idêntica à aba Cadastros */}
-        {totalBatchPages > 1 && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
-            <button 
-              className="btn" 
-              style={{ 
-                width: 'auto',
-                flexShrink: 0,
-                margin: 0,
-                padding: '8px 16px', 
-                fontSize: 13, 
-                fontWeight: 600,
-                borderRadius: 10, 
-                background: 'rgba(255, 255, 255, 0.04)', 
-                color: batchPage === 1 ? 'var(--ink3)' : '#fff',
-                border: '1px solid ' + (batchPage === 1 ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
-                cursor: batchPage === 1 ? 'not-allowed' : 'pointer',
-                opacity: batchPage === 1 ? 0.4 : 1,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6
-              }}
-              disabled={batchPage === 1}
-              onClick={() => setBatchPage(p => Math.max(p - 1, 1))}
-            >
-              <span>←</span> Anterior
-            </button>
-            <span style={{ fontSize: 13, color: 'var(--ink2)', fontWeight: 600, whiteSpace: 'nowrap', minWidth: '100px', textAlign: 'center' }}>
-              Página {batchPage} de {totalBatchPages}
-            </span>
-            <button 
-              className="btn" 
-              style={{ 
-                width: 'auto',
-                flexShrink: 0,
-                margin: 0,
-                padding: '8px 16px', 
-                fontSize: 13, 
-                fontWeight: 600,
-                borderRadius: 10, 
-                background: 'rgba(255, 255, 255, 0.04)', 
-                color: batchPage === totalBatchPages ? 'var(--ink3)' : '#fff',
-                border: '1px solid ' + (batchPage === totalBatchPages ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
-                cursor: batchPage === totalBatchPages ? 'not-allowed' : 'pointer',
-                opacity: batchPage === totalBatchPages ? 0.4 : 1,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6
-              }}
-              disabled={batchPage === totalBatchPages}
-              onClick={() => setBatchPage(p => Math.min(p + 1, totalBatchPages))}
-            >
-              Próxima <span>→</span>
-            </button>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+              {pagedBatches.map((b) => (
+                <div 
+                  key={b.id}
+                  style={{
+                    background: 'var(--panel2)',
+                    borderRadius: 14,
+                    padding: '14px 16px',
+                    border: '1px solid var(--line)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ 
+                        fontSize: 12, 
+                        fontWeight: 900, 
+                        background: 'var(--teal-dim)', 
+                        color: 'var(--teal)', 
+                        padding: '2px 8px', 
+                        borderRadius: 6,
+                        border: '1px solid var(--teal)'
+                      }}>
+                        {b.id}
+                      </span>
+                      <span style={{ fontWeight: 800, fontSize: 14, color: '#fff' }}>
+                        {b.name}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: 12, color: 'var(--ink2)', fontWeight: 700 }}>
+                      👥 {b.count} contatos
+                    </span>
+                  </div>
+
+                  <div style={{ fontSize: 11.5, color: 'var(--ink3)' }}>
+                    Contatos do número #{b.startNumber} ao #{b.endNumber}
+                  </div>
+
+                  <div style={{ marginTop: 4 }}>
+                    <button 
+                      type="button"
+                      className="btn btn-teal"
+                      style={{ width: '100%', fontSize: 12, padding: '9px', margin: 0, borderRadius: 10 }}
+                      onClick={() => handleExportBatchVcf(b)}
+                      title="Baixar lista em arquivo .vcf para importar nos contatos do celular"
+                    >
+                      📥 Baixar vCard ({b.id})
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Paginação idêntica à aba Cadastros */}
+            {totalBatchPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
+                <button 
+                  className="btn" 
+                  style={{ 
+                    width: 'auto',
+                    flexShrink: 0,
+                    margin: 0,
+                    padding: '8px 16px', 
+                    fontSize: 13, 
+                    fontWeight: 600,
+                    borderRadius: 10, 
+                    background: 'rgba(255, 255, 255, 0.04)', 
+                    color: batchPage === 1 ? 'var(--ink3)' : '#fff',
+                    border: '1px solid ' + (batchPage === 1 ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
+                    cursor: batchPage === 1 ? 'not-allowed' : 'pointer',
+                    opacity: batchPage === 1 ? 0.4 : 1,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                  disabled={batchPage === 1}
+                  onClick={() => setBatchPage(p => Math.max(p - 1, 1))}
+                >
+                  <span>←</span> Anterior
+                </button>
+                <span style={{ fontSize: 13, color: 'var(--ink2)', fontWeight: 600, whiteSpace: 'nowrap', minWidth: '100px', textAlign: 'center' }}>
+                  Página {batchPage} de {totalBatchPages}
+                </span>
+                <button 
+                  className="btn" 
+                  style={{ 
+                    width: 'auto',
+                    flexShrink: 0,
+                    margin: 0,
+                    padding: '8px 16px', 
+                    fontSize: 13, 
+                    fontWeight: 600,
+                    borderRadius: 10, 
+                    background: 'rgba(255, 255, 255, 0.04)', 
+                    color: batchPage === totalBatchPages ? 'var(--ink3)' : '#fff',
+                    border: '1px solid ' + (batchPage === totalBatchPages ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
+                    cursor: batchPage === totalBatchPages ? 'not-allowed' : 'pointer',
+                    opacity: batchPage === totalBatchPages ? 0.4 : 1,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                  disabled={batchPage === totalBatchPages}
+                  onClick={() => setBatchPage(p => Math.min(p + 1, totalBatchPages))}
+                >
+                  Próxima <span>→</span>
+                </button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }
