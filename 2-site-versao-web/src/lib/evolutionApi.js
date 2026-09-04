@@ -110,8 +110,6 @@ async function evolutionFetch(endpoint, options = {}) {
   
   const headers = {
     'apikey': cleanKey,
-    'apiKey': cleanKey,
-    'Authorization': `Bearer ${cleanKey}`,
     'Content-Type': 'application/json',
     ...(options.headers || {}),
   };
