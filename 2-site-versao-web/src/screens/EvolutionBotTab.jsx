@@ -8,10 +8,15 @@ import {
   disconnectInstance, 
   sendWhatsAppMessage, 
   checkWhatsAppNumbers,
+  fetchWhatsAppContacts,
   generateTransmissionBatches,
   DEFAULT_INSTANCE_NAME 
 } from '../lib/evolutionApi';
 import { supabase } from '../lib/supabase';
+
+function initials(name) {
+  return (name || '?').split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
+}
 
 export function EvolutionBotTab({ users, reload }) {
   const [config, setConfig] = useState(getEvolutionConfig());
@@ -27,6 +32,40 @@ export function EvolutionBotTab({ users, reload }) {
   const batchSize = 100;
   const [batchPage, setBatchPage] = useState(1);
   const BATCH_PAGE_SIZE = 5;
+
+  // Estado de contatos que têm o número adicionado (sincronizados da API ou confirmados)
+  const [savedPhones, setSavedPhones] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('wa_saved_phones') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [syncingContacts, setSyncingContacts] = useState(false);
+  const [contactFilterModal, setContactFilterModal] = useState(null); // 'with_number' | 'without_number' | null
+  const [modalSearch, setModalSearch] = useState('');
+  const [modalPage, setModalPage] = useState(1);
+
+  function normalizePhone(p) {
+    let clean = (p || '').replace(/\D/g, '');
+    if (!clean) return '';
+    if (clean.length === 10 || clean.length === 11) clean = '55' + clean;
+    return clean;
+  }
+
+  // Filtragem de membros válidos
+  const validUsers = users.filter((u) => u.role !== 'admin' && u.role !== 'admin2');
+  const withNumberUsers = validUsers.filter((u) => {
+    const p = normalizePhone(u.whatsapp || u.phone);
+    return p && savedPhones.includes(p);
+  });
+  const withoutNumberUsers = validUsers.filter((u) => {
+    const p = normalizePhone(u.whatsapp || u.phone);
+    return !p || !savedPhones.includes(p);
+  });
+  const coveragePercent = validUsers.length > 0 
+    ? ((withNumberUsers.length / validUsers.length) * 100).toFixed(1) 
+    : '0.0';
 
   // Gera os lotes de transmissão (T1, T2, T3... padrão fixo 100 por lote para compatibilidade com celular)
   const batches = generateTransmissionBatches(users, batchSize);
@@ -101,6 +140,109 @@ export function EvolutionBotTab({ users, reload }) {
       alert('Erro ao desconectar: ' + err.message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Sincronizar contatos salvos da instância conectada
+  async function handleSyncWhatsAppContacts() {
+    if (!status.connected) {
+      alert('O WhatsApp precisa estar conectado pelo QR Code antes de sincronizar contatos!');
+      return;
+    }
+    setSyncingContacts(true);
+    try {
+      const contacts = await fetchWhatsAppContacts();
+      const currentSavedSet = new Set(savedPhones);
+      let newCount = 0;
+
+      contacts.forEach((c) => {
+        const rawId = c.id || c.jid || '';
+        const phone = rawId.split('@')[0].replace(/\D/g, '');
+        if (phone && phone.length >= 10) {
+          let intl = phone;
+          if (intl.length === 10 || intl.length === 11) intl = '55' + intl;
+          if (!currentSavedSet.has(intl)) {
+            currentSavedSet.add(intl);
+            newCount++;
+          }
+        }
+      });
+
+      const updatedArr = Array.from(currentSavedSet);
+      setSavedPhones(updatedArr);
+      localStorage.setItem('wa_saved_phones', JSON.stringify(updatedArr));
+      alert(`Sincronização concluída!\nTotal de contatos identificados no WhatsApp: ${contacts.length}\nNovos contatos adicionados à lista de confirmados: ${newCount}`);
+    } catch (err) {
+      alert('Erro ao sincronizar contatos do WhatsApp: ' + err.message);
+    } finally {
+      setSyncingContacts(false);
+    }
+  }
+
+  // Alternar manualmente se o usuário tem ou não o número
+  function toggleUserSavedStatus(user) {
+    const p = normalizePhone(user.whatsapp || user.phone);
+    if (!p) return;
+    let next;
+    if (savedPhones.includes(p)) {
+      next = savedPhones.filter((item) => item !== p);
+    } else {
+      next = [...savedPhones, p];
+    }
+    setSavedPhones(next);
+    localStorage.setItem('wa_saved_phones', JSON.stringify(next));
+  }
+
+  // Filtragem e Paginação do Modal de Contatos
+  const activeModalUsers = contactFilterModal === 'with_number' ? withNumberUsers : withoutNumberUsers;
+  const filteredModalUsers = activeModalUsers.filter((u) => {
+    const q = modalSearch.toLowerCase();
+    return (
+      (u.name || '').toLowerCase().includes(q) ||
+      (u.whatsapp || u.phone || '').includes(q) ||
+      (u.city || '').toLowerCase().includes(q)
+    );
+  });
+  const MODAL_PAGE_SIZE = 10;
+  const totalModalPages = Math.ceil(filteredModalUsers.length / MODAL_PAGE_SIZE) || 1;
+  const paginatedModalUsers = filteredModalUsers.slice((modalPage - 1) * MODAL_PAGE_SIZE, modalPage * MODAL_PAGE_SIZE);
+
+  // Exportar vCard filtrado do modal (Com ou Sem Número)
+  function handleExportModalUsers() {
+    if (filteredModalUsers.length === 0) return;
+    try {
+      const isWith = contactFilterModal === 'with_number';
+      const title = isWith ? 'com_numero_adicionado' : 'sem_numero_adicionado';
+      const prefix = isWith ? 'CONFIRMADO' : 'PENDENTE';
+      const cards = filteredModalUsers.map((u) => {
+        const cleanName = (u.name || 'Sem Nome').trim();
+        const fullName = `${prefix} ${cleanName}`;
+        let intlTel = normalizePhone(u.phone || u.whatsapp);
+        if (intlTel && !intlTel.startsWith('+')) intlTel = '+' + intlTel;
+        return [
+          'BEGIN:VCARD',
+          'VERSION:3.0',
+          `N:;${fullName};;;`,
+          `FN:${fullName}`,
+          ...(intlTel ? [`TEL;TYPE=CELL;TYPE=PREF:${intlTel}`, `TEL;TYPE=CELL,VOICE:${intlTel}`] : []),
+          'END:VCARD'
+        ].join('\r\n');
+      });
+
+      const vcfContent = cards.join('\r\n');
+      const blob = new Blob([vcfContent], { type: 'text/vcard;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `contatos_${title}_${Date.now()}.vcf`);
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 200);
+    } catch (err) {
+      alert('Erro ao exportar lista: ' + err.message);
     }
   }
 
@@ -426,6 +568,276 @@ export function EvolutionBotTab({ users, reload }) {
           </div>
         </div>
       )}
+
+      {/* Modal de Lista Filtrada (Com Número / Sem Número) */}
+      {contactFilterModal && (
+        <div className="modal-bg" style={{ zIndex: 12000 }}>
+          <div className="modal" style={{ maxWidth: 540, maxHeight: '85vh', display: 'flex', flexDirection: 'column', padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 20 }}>{contactFilterModal === 'with_number' ? '🟢' : '🔴'}</span>
+                <div>
+                  <h3 style={{ fontSize: 16, color: '#fff', margin: 0 }}>
+                    {contactFilterModal === 'with_number' ? 'Usuários com Número Adicionado' : 'Usuários SEM Número Adicionado'}
+                  </h3>
+                  <div style={{ fontSize: 11.5, color: 'var(--ink2)', marginTop: 2 }}>
+                    Total: {filteredModalUsers.length} contatos encontrados
+                  </div>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                className="btn btn-ghost" 
+                style={{ fontSize: 13, padding: '4px 8px', margin: 0 }}
+                onClick={() => setContactFilterModal(null)}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Campo de Busca e Botão Baixar VCF */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <input
+                type="text"
+                placeholder="🔍 Buscar por nome, telefone ou cidade..."
+                value={modalSearch}
+                onChange={(e) => { setModalSearch(e.target.value); setModalPage(1); }}
+                style={{ flex: 1, fontSize: 12.5 }}
+              />
+              <button
+                type="button"
+                className="btn btn-teal"
+                style={{ fontSize: 11.5, padding: '6px 12px', margin: 0, whiteSpace: 'nowrap' }}
+                onClick={handleExportModalUsers}
+                title="Baixar lista filtrada em arquivo .vcf"
+              >
+                📥 Baixar .vcf
+              </button>
+            </div>
+
+            {/* Lista com Rolagem */}
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, paddingRight: 4, minHeight: 200, maxHeight: '50vh' }}>
+              {paginatedModalUsers.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--ink3)', fontSize: 13 }}>
+                  Nenhum usuário encontrado neste filtro.
+                </div>
+              ) : (
+                paginatedModalUsers.map((u) => {
+                  const phone = u.whatsapp || u.phone || '';
+                  const norm = normalizePhone(phone);
+                  const isSaved = norm && savedPhones.includes(norm);
+                  return (
+                    <div 
+                      key={u.id}
+                      style={{
+                        background: 'rgba(255,255,255,0.03)',
+                        borderRadius: 10,
+                        padding: '10px 12px',
+                        border: '1px solid ' + (isSaved ? 'rgba(37,211,102,0.2)' : 'rgba(240,107,76,0.2)'),
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 10
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                        <div className="av" style={{ width: 34, height: 34, fontSize: 12, flexShrink: 0 }}>
+                          {u.photo_url ? <img src={u.photo_url} alt="" /> : initials(u.name)}
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {u.name || 'Sem Nome'}
+                          </div>
+                          <div style={{ fontSize: 11.5, color: 'var(--ink2)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span>📱 {phone || 'Sem telefone'}</span>
+                            {u.city && <span>• 📍 {u.city}</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        {phone && (
+                          <a 
+                            href={`https://wa.me/${norm}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="btn btn-ghost"
+                            style={{ padding: '4px 8px', fontSize: 11, margin: 0, textDecoration: 'none', color: '#25D366', borderColor: 'rgba(37,211,102,0.3)' }}
+                            title="Conversar no WhatsApp"
+                          >
+                            💬 WhatsApp
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: 11,
+                            margin: 0,
+                            background: isSaved ? 'rgba(240,107,76,0.15)' : 'rgba(37,211,102,0.15)',
+                            color: isSaved ? '#FF8A65' : '#25D366',
+                            border: '1px solid ' + (isSaved ? '#F06B4C' : '#25D366')
+                          }}
+                          onClick={() => toggleUserSavedStatus(u)}
+                          title={isSaved ? 'Remover dos confirmados' : 'Marcar como número adicionado'}
+                        >
+                          {isSaved ? 'Remover' : 'Confirmar'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Paginação do Modal */}
+            {totalModalPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
+                <button 
+                  className="btn" 
+                  style={{ 
+                    width: 'auto',
+                    margin: 0,
+                    padding: '6px 12px', 
+                    fontSize: 12, 
+                    borderRadius: 8, 
+                    background: 'rgba(255, 255, 255, 0.04)', 
+                    color: modalPage === 1 ? 'var(--ink3)' : '#fff',
+                    border: '1px solid ' + (modalPage === 1 ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
+                    cursor: modalPage === 1 ? 'not-allowed' : 'pointer'
+                  }}
+                  disabled={modalPage === 1}
+                  onClick={() => setModalPage(p => Math.max(p - 1, 1))}
+                >
+                  ←
+                </button>
+                <span style={{ fontSize: 12, color: 'var(--ink2)', fontWeight: 600 }}>
+                  Página {modalPage} de {totalModalPages}
+                </span>
+                <button 
+                  className="btn" 
+                  style={{ 
+                    width: 'auto',
+                    margin: 0,
+                    padding: '6px 12px', 
+                    fontSize: 12, 
+                    borderRadius: 8, 
+                    background: 'rgba(255, 255, 255, 0.04)', 
+                    color: modalPage === totalModalPages ? 'var(--ink3)' : '#fff',
+                    border: '1px solid ' + (modalPage === totalModalPages ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
+                    cursor: modalPage === totalModalPages ? 'not-allowed' : 'pointer'
+                  }}
+                  disabled={modalPage === totalModalPages}
+                  onClick={() => setModalPage(p => Math.min(p + 1, totalModalPages))}
+                >
+                  →
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Dashboard de Estatísticas da Transmissão */}
+      <div style={{
+        background: 'var(--panel2)',
+        padding: '16px 18px',
+        borderRadius: 16,
+        border: '1px solid var(--line)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 14
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 900, color: '#fff', display: 'flex', alignItems: 'center', gap: 8 }}>
+              📊 Estatísticas da Lista de Transmissão (Dr. Cândido)
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
+              Verifique quem já adicionou o número conectado pelo QR Code e quem ainda não possui o contato
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ fontSize: 12, padding: '7px 14px', margin: 0, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            onClick={handleSyncWhatsAppContacts}
+            disabled={syncingContacts || !status.connected}
+          >
+            {syncingContacts ? '⏳ Sincronizando...' : '🔄 Sincronizar com WhatsApp'}
+          </button>
+        </div>
+
+        {/* Grid de Métricas */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10 }}>
+          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px 14px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ fontSize: 11, color: 'var(--ink3)', fontWeight: 700, textTransform: 'uppercase' }}>Total Cadastros</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: '#fff', marginTop: 4 }}>{validUsers.length}</div>
+          </div>
+
+          <div style={{ background: 'rgba(37, 211, 102, 0.08)', padding: '12px 14px', borderRadius: 12, border: '1px solid rgba(37, 211, 102, 0.25)' }}>
+            <div style={{ fontSize: 11, color: '#25D366', fontWeight: 700, textTransform: 'uppercase' }}>🟢 Com Número Salvo</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: '#25D366', marginTop: 4 }}>{withNumberUsers.length}</div>
+          </div>
+
+          <div style={{ background: 'rgba(240, 107, 76, 0.08)', padding: '12px 14px', borderRadius: 12, border: '1px solid rgba(240, 107, 76, 0.25)' }}>
+            <div style={{ fontSize: 11, color: '#FF8A65', fontWeight: 700, textTransform: 'uppercase' }}>🔴 Sem Número (Pendentes)</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: '#FF8A65', marginTop: 4 }}>{withoutNumberUsers.length}</div>
+          </div>
+
+          <div style={{ background: 'rgba(123, 108, 244, 0.08)', padding: '12px 14px', borderRadius: 12, border: '1px solid rgba(123, 108, 244, 0.25)' }}>
+            <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 700, textTransform: 'uppercase' }}>📈 Cobertura</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--teal)', marginTop: 4 }}>{coveragePercent}%</div>
+          </div>
+        </div>
+
+        {/* Dois Botões de Ação para Ver Quem São */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
+          <button
+            type="button"
+            className="btn"
+            style={{
+              background: 'linear-gradient(135deg, rgba(37, 211, 102, 0.2), rgba(37, 211, 102, 0.08))',
+              border: '1px solid #25D366',
+              color: '#25D366',
+              padding: '12px 16px',
+              fontWeight: 800,
+              fontSize: 13,
+              borderRadius: 12,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8
+            }}
+            onClick={() => { setContactFilterModal('with_number'); setModalSearch(''); setModalPage(1); }}
+          >
+            <span>🟢</span> Ver Quem Tem o Número ({withNumberUsers.length})
+          </button>
+
+          <button
+            type="button"
+            className="btn"
+            style={{
+              background: 'linear-gradient(135deg, rgba(240, 107, 76, 0.2), rgba(240, 107, 76, 0.08))',
+              border: '1px solid #F06B4C',
+              color: '#FF8A65',
+              padding: '12px 16px',
+              fontWeight: 800,
+              fontSize: 13,
+              borderRadius: 12,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8
+            }}
+            onClick={() => { setContactFilterModal('without_number'); setModalSearch(''); setModalPage(1); }}
+          >
+            <span>🔴</span> Ver Quem NÃO Tem o Número ({withoutNumberUsers.length})
+          </button>
+        </div>
+      </div>
 
       {/* Editor da Mensagem de Transmissão / Teste */}
       <div style={{ background: 'var(--panel2)', padding: '16px', borderRadius: 14, border: '1px solid var(--line)' }}>

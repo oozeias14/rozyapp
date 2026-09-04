@@ -200,6 +200,25 @@ export async function checkWhatsAppNumbers(numbersArray) {
   }
 }
 
+export async function fetchWhatsAppContacts() {
+  const { instanceName } = getEvolutionConfig();
+  try {
+    const data = await evolutionFetch(`/chat/findContacts/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    try {
+      const dataGet = await evolutionFetch(`/chat/findContacts/${instanceName}`);
+      return Array.isArray(dataGet) ? dataGet : [];
+    } catch (e) {
+      console.warn('Erro ao buscar contatos do WhatsApp:', e);
+      return [];
+    }
+  }
+}
+
 // ── ORGANIZAÇÃO DAS LISTAS DE TRANSMISSÃO T1, T2, T3... ────────────
 
 export function generateTransmissionBatches(users, maxPerBatch = 250) {
