@@ -193,7 +193,7 @@ export function EvolutionBotTab({ users, reload }) {
 
     const confirmSend = window.confirm(
       `Deseja iniciar o envio para a lista "${batch.name}" (${batch.count} contatos)?\n\n` +
-      `O robô enviará com intervalo de 3 a 5 segundos entre cada contato para segurança do chip.`
+      `O robô enviará com intervalo randômico de 5 a 10 segundos entre cada contato para máxima segurança do chip.`
     );
     if (!confirmSend) return;
 
@@ -224,9 +224,10 @@ export function EvolutionBotTab({ users, reload }) {
         failed: failedCount,
       });
 
-      // Intervalo de segurança (3 segundos entre mensagens)
+      // Intervalo de segurança randômico (5 a 10 segundos entre cada mensagem)
       if (i < batch.users.length - 1) {
-        await new Promise((r) => setTimeout(r, 3000));
+        const randomDelayMs = Math.floor(Math.random() * (10000 - 5000 + 1)) + 5000;
+        await new Promise((r) => setTimeout(r, randomDelayMs));
       }
     }
 
