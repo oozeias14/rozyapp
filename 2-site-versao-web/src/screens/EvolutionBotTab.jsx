@@ -186,15 +186,20 @@ export function EvolutionBotTab({ users, reload }) {
     setQrCodeData(null);
     setPairingCodeResult(null);
     try {
-      await resetAndRecreateInstance();
+      const res = await resetAndRecreateInstance();
       alert('Sessão reiniciada com sucesso! Gerando novas credenciais...');
-      if (connectTab === 'qr') {
+      if (res?.qrcode?.base64) {
+        setQrCodeData(res.qrcode.base64);
+      } else if (res?.base64) {
+        setQrCodeData(res.base64);
+      } else if (connectTab === 'qr') {
         await handleFetchQrCode();
       } else if (pairingPhone) {
         await handleGeneratePairingCode();
       }
     } catch (err) {
       alert('Erro ao reiniciar sessão: ' + err.message);
+      await handleFetchQrCode();
     } finally {
       setResettingInstance(false);
     }

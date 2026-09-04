@@ -125,51 +125,77 @@ export async function fetchInstanceStatus() {
 export async function createOrConnectInstance() {
   const { instanceName } = getEvolutionConfig();
   
-  // Tenta conectar ou gerar QR code
+  // Tenta conectar na instância existente
   try {
     const connectData = await evolutionFetch(`/instance/connect/${instanceName}`);
     return connectData;
   } catch (err) {
-    // Se a instância não existir, cria a instância primeiro
-    const createData = await evolutionFetch(`/instance/create`, {
-      method: 'POST',
-      body: JSON.stringify({
-        instanceName,
-        token: '',
-        qrcode: true,
-        integration: 'WHATSAPP-BAILEYS',
-        reject_call: false,
-        sync_full_history: false,
-      }),
-    });
-    return createData;
+    // Se a instância não existir ou der erro, tenta criar
+    try {
+      const createData = await evolutionFetch(`/instance/create`, {
+        method: 'POST',
+        body: JSON.stringify({
+          instanceName,
+          token: '',
+          qrcode: true,
+          integration: 'WHATSAPP-BAILEYS',
+          reject_call: false,
+          sync_full_history: false,
+        }),
+      });
+      return createData;
+    } catch (createErr) {
+      // Se já existir ("already in use"), chama o connect
+      return await evolutionFetch(`/instance/connect/${instanceName}`);
+    }
   }
 }
 
 export async function resetAndRecreateInstance() {
   const { instanceName } = getEvolutionConfig();
+  
+  // 1. Tenta logout da sessão travada
   try {
-    await evolutionFetch(`/instance/delete/${instanceName}`, {
+    await evolutionFetch(`/instance/logout/${instanceName}`, {
       method: 'DELETE',
     });
   } catch (e) {
-    console.warn('Erro ao deletar instância anterior:', e);
+    console.warn('Logout antes do reset ignorado:', e);
   }
 
-  // Cria instância nova do zero com configurações ideais anti-travamento
-  const createData = await evolutionFetch(`/instance/create`, {
-    method: 'POST',
-    body: JSON.stringify({
-      instanceName,
-      token: '',
-      qrcode: true,
-      integration: 'WHATSAPP-BAILEYS',
-      reject_call: false,
-      sync_full_history: false,
-    }),
-  });
+  // 2. Tenta reiniciar o socket da instância
+  try {
+    await evolutionFetch(`/instance/restart/${instanceName}`, {
+      method: 'POST',
+    });
+  } catch (e) {
+    console.warn('Restart antes do reset ignorado:', e);
+  }
 
-  return createData;
+  // 3. Tenta conectar novamente para obter QR Code ou estado limpo
+  try {
+    const connectData = await evolutionFetch(`/instance/connect/${instanceName}`);
+    return connectData;
+  } catch (err) {
+    // Se a instância não existir, cria uma nova
+    try {
+      const createData = await evolutionFetch(`/instance/create`, {
+        method: 'POST',
+        body: JSON.stringify({
+          instanceName,
+          token: '',
+          qrcode: true,
+          integration: 'WHATSAPP-BAILEYS',
+          reject_call: false,
+          sync_full_history: false,
+        }),
+      });
+      return createData;
+    } catch (createErr) {
+      // Se retornar que já existe, conecta diretamente
+      return await evolutionFetch(`/instance/connect/${instanceName}`);
+    }
+  }
 }
 
 export async function getPairingCode(phone) {
@@ -179,15 +205,26 @@ export async function getPairingCode(phone) {
     cleanPhone = '55' + cleanPhone;
   }
 
+  // Tentativa 1: GET /instance/connect/{instance}?number={phone}
   try {
     const res = await evolutionFetch(`/instance/connect/${instanceName}?number=${cleanPhone}`);
-    return res;
+    if (res?.code || res?.pairingCode || res?.pairing_code) return res;
   } catch (e) {
+    console.warn('Tentativa 1 de pairing falhou:', e);
+  }
+
+  // Tentativa 2: POST /instance/connect/{instance} { number }
+  try {
     const resPost = await evolutionFetch(`/instance/connect/${instanceName}`, {
       method: 'POST',
       body: JSON.stringify({ number: cleanPhone }),
     });
     return resPost;
+  } catch (e) {
+    console.warn('Tentativa 2 de pairing falhou:', e);
+    // Tentativa 3: Se der erro, tenta restart e connect com o número
+    await evolutionFetch(`/instance/restart/${instanceName}`, { method: 'POST' }).catch(() => {});
+    return await evolutionFetch(`/instance/connect/${instanceName}?number=${cleanPhone}`);
   }
 }
 
