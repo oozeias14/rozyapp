@@ -138,9 +138,56 @@ export async function createOrConnectInstance() {
         token: '',
         qrcode: true,
         integration: 'WHATSAPP-BAILEYS',
+        reject_call: false,
+        sync_full_history: false,
       }),
     });
     return createData;
+  }
+}
+
+export async function resetAndRecreateInstance() {
+  const { instanceName } = getEvolutionConfig();
+  try {
+    await evolutionFetch(`/instance/delete/${instanceName}`, {
+      method: 'DELETE',
+    });
+  } catch (e) {
+    console.warn('Erro ao deletar instância anterior:', e);
+  }
+
+  // Cria instância nova do zero com configurações ideais anti-travamento
+  const createData = await evolutionFetch(`/instance/create`, {
+    method: 'POST',
+    body: JSON.stringify({
+      instanceName,
+      token: '',
+      qrcode: true,
+      integration: 'WHATSAPP-BAILEYS',
+      reject_call: false,
+      sync_full_history: false,
+    }),
+  });
+
+  return createData;
+}
+
+export async function getPairingCode(phone) {
+  const { instanceName } = getEvolutionConfig();
+  let cleanPhone = (phone || '').replace(/\D/g, '');
+  if (cleanPhone.length === 10 || cleanPhone.length === 11) {
+    cleanPhone = '55' + cleanPhone;
+  }
+
+  try {
+    const res = await evolutionFetch(`/instance/connect/${instanceName}?number=${cleanPhone}`);
+    return res;
+  } catch (e) {
+    const resPost = await evolutionFetch(`/instance/connect/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({ number: cleanPhone }),
+    });
+    return resPost;
   }
 }
 
