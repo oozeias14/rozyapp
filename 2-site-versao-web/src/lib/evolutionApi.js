@@ -11,11 +11,25 @@ export const DEFAULT_INSTANCE_NAME = 'dr_candido';
 
 export function getEvolutionConfig() {
   const storedKey = localStorage.getItem(STORAGE_KEY_KEY);
-  const activeKey = (storedKey && storedKey.length >= 60) ? storedKey : DEFAULT_API_KEY;
+  let activeKey = DEFAULT_API_KEY;
+  if (storedKey && storedKey.trim().length >= 60) {
+    activeKey = storedKey.trim();
+  } else {
+    localStorage.setItem(STORAGE_KEY_KEY, DEFAULT_API_KEY);
+  }
+
+  const storedUrl = localStorage.getItem(STORAGE_KEY_URL);
+  let activeUrl = (storedUrl || DEFAULT_SERVER_URL).trim().replace(/\/+$/, '');
+  localStorage.setItem(STORAGE_KEY_URL, activeUrl);
+
+  const storedInstance = localStorage.getItem(STORAGE_KEY_INSTANCE);
+  let activeInstance = (storedInstance || DEFAULT_INSTANCE_NAME).trim();
+  localStorage.setItem(STORAGE_KEY_INSTANCE, activeInstance);
+
   return {
-    serverUrl: (localStorage.getItem(STORAGE_KEY_URL) || DEFAULT_SERVER_URL).replace(/\/+$/, ''),
+    serverUrl: activeUrl,
     apiKey: activeKey,
-    instanceName: localStorage.getItem(STORAGE_KEY_INSTANCE) || DEFAULT_INSTANCE_NAME,
+    instanceName: activeInstance,
   };
 }
 
@@ -39,8 +53,8 @@ export async function loadEvolutionConfig() {
     if (data) {
       const serverUrl = data.evolution_api_url || local.serverUrl;
       let apiKey = data.evolution_api_key;
-      // Se a chave no banco for a antiga truncada, atualiza para a completa
-      if (!apiKey || apiKey.length < 60) {
+      // Se a chave no banco for a antiga truncada ou vazia, atualiza para a completa
+      if (!apiKey || apiKey.trim().length < 60) {
         apiKey = DEFAULT_API_KEY;
         await supabase.from('app_settings').update({ evolution_api_key: DEFAULT_API_KEY }).eq('id', 1);
       }
