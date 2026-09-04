@@ -25,9 +25,13 @@ export function EvolutionBotTab({ users, reload }) {
     'Olá {nome}! Tudo bem? Aqui é o Dr. Cândido. Gostaria de saber se você já tem meu contato salvo na sua agenda? Responda com um "Sim" ou "Ok" por favor! 🙏'
   );
   const batchSize = 100;
+  const [batchPage, setBatchPage] = useState(1);
+  const BATCH_PAGE_SIZE = 10;
 
   // Gera os lotes de transmissão (T1, T2, T3... padrão fixo 100 por lote para compatibilidade com celular)
   const batches = generateTransmissionBatches(users, batchSize);
+  const totalBatchPages = Math.ceil(batches.length / BATCH_PAGE_SIZE) || 1;
+  const pagedBatches = batches.slice((batchPage - 1) * BATCH_PAGE_SIZE, batchPage * BATCH_PAGE_SIZE);
 
   // Carrega e sincroniza configuração do Supabase ao abrir
   useEffect(() => {
@@ -524,7 +528,7 @@ export function EvolutionBotTab({ users, reload }) {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
-          {batches.map((b) => (
+          {pagedBatches.map((b) => (
             <div 
               key={b.id}
               style={{
@@ -588,6 +592,63 @@ export function EvolutionBotTab({ users, reload }) {
             </div>
           ))}
         </div>
+
+        {/* Paginação idêntica à aba Cadastros */}
+        {totalBatchPages > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
+            <button 
+              className="btn" 
+              style={{ 
+                width: 'auto',
+                flexShrink: 0,
+                margin: 0,
+                padding: '8px 16px', 
+                fontSize: 13, 
+                fontWeight: 600,
+                borderRadius: 10, 
+                background: 'rgba(255, 255, 255, 0.04)', 
+                color: batchPage === 1 ? 'var(--ink3)' : '#fff',
+                border: '1px solid ' + (batchPage === 1 ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
+                cursor: batchPage === 1 ? 'not-allowed' : 'pointer',
+                opacity: batchPage === 1 ? 0.4 : 1,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+              disabled={batchPage === 1}
+              onClick={() => setBatchPage(p => Math.max(p - 1, 1))}
+            >
+              <span>←</span> Anterior
+            </button>
+            <span style={{ fontSize: 13, color: 'var(--ink2)', fontWeight: 600, whiteSpace: 'nowrap', minWidth: '100px', textAlign: 'center' }}>
+              Página {batchPage} de {totalBatchPages}
+            </span>
+            <button 
+              className="btn" 
+              style={{ 
+                width: 'auto',
+                flexShrink: 0,
+                margin: 0,
+                padding: '8px 16px', 
+                fontSize: 13, 
+                fontWeight: 600,
+                borderRadius: 10, 
+                background: 'rgba(255, 255, 255, 0.04)', 
+                color: batchPage === totalBatchPages ? 'var(--ink3)' : '#fff',
+                border: '1px solid ' + (batchPage === totalBatchPages ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
+                cursor: batchPage === totalBatchPages ? 'not-allowed' : 'pointer',
+                opacity: batchPage === totalBatchPages ? 0.4 : 1,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+              disabled={batchPage === totalBatchPages}
+              onClick={() => setBatchPage(p => Math.min(p + 1, totalBatchPages))}
+            >
+              Próxima <span>→</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
