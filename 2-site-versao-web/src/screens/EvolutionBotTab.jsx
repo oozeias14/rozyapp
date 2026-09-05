@@ -448,8 +448,8 @@ export function EvolutionBotTab({ users, reload }) {
 
     let targetUsers = [];
     if (testTargetType === 'quick_test') {
-      targetUsers = withoutNumberUsers.slice(0, 10);
-      if (targetUsers.length === 0) targetUsers = validUsers.slice(0, 10);
+      targetUsers = withoutNumberUsers.slice(0, 5);
+      if (targetUsers.length === 0) targetUsers = validUsers.slice(0, 5);
     } else if (testTargetType === 'all_pending') {
       targetUsers = withoutNumberUsers;
     } else if (testTargetType === 'batch') {
@@ -1643,7 +1643,7 @@ export function EvolutionBotTab({ users, reload }) {
                   >
                     <div style={{ fontSize: 16 }}>⚡</div>
                     <div style={{ fontWeight: 800, marginTop: 2 }}>Teste Rápido</div>
-                    <div style={{ fontSize: 10, opacity: 0.7 }}>10 contatos de teste</div>
+                    <div style={{ fontSize: 10, opacity: 0.7 }}>5 contatos de teste</div>
                   </button>
 
                   {/* Opção B: Por Lote de Transmissão */}
