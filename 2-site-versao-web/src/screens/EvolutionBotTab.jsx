@@ -549,22 +549,12 @@ export function EvolutionBotTab({ users, reload }) {
 
         successCount++;
 
-        // Atualiza no banco Supabase imediatamente
-        await supabase.from('profiles').update({ vcf_exported: true }).eq('id', user.id);
-
-        // Atualiza localmente
-        setSavedPhones((prev) => {
-          const next = [...prev.filter((p) => p !== cleanPhone), cleanPhone];
-          localStorage.setItem('wa_saved_phones', JSON.stringify(next));
-          return next;
-        });
-
         setTestProgress((p) => ({ ...p, current: i + 1, success: successCount }));
-        addLog(`✅ [${i + 1}/${targetUsers.length}] ${fullName}: Entregue com sucesso! Marcado como SALVO.`, 'success');
+        addLog(`✅ [${i + 1}/${targetUsers.length}] ${fullName}: Mensagem de verificação entregue! (WhatsApp ativo)`, 'success');
       } catch (err) {
         failedCount++;
         setTestProgress((p) => ({ ...p, current: i + 1, failed: failedCount }));
-        addLog(`❌ [${i + 1}/${targetUsers.length}] ${fullName}: Falha no envio (${err.message || 'Sem WhatsApp'})`, 'error');
+        addLog(`❌ [${i + 1}/${targetUsers.length}] ${fullName}: Falha no envio (${err.message || 'Sem WhatsApp active'})`, 'error');
       }
 
       // Intervalo seguro anti-ban aleatório (5 a 10s)
@@ -578,8 +568,9 @@ export function EvolutionBotTab({ users, reload }) {
     if (reload) await reload();
     setIsTestingRunning(false);
     setIsTestingPaused(false);
-    addLog(`🏁 Teste concluído! Confirmados: ${successCount} | Falhas: ${failedCount}`, 'info');
-    alert(`🎉 Teste de transmissão finalizado!\n\n✅ Confirmados / Salvos: ${successCount}\n❌ Falhas: ${failedCount}\n\nO Painel de Alcance da Transmissão foi atualizado.`);
+    addLog(`🏁 Teste de disparo concluído! Sucessos: ${successCount} | Falhas: ${failedCount}`, 'info');
+    addLog(`💡 Dica: Para validar quem REALMENTE salvou seu número, clique no botão "🔄 Checar no WhatsApp" para ler a agenda sincronizada!`, 'delay');
+    alert(`🎉 Disparo de teste finalizado!\n\n✅ Entregues: ${successCount}\n❌ Falhas: ${failedCount}\n\n💡 Dica importante: O WhatsApp entrega mensagens diretas (1 a 1) para qualquer número ativo. Para confirmar quem te salvou na agenda, use a Lista de Transmissão do celular ou clique em "🔄 Checar no WhatsApp".`);
   }
 
   function handlePauseTest() {
@@ -1642,22 +1633,39 @@ export function EvolutionBotTab({ users, reload }) {
                 color: 'var(--ink2)',
                 lineHeight: 1.5
               }}>
-                <strong style={{ color: '#fff' }}>💡 Como funciona o modo selecionado:</strong><br />
+                <strong style={{ color: '#fff' }}>💡 Como funciona o disparo de teste:</strong><br />
                 {testTargetType === 'quick_test' && (
                   <span>
-                    🎯 <strong>Teste Rápido (1 a 5 contatos):</strong> Envia a mensagem de verificação individualmente com delay anti-ban (5 a 10s) para os <strong>{selectedQuickTestUserIds.length} contatos selecionados abaixo</strong> para testar se estão ativos e se te têm salvo.
+                    🎯 <strong>Teste Rápido (1 a 5 contatos):</strong> Envia a mensagem de verificação direta com intervalo anti-ban (5 a 10s) para os <strong>{selectedQuickTestUserIds.length} contatos selecionados abaixo</strong> para pedir que salvem seu número.
                   </span>
                 )}
                 {testTargetType === 'batch' && (
                   <span>
-                    📋 <strong>Teste por Lote da Lista de Transmissão:</strong> Envia a verificação com delay humano para os 100 contatos do <strong>Lote {selectedTestBatch}</strong> (organizados na agenda por T1, T2, etc.).
+                    📋 <strong>Disparo de Verificação por Lote:</strong> Dispara para os 100 contatos do <strong>Lote {selectedTestBatch}</strong> (com intervalo humano de 5 a 10s).
                   </span>
                 )}
                 {testTargetType === 'all_pending' && (
                   <span>
-                    ⏱️ <strong>Teste Geral dos Pendentes:</strong> Testa sequencialmente os <strong>{withoutNumberUsers.length} contatos pendentes</strong> que ainda não foram confirmados no painel.
+                    ⏱️ <strong>Disparo Geral para Pendentes:</strong> Dispara sequencialmente para os <strong>{withoutNumberUsers.length} contatos pendentes</strong>.
                   </span>
                 )}
+              </div>
+
+              {/* Aviso importante sobre a regra nativa do WhatsApp */}
+              <div style={{
+                background: 'rgba(255, 138, 101, 0.08)',
+                border: '1px solid rgba(255, 138, 101, 0.25)',
+                borderRadius: 10,
+                padding: '10px 12px',
+                fontSize: 11.5,
+                color: '#FF8A65',
+                lineHeight: 1.45
+              }}>
+                <strong>📌 Regra do WhatsApp (Importante):</strong> Mensagens diretas (1 para 1) via robô são entregues a qualquer número ativo (mesmo que ele NÃO tenha te salvado). Para comprovar com 100% de certeza quem te salvou:
+                <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+                  <li>Envie pela <strong>Lista de Transmissão nativa</strong> no celular (o próprio WhatsApp barra quem não salvou).</li>
+                  <li>Ou use o botão <strong>🔄 Checar no WhatsApp</strong> para sincronizar a agenda e atualizar os status no painel.</li>
+                </ul>
               </div>
 
               {/* 1. Seleção do Público Alvo do Teste */}
