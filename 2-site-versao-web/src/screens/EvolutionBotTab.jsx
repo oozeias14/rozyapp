@@ -1632,7 +1632,7 @@ export function EvolutionBotTab({ users, reload }) {
             {/* Conteúdo com Rolagem */}
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, paddingRight: 2 }}>
               
-              {/* Card Explicativo de Como Funciona o Teste */}
+              {/* Card Explicativo Dinâmico de Como Funciona o Teste */}
               <div style={{
                 background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.08), rgba(15, 23, 42, 0.6))',
                 border: '1px solid rgba(0, 229, 155, 0.25)',
@@ -1642,8 +1642,22 @@ export function EvolutionBotTab({ users, reload }) {
                 color: 'var(--ink2)',
                 lineHeight: 1.5
               }}>
-                <strong style={{ color: '#fff' }}>🛡️ Como esse teste descobre quem te salvou:</strong><br />
-                O robô envia uma mensagem oficial de verificação com delay humano seguro anti-ban (5 a 10s aleatórios). Cada contato que recebe a mensagem com sucesso é <strong>imediatamente marcado como SALVO NA AGENDA</strong> no painel em tempo real!
+                <strong style={{ color: '#fff' }}>💡 Como funciona o modo selecionado:</strong><br />
+                {testTargetType === 'quick_test' && (
+                  <span>
+                    🎯 <strong>Teste Rápido (1 a 5 contatos):</strong> Envia a mensagem de verificação individualmente com delay anti-ban (5 a 10s) para os <strong>{selectedQuickTestUserIds.length} contatos selecionados abaixo</strong> para testar se estão ativos e se te têm salvo.
+                  </span>
+                )}
+                {testTargetType === 'batch' && (
+                  <span>
+                    📋 <strong>Teste por Lote da Lista de Transmissão:</strong> Envia a verificação com delay humano para os 100 contatos do <strong>Lote {selectedTestBatch}</strong> (organizados na agenda por T1, T2, etc.).
+                  </span>
+                )}
+                {testTargetType === 'all_pending' && (
+                  <span>
+                    ⏱️ <strong>Teste Geral dos Pendentes:</strong> Testa sequencialmente os <strong>{withoutNumberUsers.length} contatos pendentes</strong> que ainda não foram confirmados no painel.
+                  </span>
+                )}
               </div>
 
               {/* 1. Seleção do Público Alvo do Teste */}
@@ -2052,6 +2066,7 @@ export function EvolutionBotTab({ users, reload }) {
                 <button
                   type="button"
                   className="btn btn-teal"
+                  disabled={testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0}
                   style={{
                     flex: 1,
                     padding: '12px',
@@ -2059,13 +2074,28 @@ export function EvolutionBotTab({ users, reload }) {
                     fontWeight: 900,
                     margin: 0,
                     borderRadius: 10,
-                    background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
-                    color: '#081018',
-                    boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)'
+                    background: (testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0)
+                      ? 'rgba(255,255,255,0.1)'
+                      : 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
+                    color: (testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0)
+                      ? 'var(--ink3)'
+                      : '#081018',
+                    cursor: (testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0)
+                      ? 'not-allowed'
+                      : 'pointer',
+                    boxShadow: (testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0)
+                      ? 'none'
+                      : '0 4px 16px rgba(0, 229, 155, 0.35)'
                   }}
                   onClick={handleStartBroadcastTest}
                 >
-                  🚀 Iniciar Teste de Transmissão (Anti-Ban 5 a 10s)
+                  {testTargetType === 'quick_test' && (
+                    selectedQuickTestUserIds.length === 0
+                      ? '⚠️ Selecione pelo menos 1 contato acima'
+                      : `🚀 Iniciar Teste Rápido (${selectedQuickTestUserIds.length} contato${selectedQuickTestUserIds.length > 1 ? 's' : ''})`
+                  )}
+                  {testTargetType === 'batch' && `🚀 Iniciar Teste do Lote ${selectedTestBatch} (100 contatos)`}
+                  {testTargetType === 'all_pending' && `🚀 Iniciar Teste de Todos os Pendentes (${withoutNumberUsers.length})`}
                 </button>
 
                 <button
