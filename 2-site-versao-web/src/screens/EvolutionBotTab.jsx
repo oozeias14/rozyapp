@@ -56,6 +56,8 @@ export function EvolutionBotTab({ users, reload }) {
   const [showBroadcastTestModal, setShowBroadcastTestModal] = useState(false);
   const [testTargetType, setTestTargetType] = useState('quick_test'); // 'quick_test' | 'batch' | 'all_pending' | 'all'
   const [selectedTestBatch, setSelectedTestBatch] = useState('T1');
+  const [selectedQuickTestUserIds, setSelectedQuickTestUserIds] = useState([]);
+  const [quickTestSearch, setQuickTestSearch] = useState('');
   const [testMessageText, setTestMessageText] = useState(
     'Olá {primeiro_nome}, tudo bem? Aqui é da equipe oficial do Dr. Cândido Teles! 🤝\n\nEstamos confirmando nossa lista de transmissão no WhatsApp para envio de comunicados e novidades importantes.\n\nPor favor, salve nosso contato na sua agenda para não perder nada! Se você já salvou, responda com um "OK". 🙏'
   );
@@ -77,6 +79,30 @@ export function EvolutionBotTab({ users, reload }) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [testLogs]);
+
+  useEffect(() => {
+    if (showBroadcastTestModal && selectedQuickTestUserIds.length === 0 && users.length > 0) {
+      const validUsersLocal = users.filter((u) => u.role !== 'admin' && u.role !== 'admin2');
+      const savedPhonesSetLocal = new Set();
+      savedPhones.forEach((p) => {
+        getPhoneSignatures(p).forEach((sig) => savedPhonesSetLocal.add(sig));
+      });
+      validUsersLocal.forEach((u) => {
+        if (u.vcf_exported) {
+          const raw = u.whatsapp || u.phone;
+          if (raw) getPhoneSignatures(raw).forEach((sig) => savedPhonesSetLocal.add(sig));
+        }
+      });
+      const pendingLocal = validUsersLocal.filter((u) => {
+        if (u.vcf_exported) return false;
+        const raw = u.whatsapp || u.phone;
+        if (!raw) return true;
+        return !getPhoneSignatures(raw).some((sig) => savedPhonesSetLocal.has(sig));
+      });
+      const initial5 = (pendingLocal.length > 0 ? pendingLocal : validUsersLocal).slice(0, 5).map((u) => u.id);
+      setSelectedQuickTestUserIds(initial5);
+    }
+  }, [showBroadcastTestModal, users]);
 
   function getPhoneSignatures(p) {
     let clean = (p || '').replace(/\D/g, '');
@@ -448,8 +474,11 @@ export function EvolutionBotTab({ users, reload }) {
 
     let targetUsers = [];
     if (testTargetType === 'quick_test') {
-      targetUsers = withoutNumberUsers.slice(0, 5);
-      if (targetUsers.length === 0) targetUsers = validUsers.slice(0, 5);
+      if (selectedQuickTestUserIds.length < 1 || selectedQuickTestUserIds.length > 5) {
+        alert('Por favor, selecione de 1 a 5 contatos para o Teste Rápido (Mínimo: 1, Máximo: 5).');
+        return;
+      }
+      targetUsers = validUsers.filter((u) => selectedQuickTestUserIds.includes(u.id));
     } else if (testTargetType === 'all_pending') {
       targetUsers = withoutNumberUsers;
     } else if (testTargetType === 'batch') {
@@ -1692,6 +1721,149 @@ export function EvolutionBotTab({ users, reload }) {
                     <div style={{ fontSize: 10, opacity: 0.7 }}>{withoutNumberUsers.length} contatos</div>
                   </button>
                 </div>
+
+                {/* Se escolheu Teste Rápido: Seleção manual de 1 a 5 contatos */}
+                {testTargetType === 'quick_test' && (
+                  <div style={{
+                    marginTop: 10,
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    border: '1px solid var(--line)',
+                    borderRadius: 12,
+                    padding: 12,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>🎯</span> Contatos Selecionados ({selectedQuickTestUserIds.length}/5)
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--ink3)' }}>Mínimo: 1 · Máximo: 5</span>
+                    </div>
+
+                    {/* Chips dos Contatos Selecionados */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 32, alignItems: 'center' }}>
+                      {selectedQuickTestUserIds.length === 0 ? (
+                        <span style={{ fontSize: 11.5, color: '#FF8A65', fontStyle: 'italic' }}>
+                          Nenhum contato selecionado. Digite no campo abaixo para pesquisar e adicionar de 1 a 5 contatos.
+                        </span>
+                      ) : (
+                        selectedQuickTestUserIds.map((id) => {
+                          const u = validUsers.find((user) => user.id === id);
+                          if (!u) return null;
+                          return (
+                            <span
+                              key={u.id}
+                              style={{
+                                fontSize: 11.5,
+                                fontWeight: 700,
+                                background: 'rgba(0, 229, 155, 0.15)',
+                                color: '#fff',
+                                border: '1px solid var(--teal)',
+                                padding: '4px 10px',
+                                borderRadius: 20,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6
+                              }}
+                            >
+                              👤 {(u.name || 'Sem nome').trim()} ({u.whatsapp || u.phone})
+                              <button
+                                type="button"
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#FF8A65',
+                                  cursor: isTestingRunning ? 'not-allowed' : 'pointer',
+                                  fontSize: 12,
+                                  padding: 0,
+                                  marginLeft: 2,
+                                  lineHeight: 1
+                                }}
+                                onClick={() => setSelectedQuickTestUserIds((prev) => prev.filter((item) => item !== u.id))}
+                                disabled={isTestingRunning}
+                                title="Remover contato"
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Campo de Busca para Adicionar */}
+                    {!isTestingRunning && (
+                      <div>
+                        <input
+                          type="text"
+                          placeholder={selectedQuickTestUserIds.length >= 5 ? "Limite máximo de 5 contatos atingido" : "🔍 Digite o nome ou telefone para adicionar..."}
+                          value={quickTestSearch}
+                          disabled={selectedQuickTestUserIds.length >= 5}
+                          onChange={(e) => setQuickTestSearch(e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '7px 10px',
+                            fontSize: 12,
+                            borderRadius: 8,
+                            background: 'rgba(0,0,0,0.3)',
+                            border: '1px solid var(--line)',
+                            color: '#fff',
+                            boxSizing: 'border-box',
+                            opacity: selectedQuickTestUserIds.length >= 5 ? 0.5 : 1
+                          }}
+                        />
+
+                        {/* Resultados da Busca */}
+                        {quickTestSearch.trim().length > 0 && selectedQuickTestUserIds.length < 5 && (
+                          <div style={{
+                            maxHeight: 130,
+                            overflowY: 'auto',
+                            background: '#0B132B',
+                            border: '1px solid var(--line)',
+                            borderRadius: 8,
+                            marginTop: 4,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 2
+                          }}>
+                            {validUsers
+                              .filter((u) => !selectedQuickTestUserIds.includes(u.id))
+                              .filter((u) => {
+                                const q = quickTestSearch.toLowerCase();
+                                return (u.name || '').toLowerCase().includes(q) || (u.whatsapp || u.phone || '').includes(q);
+                              })
+                              .slice(0, 10)
+                              .map((u) => (
+                                <div
+                                  key={u.id}
+                                  style={{
+                                    padding: '6px 10px',
+                                    fontSize: 11.5,
+                                    color: '#fff',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    borderBottom: '1px solid rgba(255,255,255,0.05)'
+                                  }}
+                                  onClick={() => {
+                                    if (selectedQuickTestUserIds.length < 5) {
+                                      setSelectedQuickTestUserIds((prev) => [...prev, u.id]);
+                                      setQuickTestSearch('');
+                                    }
+                                  }}
+                                >
+                                  <span><strong>{u.name}</strong> ({u.whatsapp || u.phone})</span>
+                                  <span style={{ color: 'var(--teal)', fontSize: 11, fontWeight: 700 }}>+ Adicionar</span>
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Se escolheu Lote específico */}
                 {testTargetType === 'batch' && (
