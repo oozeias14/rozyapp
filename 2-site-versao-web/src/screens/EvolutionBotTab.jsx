@@ -465,10 +465,10 @@ export function EvolutionBotTab({ users, reload }) {
     }
   }
 
-  // ── EXECUTOR DO TESTE DE TRANSMISSÃO & DESCOBERTA DE CONTATOS SALVOS ──
-  async function handleStartBroadcastTest() {
+  // ── EXECUTOR DO TESTE DE VERIFICAÇÃO REAL NA AGENDA DO WHATSAPP (SEM MENSAGEM DIRETA) ──
+  async function handleVerifyContactsLive() {
     if (!status.connected) {
-      alert('Conecte o WhatsApp pelo QR Code acima antes de iniciar o teste de transmissão!');
+      alert('Conecte o WhatsApp pelo QR Code acima antes de iniciar o teste!');
       return;
     }
 
@@ -493,7 +493,131 @@ export function EvolutionBotTab({ users, reload }) {
       return;
     }
 
-    const confirmText = `🚀 Iniciar Teste de Transmissão para ${targetUsers.length} contatos?\n\n• O robô enviará a mensagem de teste com intervalo anti-ban (5 a 10s aleatórios entre cada contato).\n• Os contatos entregues serão salvos e marcados automaticamente no painel em tempo real.\n\nDeseja continuar?`;
+    setIsTestingRunning(true);
+    setIsTestingPaused(false);
+    testAbortRef.current = false;
+    testPauseRef.current = false;
+    setTestLogs([]);
+    setTestProgress({ current: 0, total: targetUsers.length, success: 0, failed: 0 });
+
+    addLog(`🔍 Conectando ao WhatsApp para verificar ${targetUsers.length} contatos na agenda/transmissão...`, 'info');
+
+    try {
+      const rawContacts = await fetchWhatsAppContacts();
+      const savedSignaturesMap = new Map();
+
+      rawContacts.forEach((c) => {
+        if (c.isGroup) return;
+        const phone = (c.remoteJid || c.id || c.number || '').split('@')[0].replace(/\D/g, '');
+        if (phone && phone.length >= 10) {
+          getPhoneSignatures(phone).forEach((sig) => {
+            savedSignaturesMap.set(sig, c);
+          });
+        }
+      });
+
+      addLog(`📱 ${rawContacts.length} contatos identificados no WhatsApp conectado. Iniciando cruzamento...`, 'info');
+
+      let savedCount = 0;
+      let notSavedCount = 0;
+      const matchedIds = [];
+      const unmatchedIds = [];
+      const newlySavedPhones = [];
+
+      for (let i = 0; i < targetUsers.length; i++) {
+        if (testAbortRef.current) {
+          addLog('⏹️ Teste interrompido pelo usuário.', 'delay');
+          break;
+        }
+
+        const user = targetUsers[i];
+        const rawPhone = user.whatsapp || user.phone || '';
+        const cleanPhone = normalizePhone(rawPhone);
+        const fullName = (user.name || 'Sem nome').trim();
+        const sigs = getPhoneSignatures(rawPhone);
+
+        const matchedContact = sigs.map((s) => savedSignaturesMap.get(s)).find(Boolean);
+
+        if (matchedContact) {
+          savedCount++;
+          matchedIds.push(user.id);
+          if (cleanPhone) newlySavedPhones.push(cleanPhone);
+          const zapName = matchedContact.pushName || matchedContact.name || 'Salvo na agenda';
+          addLog(`✅ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): SALVO NO WHATSAPP! (Na agenda: "${zapName}")`, 'success');
+        } else {
+          notSavedCount++;
+          unmatchedIds.push(user.id);
+          addLog(`❌ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone || 'Sem número'}): NÃO ENCONTRADO na agenda do WhatsApp.`, 'error');
+        }
+
+        setTestProgress({
+          current: i + 1,
+          total: targetUsers.length,
+          success: savedCount,
+          failed: notSavedCount
+        });
+
+        // Pequeno delay visual para o usuário acompanhar no terminal
+        await new Promise((r) => setTimeout(r, 120));
+      }
+
+      // Atualiza banco Supabase com precisão absoluta
+      const CHUNK = 100;
+      for (let i = 0; i < matchedIds.length; i += CHUNK) {
+        await supabase.from('profiles').update({ vcf_exported: true }).in('id', matchedIds.slice(i, i + CHUNK));
+      }
+      for (let i = 0; i < unmatchedIds.length; i += CHUNK) {
+        await supabase.from('profiles').update({ vcf_exported: false }).in('id', unmatchedIds.slice(i, i + CHUNK));
+      }
+
+      // Atualiza estado local
+      setSavedPhones((prev) => {
+        const next = Array.from(new Set([...prev, ...newlySavedPhones]));
+        localStorage.setItem('wa_saved_phones', JSON.stringify(next));
+        return next;
+      });
+
+      if (reload) await reload();
+      addLog(`🏁 Verificação concluída com 100% de precisão! Salvos: ${savedCount} | Não Salvos: ${notSavedCount}`, 'info');
+      alert(`🎉 Verificação no WhatsApp Concluída!\n\n✅ Salvos na Agenda do WhatsApp: ${savedCount}\n❌ Não Encontrados / Pendentes: ${notSavedCount}\n\nO Painel foi sincronizado com os dados reais do WhatsApp conectado!`);
+    } catch (err) {
+      addLog(`❌ Erro ao consultar WhatsApp: ${err.message}`, 'error');
+      alert('Erro ao consultar agenda do WhatsApp: ' + err.message);
+    } finally {
+      setIsTestingRunning(false);
+      setIsTestingPaused(false);
+    }
+  }
+
+  // ── EXECUTOR DO TESTE DE TRANSMISSÃO COM DISPARO DE MENSAGEM ──
+  async function handleStartBroadcastTest() {
+    if (!status.connected) {
+      alert('Conecte o WhatsApp pelo QR Code acima antes de iniciar o disparo de teste!');
+      return;
+    }
+
+    let targetUsers = [];
+    if (testTargetType === 'quick_test') {
+      if (selectedQuickTestUserIds.length < 1 || selectedQuickTestUserIds.length > 5) {
+        alert('Por favor, selecione de 1 a 5 contatos para o Teste Rápido (Mínimo: 1, Máximo: 5).');
+        return;
+      }
+      targetUsers = validUsers.filter((u) => selectedQuickTestUserIds.includes(u.id));
+    } else if (testTargetType === 'all_pending') {
+      targetUsers = withoutNumberUsers;
+    } else if (testTargetType === 'batch') {
+      const b = batches.find((item) => item.id === selectedTestBatch);
+      targetUsers = b ? b.users : [];
+    } else {
+      targetUsers = validUsers;
+    }
+
+    if (targetUsers.length === 0) {
+      alert('Nenhum contato encontrado para o grupo selecionado!');
+      return;
+    }
+
+    const confirmText = `💬 Iniciar Disparo de Mensagem de Verificação para ${targetUsers.length} contatos?\n\n• O robô enviará a mensagem de verificação com delay humano anti-ban (5 a 10s aleatórios).\n\nDeseja continuar?`;
     if (!window.confirm(confirmText)) return;
 
     setIsTestingRunning(true);
@@ -503,14 +627,14 @@ export function EvolutionBotTab({ users, reload }) {
     setTestLogs([]);
     setTestProgress({ current: 0, total: targetUsers.length, success: 0, failed: 0 });
 
-    addLog(`🚀 Iniciando teste de transmissão para ${targetUsers.length} contatos...`, 'info');
+    addLog(`🚀 Iniciando disparo de teste para ${targetUsers.length} contatos...`, 'info');
 
     let successCount = 0;
     let failedCount = 0;
 
     for (let i = 0; i < targetUsers.length; i++) {
       if (testAbortRef.current) {
-        addLog('⏹️ Teste interrompido pelo usuário.', 'delay');
+        addLog('⏹️ Disparo interrompido pelo usuário.', 'delay');
         break;
       }
 
@@ -548,13 +672,12 @@ export function EvolutionBotTab({ users, reload }) {
         }
 
         successCount++;
-
         setTestProgress((p) => ({ ...p, current: i + 1, success: successCount }));
-        addLog(`✅ [${i + 1}/${targetUsers.length}] ${fullName}: Mensagem de verificação entregue! (WhatsApp ativo)`, 'success');
+        addLog(`✅ [${i + 1}/${targetUsers.length}] ${fullName}: Mensagem entregue no WhatsApp!`, 'success');
       } catch (err) {
         failedCount++;
         setTestProgress((p) => ({ ...p, current: i + 1, failed: failedCount }));
-        addLog(`❌ [${i + 1}/${targetUsers.length}] ${fullName}: Falha no envio (${err.message || 'Sem WhatsApp active'})`, 'error');
+        addLog(`❌ [${i + 1}/${targetUsers.length}] ${fullName}: Falha no envio (${err.message || 'Sem WhatsApp'})`, 'error');
       }
 
       // Intervalo seguro anti-ban aleatório (5 a 10s)
@@ -568,9 +691,8 @@ export function EvolutionBotTab({ users, reload }) {
     if (reload) await reload();
     setIsTestingRunning(false);
     setIsTestingPaused(false);
-    addLog(`🏁 Teste de disparo concluído! Sucessos: ${successCount} | Falhas: ${failedCount}`, 'info');
-    addLog(`💡 Dica: Para validar quem REALMENTE salvou seu número, clique no botão "🔄 Checar no WhatsApp" para ler a agenda sincronizada!`, 'delay');
-    alert(`🎉 Disparo de teste finalizado!\n\n✅ Entregues: ${successCount}\n❌ Falhas: ${failedCount}\n\n💡 Dica importante: O WhatsApp entrega mensagens diretas (1 a 1) para qualquer número ativo. Para confirmar quem te salvou na agenda, use a Lista de Transmissão do celular ou clique em "🔄 Checar no WhatsApp".`);
+    addLog(`🏁 Disparo finalizado! Entregues: ${successCount} | Falhas: ${failedCount}`, 'info');
+    alert(`🎉 Disparo de mensagens finalizado!\n\n✅ Entregues: ${successCount}\n❌ Falhas: ${failedCount}`);
   }
 
   function handlePauseTest() {
@@ -1625,47 +1747,30 @@ export function EvolutionBotTab({ users, reload }) {
               
               {/* Card Explicativo Dinâmico de Como Funciona o Teste */}
               <div style={{
-                background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.08), rgba(15, 23, 42, 0.6))',
-                border: '1px solid rgba(0, 229, 155, 0.25)',
+                background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.12), rgba(15, 23, 42, 0.7))',
+                border: '1px solid rgba(0, 229, 155, 0.35)',
                 borderRadius: 12,
                 padding: '12px 14px',
                 fontSize: 12,
-                color: 'var(--ink2)',
+                color: '#fff',
                 lineHeight: 1.5
               }}>
-                <strong style={{ color: '#fff' }}>💡 Como funciona o disparo de teste:</strong><br />
+                <strong style={{ color: 'var(--teal)' }}>🎯 Verificação Real na Agenda do WhatsApp Conectado:</strong><br />
                 {testTargetType === 'quick_test' && (
                   <span>
-                    🎯 <strong>Teste Rápido (1 a 5 contatos):</strong> Envia a mensagem de verificação direta com intervalo anti-ban (5 a 10s) para os <strong>{selectedQuickTestUserIds.length} contatos selecionados abaixo</strong> para pedir que salvem seu número.
+                    Ao clicar em <strong>🔍 Verificar no WhatsApp</strong>, o sistema consulta a lista de contatos do seu WhatsApp conectado para verificar se os <strong>{selectedQuickTestUserIds.length} contatos selecionados</strong> estão salvos na agenda/transmissão com 100% de exatidão (sem mandar mensagem).
                   </span>
                 )}
                 {testTargetType === 'batch' && (
                   <span>
-                    📋 <strong>Disparo de Verificação por Lote:</strong> Dispara para os 100 contatos do <strong>Lote {selectedTestBatch}</strong> (com intervalo humano de 5 a 10s).
+                    Ao clicar em <strong>🔍 Verificar no WhatsApp</strong>, o sistema cruza os 100 contatos do <strong>Lote {selectedTestBatch}</strong> contra os contatos do seu WhatsApp e atualiza o painel na hora.
                   </span>
                 )}
                 {testTargetType === 'all_pending' && (
                   <span>
-                    ⏱️ <strong>Disparo Geral para Pendentes:</strong> Dispara sequencialmente para os <strong>{withoutNumberUsers.length} contatos pendentes</strong>.
+                    Ao clicar em <strong>🔍 Verificar no WhatsApp</strong>, o sistema checa todos os <strong>{withoutNumberUsers.length} contatos pendentes</strong> na agenda do WhatsApp.
                   </span>
                 )}
-              </div>
-
-              {/* Aviso importante sobre a regra nativa do WhatsApp */}
-              <div style={{
-                background: 'rgba(255, 138, 101, 0.08)',
-                border: '1px solid rgba(255, 138, 101, 0.25)',
-                borderRadius: 10,
-                padding: '10px 12px',
-                fontSize: 11.5,
-                color: '#FF8A65',
-                lineHeight: 1.45
-              }}>
-                <strong>📌 Regra do WhatsApp (Importante):</strong> Mensagens diretas (1 para 1) via robô são entregues a qualquer número ativo (mesmo que ele NÃO tenha te salvado). Para comprovar com 100% de certeza quem te salvou:
-                <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
-                  <li>Envie pela <strong>Lista de Transmissão nativa</strong> no celular (o próprio WhatsApp barra quem não salvou).</li>
-                  <li>Ou use o botão <strong>🔄 Checar no WhatsApp</strong> para sincronizar a agenda e atualizar os status no painel.</li>
-                </ul>
               </div>
 
               {/* 1. Seleção do Público Alvo do Teste */}
@@ -1674,7 +1779,7 @@ export function EvolutionBotTab({ users, reload }) {
                   1. Selecione o Grupo para Testar
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginTop: 6 }}>
-                  {/* Opção A: Teste Rápido 10 */}
+                  {/* Opção A: Teste Rápido */}
                   <button
                     type="button"
                     className="btn"
@@ -1694,7 +1799,7 @@ export function EvolutionBotTab({ users, reload }) {
                   >
                     <div style={{ fontSize: 16 }}>⚡</div>
                     <div style={{ fontWeight: 800, marginTop: 2 }}>Teste Rápido</div>
-                    <div style={{ fontSize: 10, opacity: 0.7 }}>5 contatos de teste</div>
+                    <div style={{ fontSize: 10, opacity: 0.7 }}>1 a 5 contatos</div>
                   </button>
 
                   {/* Opção B: Por Lote de Transmissão */}
@@ -1916,38 +2021,6 @@ export function EvolutionBotTab({ users, reload }) {
                 )}
               </div>
 
-              {/* 2. Mensagem de Teste */}
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    2. Mensagem de Verificação
-                  </label>
-                  <div style={{ fontSize: 10, color: 'var(--teal)', display: 'flex', gap: 4 }}>
-                    <span style={{ cursor: 'pointer', background: 'rgba(0,229,155,0.1)', padding: '2px 6px', borderRadius: 4 }} onClick={() => setTestMessageText(t => t + ' {primeiro_nome}')}>+ Primeiro Nome</span>
-                    <span style={{ cursor: 'pointer', background: 'rgba(0,229,155,0.1)', padding: '2px 6px', borderRadius: 4 }} onClick={() => setTestMessageText(t => t + ' {cidade}')}>+ Cidade</span>
-                  </div>
-                </div>
-
-                <textarea
-                  rows={4}
-                  value={testMessageText}
-                  onChange={(e) => setTestMessageText(e.target.value)}
-                  disabled={isTestingRunning}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    fontSize: 12,
-                    lineHeight: 1.4,
-                    borderRadius: 10,
-                    background: 'rgba(0, 0, 0, 0.3)',
-                    border: '1px solid var(--line)',
-                    color: '#fff',
-                    boxSizing: 'border-box',
-                    resize: 'vertical'
-                  }}
-                />
-              </div>
-
               {/* Se o teste estiver rodando ou tiver progresso */}
               {isTestingRunning && (
                 <div style={{
@@ -1964,7 +2037,7 @@ export function EvolutionBotTab({ users, reload }) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 16 }}>⏳</span>
                       <span style={{ fontSize: 13, fontWeight: 900, color: '#fff' }}>
-                        {isTestingPaused ? '⏸️ Teste Pausado' : '🚀 Testando Transmissão ao Vivo...'}
+                        {isTestingPaused ? '⏸️ Verificação Pausada' : '🔍 Verificando no WhatsApp Conectado...'}
                       </span>
                     </div>
                     <span style={{ fontSize: 12, fontWeight: 900, color: 'var(--teal)' }}>
@@ -1985,12 +2058,12 @@ export function EvolutionBotTab({ users, reload }) {
                   {/* Contadores ao vivo */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <div style={{ background: 'rgba(37,211,102,0.12)', border: '1px solid rgba(37,211,102,0.3)', borderRadius: 8, padding: '6px 10px', textAlign: 'center' }}>
-                      <span style={{ fontSize: 10, color: '#25D366', fontWeight: 800, textTransform: 'uppercase' }}>✅ Confirmados (Salvos)</span>
+                      <span style={{ fontSize: 10, color: '#25D366', fontWeight: 800, textTransform: 'uppercase' }}>✅ Salvos no WhatsApp</span>
                       <div style={{ fontSize: 18, fontWeight: 900, color: '#25D366', marginTop: 2 }}>{testProgress.success}</div>
                     </div>
 
                     <div style={{ background: 'rgba(240,107,76,0.12)', border: '1px solid rgba(240,107,76,0.3)', borderRadius: 8, padding: '6px 10px', textAlign: 'center' }}>
-                      <span style={{ fontSize: 10, color: '#FF8A65', fontWeight: 800, textTransform: 'uppercase' }}>❌ Falhas / Sem Zap</span>
+                      <span style={{ fontSize: 10, color: '#FF8A65', fontWeight: 800, textTransform: 'uppercase' }}>❌ Não Salvos / Ausentes</span>
                       <div style={{ fontSize: 18, fontWeight: 900, color: '#FF8A65', marginTop: 2 }}>{testProgress.failed}</div>
                     </div>
                   </div>
@@ -1999,7 +2072,7 @@ export function EvolutionBotTab({ users, reload }) {
                   <div
                     ref={logContainerRef}
                     style={{
-                      height: 130,
+                      height: 140,
                       overflowY: 'auto',
                       background: '#040910',
                       borderRadius: 8,
@@ -2037,48 +2110,31 @@ export function EvolutionBotTab({ users, reload }) {
                         fontSize: 12,
                         fontWeight: 800,
                         borderRadius: 8,
-                        background: isTestingPaused ? 'var(--teal)' : 'rgba(255,255,255,0.08)',
-                        color: isTestingPaused ? '#081018' : '#fff'
-                      }}
-                      onClick={handlePauseTest}
-                    >
-                      {isTestingPaused ? '▶️ Continuar Teste' : '⏸️ Pausar'}
-                    </button>
-
-                    <button
-                      type="button"
-                      className="btn"
-                      style={{
-                        flex: 1,
-                        margin: 0,
-                        padding: '9px',
-                        fontSize: 12,
-                        fontWeight: 800,
-                        borderRadius: 8,
                         background: 'rgba(240,107,76,0.15)',
                         color: '#FF8A65',
                         border: '1px solid rgba(240,107,76,0.3)'
                       }}
                       onClick={handleStopTest}
                     >
-                      ⏹️ Parar Teste
+                      ⏹️ Parar
                     </button>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Rodapé / Botão de Disparo */}
+            {/* Rodapé / Ações */}
             {!isTestingRunning && (
-              <div style={{ marginTop: 6, paddingTop: 12, borderTop: '1px solid var(--line)', display: 'flex', gap: 10 }}>
+              <div style={{ marginTop: 6, paddingTop: 12, borderTop: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {/* Botão Principal: Verificação Real no WhatsApp */}
                 <button
                   type="button"
                   className="btn btn-teal"
                   disabled={testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0}
                   style={{
-                    flex: 1,
-                    padding: '12px',
-                    fontSize: 13,
+                    width: '100%',
+                    padding: '13px 16px',
+                    fontSize: 13.5,
                     fontWeight: 900,
                     margin: 0,
                     borderRadius: 10,
@@ -2095,25 +2151,48 @@ export function EvolutionBotTab({ users, reload }) {
                       ? 'none'
                       : '0 4px 16px rgba(0, 229, 155, 0.35)'
                   }}
-                  onClick={handleStartBroadcastTest}
+                  onClick={handleVerifyContactsLive}
                 >
                   {testTargetType === 'quick_test' && (
                     selectedQuickTestUserIds.length === 0
                       ? '⚠️ Selecione pelo menos 1 contato acima'
-                      : `🚀 Iniciar Teste Rápido (${selectedQuickTestUserIds.length} contato${selectedQuickTestUserIds.length > 1 ? 's' : ''})`
+                      : `🔍 Verificar se está Salvo no WhatsApp (${selectedQuickTestUserIds.length} contato${selectedQuickTestUserIds.length > 1 ? 's' : ''})`
                   )}
-                  {testTargetType === 'batch' && `🚀 Iniciar Teste do Lote ${selectedTestBatch} (100 contatos)`}
-                  {testTargetType === 'all_pending' && `🚀 Iniciar Teste de Todos os Pendentes (${withoutNumberUsers.length})`}
+                  {testTargetType === 'batch' && `🔍 Verificar se o Lote ${selectedTestBatch} está Salvo no WhatsApp (100 contatos)`}
+                  {testTargetType === 'all_pending' && `🔍 Verificar Todos os Pendentes no WhatsApp (${withoutNumberUsers.length})`}
                 </button>
 
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  style={{ width: 'auto', padding: '10px 18px', fontSize: 12, margin: 0 }}
-                  onClick={() => setShowBroadcastTestModal(false)}
-                >
-                  Fechar
-                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0}
+                    style={{
+                      flex: 1,
+                      padding: '9px 12px',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      margin: 0,
+                      borderRadius: 8,
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      color: 'var(--ink2)',
+                      border: '1px solid var(--line)'
+                    }}
+                    onClick={handleStartBroadcastTest}
+                    title="Dispara mensagem de texto de teste com delay anti-ban"
+                  >
+                    💬 Enviar Mensagem de Texto (Opcional)
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ width: 'auto', padding: '9px 18px', fontSize: 12, margin: 0, borderRadius: 8 }}
+                    onClick={() => setShowBroadcastTestModal(false)}
+                  >
+                    Fechar
+                  </button>
+                </div>
               </div>
             )}
           </div>
