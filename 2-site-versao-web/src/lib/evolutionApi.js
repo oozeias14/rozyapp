@@ -541,12 +541,23 @@ export async function fetchAllWhatsAppTransmissionReceipts() {
 
     totalMessagesAnalyzed = allMsgs.length;
 
+    // 3. Mapeia os IDs das mensagens enviadas para listas de transmissão (@broadcast)
+    const broadcastKeyIds = new Set();
+    allMsgs.forEach((m) => {
+      const rJid = (m.key?.remoteJid || m.remoteJid || '').toLowerCase();
+      if (rJid.includes('@broadcast') || m.broadcast || m.isBroadcast) {
+        if (m.key?.id) broadcastKeyIds.add(m.key.id);
+      }
+    });
+
     allMsgs.forEach((msg) => {
       const remoteJid = msg?.key?.remoteJid || msg?.remoteJid || '';
+      const keyId = msg?.key?.id;
       const fromMe = msg?.key?.fromMe ?? true;
       const directStatus = (msg?.status || '').toUpperCase();
       const updates = Array.isArray(msg?.MessageUpdate) ? msg.MessageUpdate : [];
       const userReceipts = Array.isArray(msg?.userReceipt) ? msg.userReceipt : [];
+      const isBroadcastLinked = broadcastKeyIds.has(keyId) || remoteJid.includes('@broadcast');
 
       // A) Se for mensagem recebida (fromMe: false), o contato certamente recebeu/interagiu
       if (!fromMe && remoteJid && !remoteJid.includes('@g.us')) {
@@ -566,8 +577,8 @@ export async function fetchAllWhatsAppTransmissionReceipts() {
         }
       }
 
-      // B) Se for mensagem direta enviada para um contato
-      if (fromMe && remoteJid && !remoteJid.includes('@g.us') && !remoteJid.includes('status@broadcast')) {
+      // B) Mensagens vinculadas a transmissões ou mensagens diretas enviadas
+      if (fromMe && remoteJid && !remoteJid.includes('@g.us') && !remoteJid.includes('@broadcast')) {
         let raw = remoteJid.includes('@') ? remoteJid.split('@')[0] : remoteJid;
         const cleanPhone = raw.replace(/\D/g, '');
         const isRead = updates.some(u => (u.status || '').toUpperCase() === 'READ' || (u.status || '').toUpperCase() === 'PLAYED') ||
@@ -575,19 +586,16 @@ export async function fetchAllWhatsAppTransmissionReceipts() {
         const isDelivered = isRead || updates.some(u => (u.status || '').toUpperCase() === 'DELIVERY_ACK') ||
                             directStatus === 'DELIVERY_ACK';
 
-        if (cleanPhone && isDelivered) {
-          const checks = isDelivered ? 2 : 1;
-          const statusLabel = isRead ? '✓✓ 2 Traços Azuis (Lido)' : '✓✓ 2 Traços (Entregue)';
-          
+        if (cleanPhone) {
           getPhoneSignatures(cleanPhone).forEach((sig) => {
             const existing = receiptsMap.get(sig);
             if (!existing || (!existing.is2Checks && isDelivered)) {
               receiptsMap.set(sig, {
-                checks,
+                checks: isDelivered ? 2 : 1,
                 is2Checks: isDelivered,
-                status: isRead ? 'READ' : 'DELIVERY_ACK',
-                label: statusLabel,
-                source: 'chat_message',
+                status: isRead ? 'READ' : isDelivered ? 'DELIVERY_ACK' : 'SERVER_ACK',
+                label: isRead ? '✓✓ 2 Traços Azuis (Lido na Transmissão)' : isDelivered ? '✓✓ 2 Traços (Entregue na Transmissão)' : '✓ 1 Traço (Pendente)',
+                source: isBroadcastLinked ? 'broadcast_message' : 'chat_message',
                 phone: cleanPhone
               });
             }
@@ -604,15 +612,15 @@ export async function fetchAllWhatsAppTransmissionReceipts() {
           const st = (u.status || '').toUpperCase();
           const is2Checks = st === 'DELIVERY_ACK' || st === 'READ' || st === 'PLAYED' || st === '2' || st === '3' || st === '4';
 
-          if (cleanNum && is2Checks) {
+          if (cleanNum) {
             getPhoneSignatures(cleanNum).forEach((sig) => {
               const existing = receiptsMap.get(sig);
               if (!existing || (!existing.is2Checks && is2Checks)) {
                 receiptsMap.set(sig, {
-                  checks: 2,
-                  is2Checks: true,
+                  checks: is2Checks ? 2 : 1,
+                  is2Checks,
                   status: st,
-                  label: '✓✓ 2 Traços (Entregue na Transmissão)',
+                  label: is2Checks ? '✓✓ 2 Traços (Entregue na Transmissão)' : '✓ 1 Traço (Pendente)',
                   source: 'broadcast_update',
                   phone: cleanNum
                 });
@@ -630,15 +638,15 @@ export async function fetchAllWhatsAppTransmissionReceipts() {
           const cleanNum = raw.replace(/\D/g, '');
           const is2Checks = Boolean(ur.receiptTimestamp || ur.readTimestamp || ur.playedTimestamp);
 
-          if (cleanNum && is2Checks) {
+          if (cleanNum) {
             getPhoneSignatures(cleanNum).forEach((sig) => {
               const existing = receiptsMap.get(sig);
               if (!existing || (!existing.is2Checks && is2Checks)) {
                 receiptsMap.set(sig, {
-                  checks: 2,
-                  is2Checks: true,
-                  status: 'DELIVERY_ACK',
-                  label: '✓✓ 2 Traços (Recibo Confirmado)',
+                  checks: is2Checks ? 2 : 1,
+                  is2Checks,
+                  status: is2Checks ? 'DELIVERY_ACK' : 'SERVER_ACK',
+                  label: is2Checks ? '✓✓ 2 Traços (Recibo Confirmado)' : '✓ 1 Traço (Pendente)',
                   source: 'user_receipt',
                   phone: cleanNum
                 });
