@@ -56,10 +56,8 @@ export function EvolutionBotTab({ users, reload }) {
 
   // Estados do Sistema de Verificação de Transmissão (1 Traço vs 2 Traços)
   const [showBroadcastTestModal, setShowBroadcastTestModal] = useState(false);
-  const [testTargetType, setTestTargetType] = useState('quick_test'); // 'quick_test' | 'batch' | 'all_pending' | 'all'
+  const [testTargetType, setTestTargetType] = useState('batch'); // 'batch' | 'all_pending' | 'all'
   const [selectedTestBatch, setSelectedTestBatch] = useState('T1');
-  const [selectedQuickTestUserIds, setSelectedQuickTestUserIds] = useState([]);
-  const [quickTestSearch, setQuickTestSearch] = useState('');
   const [verificationMethod, setVerificationMethod] = useState('paste'); // 'paste' | 'check_status' | 'send_and_verify'
   const [testResults, setTestResults] = useState([]); // array de { id, user, name, phone, city, checks: 1 | 2, status, label, isSaved }
   const [activeResultTab, setActiveResultTab] = useState('all'); // 'all' | 'saved' | 'not_saved'
@@ -87,23 +85,6 @@ export function EvolutionBotTab({ users, reload }) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [testLogs]);
-
-  useEffect(() => {
-    if (showBroadcastTestModal && selectedQuickTestUserIds.length === 0 && users.length > 0) {
-      const validUsersLocal = users.filter((u) => u.role !== 'admin' && u.role !== 'admin2');
-      const savedPhonesSetLocal = new Set();
-      savedPhones.forEach((p) => {
-        getPhoneSignatures(p).forEach((sig) => savedPhonesSetLocal.add(sig));
-      });
-      const pendingLocal = validUsersLocal.filter((u) => {
-        const raw = u.whatsapp || u.phone;
-        if (!raw) return true;
-        return !getPhoneSignatures(raw).some((sig) => savedPhonesSetLocal.has(sig));
-      });
-      const initial5 = (pendingLocal.length > 0 ? pendingLocal : validUsersLocal).slice(0, 5).map((u) => u.id);
-      setSelectedQuickTestUserIds(initial5);
-    }
-  }, [showBroadcastTestModal, users]);
 
   function getPhoneSignatures(p) {
     let clean = (p || '').replace(/\D/g, '');
@@ -438,9 +419,7 @@ export function EvolutionBotTab({ users, reload }) {
   // ── SISTEMA DE VERIFICAÇÃO DE TRANSMISSÃO (1 TRAÇO VS 2 TRAÇOS) ──
 
   function getSelectedTargetUsers() {
-    if (testTargetType === 'quick_test') {
-      return validUsers.filter((u) => selectedQuickTestUserIds.includes(u.id));
-    } else if (testTargetType === 'batch') {
+    if (testTargetType === 'batch') {
       const b = batches.find((item) => item.id === selectedTestBatch);
       return b ? b.users : [];
     } else if (testTargetType === 'all_pending') {
@@ -2172,36 +2151,13 @@ export function EvolutionBotTab({ users, reload }) {
                       </span>
                     </div>
 
-                    {/* 1. Seleção do Público Alvo do Teste */}
+                    {/* 1. Seleção do Lote de Transmissão */}
                     <div>
                       <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        1. Selecione o Grupo para Verificar
+                        1. Selecione o Lote de Transmissão para Verificar
                       </label>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginTop: 6 }}>
-                        {/* Opção A: Teste Rápido */}
-                        <button
-                          type="button"
-                          className="btn"
-                          disabled={isTestingRunning}
-                          style={{
-                            margin: 0,
-                            padding: '10px 8px',
-                            fontSize: 11.5,
-                            borderRadius: 10,
-                            textAlign: 'center',
-                            background: testTargetType === 'quick_test' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                            color: testTargetType === 'quick_test' ? '#fff' : 'var(--ink2)',
-                            border: '1px solid ' + (testTargetType === 'quick_test' ? 'var(--teal)' : 'var(--line)'),
-                            cursor: isTestingRunning ? 'not-allowed' : 'pointer'
-                          }}
-                          onClick={() => setTestTargetType('quick_test')}
-                        >
-                          <div style={{ fontSize: 16 }}>⚡</div>
-                          <div style={{ fontWeight: 800, marginTop: 2 }}>Teste Rápido</div>
-                          <div style={{ fontSize: 10, opacity: 0.7 }}>1 a 5 contatos</div>
-                        </button>
-
-                        {/* Opção B: Por Lote de Transmissão */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginTop: 6 }}>
+                        {/* Opção A: Por Lote de Transmissão */}
                         <button
                           type="button"
                           className="btn"
@@ -2224,7 +2180,7 @@ export function EvolutionBotTab({ users, reload }) {
                           <div style={{ fontSize: 10, opacity: 0.7 }}>Lote T1, T2, T3...</div>
                         </button>
 
-                        {/* Opção C: Todos os Pendentes */}
+                        {/* Opção B: Todos os Pendentes */}
                         <button
                           type="button"
                           className="btn"
@@ -2247,145 +2203,6 @@ export function EvolutionBotTab({ users, reload }) {
                           <div style={{ fontSize: 10, opacity: 0.7 }}>{withoutNumberUsers.length} contatos</div>
                         </button>
                       </div>
-
-                      {/* Se escolheu Teste Rápido: Seleção manual de 1 a 5 contatos */}
-                      {testTargetType === 'quick_test' && (
-                        <div style={{
-                          marginTop: 10,
-                          background: 'rgba(255, 255, 255, 0.03)',
-                          border: '1px solid var(--line)',
-                          borderRadius: 12,
-                          padding: 12,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 10
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span>🎯</span> Contatos do Teste Rápido ({selectedQuickTestUserIds.length}/5)
-                            </span>
-                            <span style={{ fontSize: 11, color: 'var(--ink3)' }}>Mín: 1 · Máx: 5</span>
-                          </div>
-
-                          {/* Chips dos Contatos Selecionados */}
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 32, alignItems: 'center' }}>
-                            {selectedQuickTestUserIds.length === 0 ? (
-                              <span style={{ fontSize: 11.5, color: '#FF8A65', fontStyle: 'italic' }}>
-                                Nenhum contato selecionado. Pesquise abaixo para adicionar seu próprio número ou contatos de teste.
-                              </span>
-                            ) : (
-                              selectedQuickTestUserIds.map((id) => {
-                                const u = validUsers.find((user) => user.id === id);
-                                if (!u) return null;
-                                return (
-                                  <span
-                                    key={u.id}
-                                    style={{
-                                      fontSize: 11.5,
-                                      fontWeight: 700,
-                                      background: 'rgba(0, 229, 155, 0.15)',
-                                      color: '#fff',
-                                      border: '1px solid var(--teal)',
-                                      padding: '4px 10px',
-                                      borderRadius: 20,
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: 6
-                                    }}
-                                  >
-                                    👤 {(u.name || 'Sem nome').trim()} ({u.whatsapp || u.phone})
-                                    <button
-                                      type="button"
-                                      style={{
-                                        background: 'none',
-                                        border: 'none',
-                                        color: '#FF8A65',
-                                        cursor: isTestingRunning ? 'not-allowed' : 'pointer',
-                                        fontSize: 12,
-                                        padding: 0,
-                                        marginLeft: 2,
-                                        lineHeight: 1
-                                      }}
-                                      onClick={() => setSelectedQuickTestUserIds((prev) => prev.filter((item) => item !== u.id))}
-                                      disabled={isTestingRunning}
-                                    >
-                                      ✕
-                                    </button>
-                                  </span>
-                                );
-                              })
-                            )}
-                          </div>
-
-                          {/* Campo de Busca para Adicionar */}
-                          {!isTestingRunning && (
-                            <div>
-                              <input
-                                type="text"
-                                placeholder={selectedQuickTestUserIds.length >= 5 ? "Limite de 5 contatos atingido" : "🔍 Digite nome ou telefone para adicionar ao teste..."}
-                                value={quickTestSearch}
-                                disabled={selectedQuickTestUserIds.length >= 5}
-                                onChange={(e) => setQuickTestSearch(e.target.value)}
-                                style={{
-                                  width: '100%',
-                                  padding: '7px 10px',
-                                  fontSize: 12,
-                                  borderRadius: 8,
-                                  background: 'rgba(0,0,0,0.3)',
-                                  border: '1px solid var(--line)',
-                                  color: '#fff',
-                                  boxSizing: 'border-box'
-                                }}
-                              />
-
-                              {quickTestSearch.trim().length > 0 && selectedQuickTestUserIds.length < 5 && (
-                                <div style={{
-                                  maxHeight: 120,
-                                  overflowY: 'auto',
-                                  background: '#0B132B',
-                                  border: '1px solid var(--line)',
-                                  borderRadius: 8,
-                                  marginTop: 4,
-                                  display: 'flex',
-                                  flexDirection: 'column'
-                                }}>
-                                  {validUsers
-                                    .filter((u) => !selectedQuickTestUserIds.includes(u.id))
-                                    .filter((u) => {
-                                      const q = quickTestSearch.toLowerCase();
-                                      return (u.name || '').toLowerCase().includes(q) || (u.whatsapp || u.phone || '').includes(q);
-                                    })
-                                    .slice(0, 8)
-                                    .map((u) => (
-                                      <div
-                                        key={u.id}
-                                        style={{
-                                          padding: '6px 10px',
-                                          fontSize: 11.5,
-                                          color: '#fff',
-                                          cursor: 'pointer',
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'space-between',
-                                          borderBottom: '1px solid rgba(255,255,255,0.05)'
-                                        }}
-                                        onClick={() => {
-                                          if (selectedQuickTestUserIds.length < 5) {
-                                            setSelectedQuickTestUserIds((prev) => [...prev, u.id]);
-                                            setQuickTestSearch('');
-                                          }
-                                        }}
-                                      >
-                                        <span><strong>{u.name}</strong> ({u.whatsapp || u.phone})</span>
-                                        <span style={{ color: 'var(--teal)', fontSize: 11, fontWeight: 700 }}>+ Adicionar</span>
-                                      </div>
-                                    ))}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
 
                       {/* Se escolheu Lote específico */}
                       {testTargetType === 'batch' && (
@@ -2657,7 +2474,7 @@ export function EvolutionBotTab({ users, reload }) {
                           <button
                             type="button"
                             className="btn btn-teal"
-                            disabled={testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0}
+                            disabled={getSelectedTargetUsers().length === 0}
                             style={{
                               width: '100%',
                               padding: '13px 16px',
@@ -2680,7 +2497,7 @@ export function EvolutionBotTab({ users, reload }) {
                           <button
                             type="button"
                             className="btn btn-teal"
-                            disabled={testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0}
+                            disabled={getSelectedTargetUsers().length === 0}
                             style={{
                               width: '100%',
                               padding: '13px 16px',
@@ -2703,7 +2520,7 @@ export function EvolutionBotTab({ users, reload }) {
                           <button
                             type="button"
                             className="btn btn-teal"
-                            disabled={testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0}
+                            disabled={getSelectedTargetUsers().length === 0}
                             style={{
                               width: '100%',
                               padding: '13px 16px',
