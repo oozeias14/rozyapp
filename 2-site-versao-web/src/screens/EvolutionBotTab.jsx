@@ -61,7 +61,9 @@ export function EvolutionBotTab({ users, reload }) {
 
   // Estados do Sistema de Verificação de Transmissão (1 Traço vs 2 Traços)
   const [showBroadcastTestModal, setShowBroadcastTestModal] = useState(false);
-  const [testTargetType, setTestTargetType] = useState('batch'); // 'batch' | 'all_pending' | 'all'
+  const [testTargetType, setTestTargetType] = useState('custom'); // 'custom' | 'batch' | 'all_pending' | 'all'
+  const [customSelectedUserIds, setCustomSelectedUserIds] = useState([]);
+  const [customContactSearch, setCustomContactSearch] = useState('');
   const [selectedTestBatch, setSelectedTestBatch] = useState('T1');
   const [verificationMethod, setVerificationMethod] = useState('auto_broadcast'); // 'auto_broadcast' | 'check_status' | 'send_and_verify' | 'paste'
   const [detectedBroadcastLists, setDetectedBroadcastLists] = useState([]);
@@ -351,54 +353,11 @@ export function EvolutionBotTab({ users, reload }) {
   // Sincronizar contatos salvos da instância conectada
   async function handleSyncWhatsAppContacts() {
     if (!status.connected) {
-      alert('O WhatsApp precisa estar conectado pelo QR Code antes de sincronizar contatos!');
+      alert('O WhatsApp precisa estar conectado pelo QR Code antes de verificar!');
       return;
     }
-    setSyncingContacts(true);
-    try {
-      const contacts = await fetchWhatsAppContacts();
-      const currentSavedSet = new Set();
-
-      (contacts || []).forEach((c) => {
-        const phone = extractPhoneFromContact(c);
-        if (phone && phone.length >= 8 && phone.length <= 15) {
-          getPhoneSignatures(phone).forEach((sig) => {
-            currentSavedSet.add(sig);
-          });
-        }
-      });
-
-      // Identifica membros correspondentes nos cadastros
-      const matchedUsers = [];
-      const unmatchedUsers = [];
-
-      validUsers.forEach((u) => {
-        const sigs = getPhoneSignatures(u.whatsapp || u.phone);
-        const isMatch = sigs.some((s) => currentSavedSet.has(s));
-        if (isMatch) {
-          matchedUsers.push(u);
-        } else {
-          unmatchedUsers.push(u);
-        }
-      });
-
-      // Atualiza apenas a lista de telefones salvos confirmados (wa_saved_phones)
-      const newlySavedPhones = matchedUsers.map((u) => normalizePhone(u.whatsapp || u.phone)).filter(Boolean);
-      const updatedArr = Array.from(new Set([...savedPhones, ...newlySavedPhones]));
-      setSavedPhones(updatedArr);
-      localStorage.setItem('wa_saved_phones', JSON.stringify(updatedArr));
-
-      alert(
-        `📱 Sincronização Concluída!\n\n` +
-        `• Contatos analisados no WhatsApp: ${(contacts || []).length}\n` +
-        `• Membros encontrados com seu número: ${matchedUsers.length} de ${validUsers.length}\n\n` +
-        `O painel foi atualizado com os dados sincronizados!`
-      );
-    } catch (err) {
-      alert('Erro ao sincronizar contatos do WhatsApp: ' + err.message);
-    } finally {
-      setSyncingContacts(false);
-    }
+    // Abre o Verificador Oficial de Transmissão para selecionar e auditar sem falsos positivos
+    setShowBroadcastTestModal(true);
   }
 
   // Limpar e Resetar todos os dados analisados
@@ -439,7 +398,9 @@ export function EvolutionBotTab({ users, reload }) {
   // ── SISTEMA DE VERIFICAÇÃO DE TRANSMISSÃO (1 TRAÇO VS 2 TRAÇOS) ──
 
   function getSelectedTargetUsers() {
-    if (testTargetType === 'batch') {
+    if (testTargetType === 'custom') {
+      return validUsers.filter((u) => customSelectedUserIds.includes(u.id));
+    } else if (testTargetType === 'batch') {
       const b = batches.find((item) => item.id === selectedTestBatch);
       return b ? b.users : [];
     } else if (testTargetType === 'all_pending') {
@@ -458,7 +419,11 @@ export function EvolutionBotTab({ users, reload }) {
 
     const targetUsers = getSelectedTargetUsers();
     if (targetUsers.length === 0) {
-      alert('Nenhum contato encontrado para o grupo selecionado!');
+      if (testTargetType === 'custom') {
+        alert('⚠️ Por favor, pesquise e marque pelo menos 1 contato na lista de contatos específicos para auditar!');
+      } else {
+        alert('Nenhum contato encontrado para o grupo selecionado!');
+      }
       return;
     }
 
@@ -2274,13 +2239,38 @@ export function EvolutionBotTab({ users, reload }) {
                       </span>
                     </div>
 
-                    {/* 1. Seleção do Lote de Transmissão */}
+                    {/* 1. Seleção dos Contatos para Verificar */}
                     <div>
                       <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        1. Selecione o Lote de Transmissão para Verificar
+                        1. Quem você deseja analisar na Transmissão?
                       </label>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginTop: 6 }}>
-                        {/* Opção A: Por Lote de Transmissão */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginTop: 6 }}>
+                        {/* Opção 1: Escolher Contatos Específicos */}
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={isTestingRunning}
+                          style={{
+                            margin: 0,
+                            padding: '10px 8px',
+                            fontSize: 11.5,
+                            borderRadius: 10,
+                            textAlign: 'center',
+                            background: testTargetType === 'custom' ? 'rgba(0, 229, 155, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+                            color: testTargetType === 'custom' ? '#fff' : 'var(--ink2)',
+                            border: '1px solid ' + (testTargetType === 'custom' ? 'var(--teal)' : 'var(--line)'),
+                            cursor: isTestingRunning ? 'not-allowed' : 'pointer'
+                          }}
+                          onClick={() => setTestTargetType('custom')}
+                        >
+                          <div style={{ fontSize: 16 }}>🎯</div>
+                          <div style={{ fontWeight: 800, marginTop: 2 }}>Contatos Específicos</div>
+                          <div style={{ fontSize: 10, opacity: 0.7 }}>
+                            {customSelectedUserIds.length > 0 ? `${customSelectedUserIds.length} selecionado(s)` : 'Buscar e marcar'}
+                          </div>
+                        </button>
+
+                        {/* Opção 2: Por Lote de Transmissão */}
                         <button
                           type="button"
                           className="btn"
@@ -2303,7 +2293,7 @@ export function EvolutionBotTab({ users, reload }) {
                           <div style={{ fontSize: 10, opacity: 0.7 }}>Lote T1, T2, T3...</div>
                         </button>
 
-                        {/* Opção B: Todos os Pendentes */}
+                        {/* Opção 3: Todos os Pendentes */}
                         <button
                           type="button"
                           className="btn"
@@ -2326,6 +2316,131 @@ export function EvolutionBotTab({ users, reload }) {
                           <div style={{ fontSize: 10, opacity: 0.7 }}>{withoutNumberUsers.length} contatos</div>
                         </button>
                       </div>
+
+                      {/* Se escolheu Contatos Específicos */}
+                      {testTargetType === 'custom' && (
+                        <div style={{
+                          marginTop: 10,
+                          padding: '12px',
+                          background: 'rgba(255,255,255,0.03)',
+                          borderRadius: 10,
+                          border: '1px solid var(--line)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 8
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--teal)' }}>
+                              🎯 Marque quem você colocou na Transmissão ({customSelectedUserIds.length} selecionados):
+                            </span>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button
+                                type="button"
+                                className="btn"
+                                style={{ fontSize: 10, padding: '3px 8px', margin: 0, background: 'rgba(0, 229, 155, 0.15)', color: 'var(--teal)', border: '1px solid var(--teal)' }}
+                                onClick={() => {
+                                  const searchQ = customContactSearch.toLowerCase().trim();
+                                  const matches = validUsers.filter((u) => {
+                                    if (!searchQ) return true;
+                                    const n = (u.name || '').toLowerCase();
+                                    const p = (u.whatsapp || u.phone || '').replace(/\D/g, '');
+                                    return n.includes(searchQ) || p.includes(searchQ);
+                                  });
+                                  const newIds = Array.from(new Set([...customSelectedUserIds, ...matches.map((u) => u.id)]));
+                                  setCustomSelectedUserIds(newIds);
+                                }}
+                              >
+                                Selecionar Filtrados
+                              </button>
+                              <button
+                                type="button"
+                                className="btn"
+                                style={{ fontSize: 10, padding: '3px 8px', margin: 0, background: 'rgba(255, 255, 255, 0.05)', color: 'var(--ink3)' }}
+                                onClick={() => setCustomSelectedUserIds([])}
+                              >
+                                Limpar
+                              </button>
+                            </div>
+                          </div>
+
+                          <input
+                            type="text"
+                            placeholder="🔍 Digite para buscar (ex: Kauan, Kamilla, Rozy, telefone)..."
+                            value={customContactSearch}
+                            onChange={(e) => setCustomContactSearch(e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '7px 10px',
+                              fontSize: 12,
+                              borderRadius: 8,
+                              background: 'rgba(0,0,0,0.4)',
+                              border: '1px solid var(--line)',
+                              color: '#fff',
+                              boxSizing: 'border-box'
+                            }}
+                          />
+
+                          <div style={{
+                            maxHeight: 160,
+                            overflowY: 'auto',
+                            border: '1px solid rgba(255,255,255,0.05)',
+                            borderRadius: 8,
+                            padding: '4px',
+                            background: 'rgba(0,0,0,0.2)'
+                          }}>
+                            {validUsers
+                              .filter((u) => {
+                                const q = customContactSearch.toLowerCase().trim();
+                                if (!q) return true;
+                                const n = (u.name || '').toLowerCase();
+                                const p = (u.whatsapp || u.phone || '').replace(/\D/g, '');
+                                return n.includes(q) || p.includes(q);
+                              })
+                              .slice(0, 50)
+                              .map((u) => {
+                                const isSelected = customSelectedUserIds.includes(u.id);
+                                return (
+                                  <div
+                                    key={u.id}
+                                    onClick={() => {
+                                      if (isSelected) {
+                                        setCustomSelectedUserIds((prev) => prev.filter((id) => id !== u.id));
+                                      } else {
+                                        setCustomSelectedUserIds((prev) => [...prev, u.id]);
+                                      }
+                                    }}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      padding: '6px 8px',
+                                      borderRadius: 6,
+                                      cursor: 'pointer',
+                                      background: isSelected ? 'rgba(0, 229, 155, 0.12)' : 'transparent',
+                                      borderBottom: '1px solid rgba(255,255,255,0.03)',
+                                      transition: 'background 0.15s'
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={() => {}}
+                                        style={{ cursor: 'pointer', accentColor: 'var(--teal)' }}
+                                      />
+                                      <span style={{ fontSize: 12, fontWeight: 700, color: isSelected ? '#fff' : 'var(--ink2)' }}>
+                                        {u.name || 'Sem nome'}
+                                      </span>
+                                    </div>
+                                    <span style={{ fontSize: 11, color: 'var(--ink3)' }}>
+                                      {u.whatsapp || u.phone}
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Se escolheu Lote específico */}
                       {testTargetType === 'batch' && (
