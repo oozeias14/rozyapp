@@ -464,46 +464,37 @@ export function extractPhonesFromMessage(m) {
   return phones;
 }
 
-// ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO (IDEIA DO USUÁRIO) ────
+// ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO ────
 
 export async function scanAllChatsForPhrase(phraseText) {
-  const targetPhrase = (phraseText || '').toLowerCase().trim();
+  const targetPhrase = (phraseText || '').toLowerCase().trim().replace(/^["']|["']$/g, '');
   const matchedSigs = new Set();
-  if (!targetPhrase) return matchedSigs;
 
   try {
     const { instanceName } = getEvolutionConfig();
 
-    // 1. Busca até 1000 mensagens gerais
-    const msgsGeneral = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+    // 1. Busca mensagens recentes do banco de dados (múltiplas páginas para cobrir o histórico)
+    const msgsP1 = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
       method: 'POST',
-      body: JSON.stringify({ limit: 1000 }),
+      body: JSON.stringify({ limit: 500, page: 1 }),
     }).catch(() => null);
 
-    const listGeneral = msgsGeneral?.messages?.records || (Array.isArray(msgsGeneral) ? msgsGeneral : []);
-
-    // 2. Busca até 1000 mensagens especificamente enviadas (fromMe: true)
-    const msgsSent = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+    const msgsP2 = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
       method: 'POST',
-      body: JSON.stringify({
-        where: { key: { fromMe: true } },
-        limit: 1000,
-      }),
+      body: JSON.stringify({ limit: 500, page: 2 }),
     }).catch(() => null);
 
-    const listSent = msgsSent?.messages?.records || (Array.isArray(msgsSent) ? msgsSent : []);
+    const list1 = msgsP1?.messages?.records || (Array.isArray(msgsP1) ? msgsP1 : []);
+    const list2 = msgsP2?.messages?.records || (Array.isArray(msgsP2) ? msgsP2 : []);
 
-    // 3. Busca todos os chats/conversas abertas
-    const chats = await fetchWhatsAppChats().catch(() => []);
-
-    // Unifica mensagens
     const msgMap = new Map();
-    listGeneral.forEach((m) => m?.id && msgMap.set(m.id, m));
-    listSent.forEach((m) => m?.id && msgMap.set(m.id, m));
+    list1.forEach((m) => m?.id && msgMap.set(m.id, m));
+    list2.forEach((m) => m?.id && msgMap.set(m.id, m));
     const allMsgs = Array.from(msgMap.values());
 
+    // Se houver frase de busca, filtra mensagens contendo a frase
     allMsgs.forEach((m) => {
-      if (doesMessageContainPhrase(m, targetPhrase)) {
+      if (!targetPhrase || doesMessageContainPhrase(m, targetPhrase)) {
         const foundPhones = extractPhonesFromMessage(m);
         foundPhones.forEach((p) => {
           getPhoneSignatures(p).forEach((sig) => matchedSigs.add(sig));
@@ -511,14 +502,34 @@ export async function scanAllChatsForPhrase(phraseText) {
       }
     });
 
+    // 2. Busca todas as conversas ativas no WhatsApp (inclui verificação de remoteJid, remoteJidAlt e LIDs)
+    const chats = await fetchWhatsAppChats().catch(() => []);
     (chats || []).forEach((c) => {
-      if (doesMessageContainPhrase(c, targetPhrase)) {
-        const foundPhones = extractPhonesFromMessage(c);
-        foundPhones.forEach((p) => {
-          getPhoneSignatures(p).forEach((sig) => matchedSigs.add(sig));
-        });
+      const isMatch = !targetPhrase || doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase);
+      
+      const rJid = c.remoteJid || c.id || '';
+      const rJidAlt = c.lastMessage?.key?.remoteJidAlt || c.lastMessage?.key?.participantAlt || '';
+      const rJidKey = c.lastMessage?.key?.remoteJid || '';
+
+      [rJid, rJidAlt, rJidKey].forEach((j) => {
+        const cleanP = extractCleanPhone(j);
+        if (cleanP && cleanP.length >= 8) {
+          getPhoneSignatures(cleanP).forEach((sig) => {
+            if (isMatch) matchedSigs.add(sig);
+          });
+        }
+      });
+    });
+
+    // 3. Sincroniza agenda de contatos oficiais salvos do WhatsApp conectado
+    const contacts = await fetchWhatsAppContacts().catch(() => []);
+    (contacts || []).forEach((ct) => {
+      const cleanP = extractCleanPhone(ct.remoteJid || ct.id || ct.number);
+      if (cleanP && cleanP.length >= 8) {
+        getPhoneSignatures(cleanP).forEach((sig) => matchedSigs.add(sig));
       }
     });
+
   } catch (e) {
     console.warn('Erro ao escanear conversas por frase:', e);
   }
@@ -530,13 +541,13 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
   const cleanPhone = extractCleanPhone(phone);
   const targetPhrase = (phraseText || '').toLowerCase().trim().replace(/^["']|["']$/g, '');
 
-  if (!cleanPhone || !targetPhrase) {
-    return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem frase ou sem número)', status: 'PENDING' };
+  if (!cleanPhone) {
+    return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem número)', status: 'PENDING' };
   }
 
   const sigs = getPhoneSignatures(cleanPhone);
 
-  // 1. Checa no escaneamento prévio amplo e rápido
+  // 1. Checa no escaneamento prévio amplo e rápido (conversas, transmissões e contatos)
   if (preScannedSigs && preScannedSigs instanceof Set) {
     const hasMatch = sigs.some((sig) => preScannedSigs.has(sig));
     if (hasMatch) {
@@ -544,39 +555,16 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
         has2Checks: true,
         checks: 2,
         status: 'DELIVERY_ACK',
-        label: `✓✓ 2 Traços (Frase "${phraseText}" encontrada no chat!)`
+        label: `✓✓ 2 Traços (Contato confirmado no WhatsApp!)`
       };
     }
   }
 
-  // 2. Checa diretamente nas conversas do contato usando Prisma contains + JID
+  // 2. Checa diretamente nas conversas do contato usando busca por assinaturas numéricas (com e sem 9º dígito)
   for (const sig of sigs) {
     try {
-      // Tenta busca por substring do número de telefone (Prisma contains)
-      const msgsContains = await fetchWhatsAppMessages({
-        where: {
-          remoteJid: {
-            contains: sig
-          }
-        },
-        limit: 50
-      }).catch(() => null);
-
-      if (Array.isArray(msgsContains) && msgsContains.length > 0) {
-        for (const m of msgsContains) {
-          if (doesMessageContainPhrase(m, targetPhrase)) {
-            return {
-              has2Checks: true,
-              checks: 2,
-              status: 'DELIVERY_ACK',
-              label: `✓✓ 2 Traços (Frase "${phraseText}" encontrada no chat!)`
-            };
-          }
-        }
-      }
-
-      // Tenta busca direta por key.remoteJid
-      const jid = `${sig}@s.whatsapp.net`;
+      // Tenta A: key.remoteJid exact
+      const jid = sig.includes('@') ? sig : `${sig}@s.whatsapp.net`;
       const msgsJid = await fetchWhatsAppMessages({
         where: {
           key: {
@@ -587,6 +575,9 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
       }).catch(() => null);
 
       if (Array.isArray(msgsJid) && msgsJid.length > 0) {
+        if (!targetPhrase) {
+          return { has2Checks: true, checks: 2, status: 'DELIVERY_ACK', label: '✓✓ 2 Traços (Mensagem entregue)' };
+        }
         for (const m of msgsJid) {
           if (doesMessageContainPhrase(m, targetPhrase)) {
             return {
@@ -603,11 +594,17 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
     }
   }
 
+  // 3. Fallback: Checa status direto de entrega no chat do contato
+  const directCheck = await getContactDeliveryStatusDirect(cleanPhone);
+  if (directCheck && directCheck.has2Checks) {
+    return directCheck;
+  }
+
   return {
     has2Checks: false,
     checks: 1,
     status: 'NOT_FOUND',
-    label: `✓ 1 Traço (Frase "${phraseText}" não encontrada na conversa)`
+    label: `✓ 1 Traço (Pendente / Sem confirmação no WhatsApp)`
   };
 }
 
