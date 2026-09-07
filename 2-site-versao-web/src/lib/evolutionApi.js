@@ -392,6 +392,65 @@ export async function getContactDeliveryStatusDirect(phone) {
   return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Pendente / Sem Mensagem Entregue)', status: 'NOT_FOUND' };
 }
 
+// Helper para verificar se uma mensagem contém a frase buscada (inclui busca profunda no JSON)
+export function doesMessageContainPhrase(m, targetPhrase) {
+  if (!m || !targetPhrase) return false;
+  const cleanTarget = targetPhrase.toLowerCase().trim();
+  if (!cleanTarget) return false;
+
+  const directText = (
+    m.message?.conversation ||
+    m.message?.extendedTextMessage?.text ||
+    m.message?.ephemeralMessage?.message?.conversation ||
+    m.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
+    m.message?.imageMessage?.caption ||
+    m.message?.videoMessage?.caption ||
+    m.body ||
+    m.text ||
+    m.content ||
+    ''
+  ).toLowerCase();
+
+  if (directText.includes(cleanTarget)) return true;
+
+  try {
+    const jsonStr = JSON.stringify(m).toLowerCase();
+    return jsonStr.includes(cleanTarget);
+  } catch (e) {
+    return false;
+  }
+}
+
+// Helper para extrair todos os telefones envolvidos numa mensagem (inclui destinatários de transmissão userReceipt e MessageUpdate)
+export function extractPhonesFromMessage(m) {
+  const phones = new Set();
+  if (!m) return phones;
+
+  function addJid(jid) {
+    if (!jid || typeof jid !== 'string') return;
+    if (jid.includes('@g.us')) return; // ignora grupos
+    let raw = jid.includes('@') ? jid.split('@')[0] : jid;
+    if (raw.includes(':')) raw = raw.split(':')[0];
+    const clean = raw.replace(/\D/g, '');
+    if (clean && clean.length >= 8 && clean.length <= 15) {
+      phones.add(clean);
+    }
+  }
+
+  addJid(m.key?.remoteJid || m.remoteJid);
+  addJid(m.key?.participant || m.participant);
+
+  if (Array.isArray(m.userReceipt)) {
+    m.userReceipt.forEach((ur) => addJid(ur.userJid || ur.jid || ur.user));
+  }
+
+  if (Array.isArray(m.MessageUpdate)) {
+    m.MessageUpdate.forEach((mu) => addJid(mu.participant || mu.fromMeJid || mu.key?.participant));
+  }
+
+  return phones;
+}
+
 // ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO (IDEIA DO USUÁRIO) ────
 
 export async function scanAllChatsForPhrase(phraseText) {
@@ -400,26 +459,39 @@ export async function scanAllChatsForPhrase(phraseText) {
   if (!targetPhrase) return matchedSigs;
 
   try {
-    const msgs = await fetchWhatsAppMessages({ limit: 500 });
-    (msgs || []).forEach((m) => {
-      const bodyText = (
-        m.message?.conversation ||
-        m.message?.extendedTextMessage?.text ||
-        m.message?.imageMessage?.caption ||
-        m.message?.videoMessage?.caption ||
-        m.body ||
-        m.text ||
-        ''
-      ).toLowerCase();
+    const { instanceName } = getEvolutionConfig();
 
-      if (bodyText.includes(targetPhrase)) {
-        const rJid = m.key?.remoteJid || m.remoteJid || '';
-        if (rJid && !rJid.includes('@g.us')) {
-          let clean = rJid.split('@')[0].replace(/\D/g, '');
-          if (clean) {
-            getPhoneSignatures(clean).forEach((sig) => matchedSigs.add(sig));
-          }
-        }
+    // 1. Busca até 1000 mensagens gerais
+    const msgsGeneral = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({ limit: 1000 }),
+    }).catch(() => null);
+
+    const listGeneral = msgsGeneral?.messages?.records || (Array.isArray(msgsGeneral) ? msgsGeneral : []);
+
+    // 2. Busca até 1000 mensagens especificamente enviadas (fromMe: true)
+    const msgsSent = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        where: { key: { fromMe: true } },
+        limit: 1000,
+      }),
+    }).catch(() => null);
+
+    const listSent = msgsSent?.messages?.records || (Array.isArray(msgsSent) ? msgsSent : []);
+
+    // Unifica mensagens
+    const msgMap = new Map();
+    listGeneral.forEach((m) => m?.id && msgMap.set(m.id, m));
+    listSent.forEach((m) => m?.id && msgMap.set(m.id, m));
+    const allMsgs = Array.from(msgMap.values());
+
+    allMsgs.forEach((m) => {
+      if (doesMessageContainPhrase(m, targetPhrase)) {
+        const foundPhones = extractPhonesFromMessage(m);
+        foundPhones.forEach((p) => {
+          getPhoneSignatures(p).forEach((sig) => matchedSigs.add(sig));
+        });
       }
     });
   } catch (e) {
@@ -439,7 +511,7 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
 
   const sigs = getPhoneSignatures(cleanPhone);
 
-  // 1. Checa no escaneamento prévio rápido
+  // 1. Checa no escaneamento prévio amplo e rápido
   if (preScannedSigs && preScannedSigs instanceof Set) {
     const hasMatch = sigs.some((sig) => preScannedSigs.has(sig));
     if (hasMatch) {
@@ -447,12 +519,12 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
         has2Checks: true,
         checks: 2,
         status: 'DELIVERY_ACK',
-        label: `✓✓ 2 Traços (Frase "${phraseText}" encontrada na conversa!)`
+        label: `✓✓ 2 Traços (Frase "${phraseText}" encontrada no chat!)`
       };
     }
   }
 
-  // 2. Checa diretamente na conversa do contato
+  // 2. Checa diretamente nas conversas individuais do contato (tentando assinaturas com e sem 55/9)
   const jids = sigs.map((s) => `${s}@s.whatsapp.net`);
   for (const jid of jids) {
     try {
@@ -462,27 +534,17 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
             remoteJid: jid
           }
         },
-        limit: 30
+        limit: 50
       });
 
       if (Array.isArray(msgs) && msgs.length > 0) {
         for (const m of msgs) {
-          const bodyText = (
-            m.message?.conversation ||
-            m.message?.extendedTextMessage?.text ||
-            m.message?.imageMessage?.caption ||
-            m.message?.videoMessage?.caption ||
-            m.body ||
-            m.text ||
-            ''
-          ).toLowerCase();
-
-          if (bodyText.includes(targetPhrase)) {
+          if (doesMessageContainPhrase(m, targetPhrase)) {
             return {
               has2Checks: true,
               checks: 2,
               status: 'DELIVERY_ACK',
-              label: `✓✓ 2 Traços (Frase "${phraseText}" encontrada na conversa!)`
+              label: `✓✓ 2 Traços (Frase "${phraseText}" encontrada no chat!)`
             };
           }
         }
@@ -496,7 +558,7 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
     has2Checks: false,
     checks: 1,
     status: 'NOT_FOUND',
-    label: `✓ 1 Traço (Frase "${phraseText}" não está na conversa)`
+    label: `✓ 1 Traço (Frase "${phraseText}" não encontrada na conversa)`
   };
 }
 
