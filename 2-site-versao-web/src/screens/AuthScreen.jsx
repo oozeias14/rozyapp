@@ -651,21 +651,22 @@ export default function AuthScreen({ onLoggedIn }) {
         <div style={{ textAlign: 'center', marginTop: '20px' }}>
           <button 
             type="button" 
-            className="btn btn-ghost btn-sm" 
+            className="btn btn-ghost" 
             style={{ 
               margin: '0 auto', 
-              fontSize: '12.5px', 
-              padding: '8px 14px', 
+              fontSize: '15px', 
+              padding: '10px 18px', 
               width: 'auto', 
-              background: 'rgba(123, 108, 244, 0.06)', 
-              borderColor: 'rgba(123, 108, 244, 0.25)', 
+              background: 'rgba(123, 108, 244, 0.08)', 
+              borderColor: 'rgba(123, 108, 244, 0.35)', 
               color: 'var(--violet)',
-              gap: '9px',
-              borderRadius: '8px'
+              gap: '10px',
+              borderRadius: '10px',
+              fontWeight: '600'
             }}
             onClick={installPwa}
           >
-            <img src="/icons/icon-192.png" alt="" style={{ width: '18px', height: '18px', borderRadius: '4px' }} />
+            <img src="/icons/icon-192.png" alt="" style={{ width: '22px', height: '22px', borderRadius: '5px' }} />
             Click para Instalar o Aplicativo
           </button>
         </div>
