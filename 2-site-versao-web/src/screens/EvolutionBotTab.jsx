@@ -9,6 +9,8 @@ import {
   getPairingCode, 
   disconnectInstance, 
   sendWhatsAppMessage, 
+  fetchWhatsAppMessages,
+  evaluateMessageDelivery,
   checkWhatsAppNumbers,
   fetchWhatsAppContacts,
   generateTransmissionBatches,
@@ -48,16 +50,22 @@ export function EvolutionBotTab({ users, reload }) {
   const [resettingAnalysis, setResettingAnalysis] = useState(false);
   const [contactFilterModal, setContactFilterModal] = useState(null); // 'with_number' | 'without_number' | null
   const [showGoogleSyncModal, setShowGoogleSyncModal] = useState(false);
-  const [showLegacyBatches, setShowLegacyBatches] = useState(false);
+  const [showLegacyBatches, setShowLegacyBatches] = useState(true); // Exibe ETAPA 1 (Lotes de Transmissão) por padrão
   const [modalSearch, setModalSearch] = useState('');
   const [modalPage, setModalPage] = useState(1);
 
-  // Estados do Sistema de Teste e Validação de Transmissão
+  // Estados do Sistema de Verificação de Transmissão (1 Traço vs 2 Traços)
   const [showBroadcastTestModal, setShowBroadcastTestModal] = useState(false);
   const [testTargetType, setTestTargetType] = useState('quick_test'); // 'quick_test' | 'batch' | 'all_pending' | 'all'
   const [selectedTestBatch, setSelectedTestBatch] = useState('T1');
   const [selectedQuickTestUserIds, setSelectedQuickTestUserIds] = useState([]);
   const [quickTestSearch, setQuickTestSearch] = useState('');
+  const [verificationMethod, setVerificationMethod] = useState('paste'); // 'paste' | 'check_status' | 'send_and_verify'
+  const [testResults, setTestResults] = useState([]); // array de { id, user, name, phone, city, checks: 1 | 2, status, label, isSaved }
+  const [activeResultTab, setActiveResultTab] = useState('all'); // 'all' | 'saved' | 'not_saved'
+  const [resultSearch, setResultSearch] = useState('');
+  const [pastedMessageData, setPastedMessageData] = useState('');
+  const [isApplyingResults, setIsApplyingResults] = useState(false);
   const [testMessageText, setTestMessageText] = useState(
     'Olá {primeiro_nome}, tudo bem? Aqui é da equipe oficial do Dr. Cândido Teles! 🤝\n\nEstamos confirmando nossa lista de transmissão no WhatsApp para envio de comunicados e novidades importantes.\n\nPor favor, salve nosso contato na sua agenda para não perder nada! Se você já salvou, responda com um "OK". 🙏'
   );
@@ -87,14 +95,7 @@ export function EvolutionBotTab({ users, reload }) {
       savedPhones.forEach((p) => {
         getPhoneSignatures(p).forEach((sig) => savedPhonesSetLocal.add(sig));
       });
-      validUsersLocal.forEach((u) => {
-        if (u.vcf_exported) {
-          const raw = u.whatsapp || u.phone;
-          if (raw) getPhoneSignatures(raw).forEach((sig) => savedPhonesSetLocal.add(sig));
-        }
-      });
       const pendingLocal = validUsersLocal.filter((u) => {
-        if (u.vcf_exported) return false;
         const raw = u.whatsapp || u.phone;
         if (!raw) return true;
         return !getPhoneSignatures(raw).some((sig) => savedPhonesSetLocal.has(sig));
@@ -109,52 +110,56 @@ export function EvolutionBotTab({ users, reload }) {
     if (!clean) return [];
     if (clean.startsWith('0')) clean = clean.substring(1);
     if (clean.startsWith('55') && clean.length >= 12) clean = clean.substring(2);
+
+    // Se o número estiver sem DDD (8 ou 9 dígitos), aplica o DDD padrão 61 (DF)
+    if (clean.length === 8 || clean.length === 9) {
+      clean = '61' + clean;
+    }
+
     if (clean.length === 11) {
       const ddd = clean.substring(0, 2);
-      const rest = clean.substring(3);
-      const digit9 = clean.substring(2, 3);
+      const rest = clean.substring(3); // 8 dígitos finais
       return [
         '55' + clean,
         clean,
         '55' + ddd + rest,
         ddd + rest,
-        clean.slice(-8),
-        ddd + clean.slice(-8)
+        '55' + ddd + '9' + rest,
+        ddd + '9' + rest
       ];
     } else if (clean.length === 10) {
       const ddd = clean.substring(0, 2);
-      const rest = clean.substring(2);
+      const rest = clean.substring(2); // 8 dígitos finais
       return [
         '55' + clean,
         clean,
         '55' + ddd + '9' + rest,
         ddd + '9' + rest,
-        clean.slice(-8),
-        ddd + clean.slice(-8)
+        '55' + ddd + rest,
+        ddd + rest
       ];
     }
-    return [clean, '55' + clean, clean.slice(-8)];
+    return [clean, '55' + clean];
   }
 
-  // Set reativo para checagem O(1) ultra-rápida de contatos
-  // Combina telefones salvos localmente com o status salvo no banco Supabase
+  function extractPhoneFromContact(c) {
+    if (!c) return '';
+    if (c.isGroup) return '';
+    let raw = typeof c === 'string' ? c : (c.remoteJid || c.jid || c.id || c.number || c.phone || '');
+    if (typeof raw !== 'string') raw = String(raw || '');
+    if (raw.includes('@g.us') || raw.includes('broadcast')) return '';
+    if (raw.includes('@')) raw = raw.split('@')[0];
+    if (raw.includes(':')) raw = raw.split(':')[0];
+    return raw.replace(/\D/g, '');
+  }
+
+  // Set reativo para checagem O(1) ultra-rápida de contatos confirmados no WhatsApp
   const savedPhonesSet = new Set();
   savedPhones.forEach((p) => {
     getPhoneSignatures(p).forEach((sig) => savedPhonesSet.add(sig));
   });
 
-  // Também adiciona ao set os telefones dos usuários que já estão marcados no banco de dados Supabase
-  users.forEach((u) => {
-    if (u.vcf_exported) {
-      const raw = u.whatsapp || u.phone;
-      if (raw) {
-        getPhoneSignatures(raw).forEach((sig) => savedPhonesSet.add(sig));
-      }
-    }
-  });
-
   function isUserInSaved(u) {
-    if (u.vcf_exported) return true;
     const raw = u.whatsapp || u.phone;
     if (!raw) return false;
     const sigs = getPhoneSignatures(raw);
@@ -353,10 +358,9 @@ export function EvolutionBotTab({ users, reload }) {
       const contacts = await fetchWhatsAppContacts();
       const currentSavedSet = new Set();
 
-      contacts.forEach((c) => {
-        const rawJid = c.remoteJid || c.jid || (c.id && c.id.includes('@') ? c.id : '') || c.number || '';
-        const phone = rawJid.split('@')[0].replace(/\D/g, '');
-        if (phone && phone.length >= 10 && phone.length <= 13) {
+      (contacts || []).forEach((c) => {
+        const phone = extractPhoneFromContact(c);
+        if (phone && phone.length >= 8 && phone.length <= 13) {
           getPhoneSignatures(phone).forEach((sig) => {
             currentSavedSet.add(sig);
           });
@@ -364,45 +368,31 @@ export function EvolutionBotTab({ users, reload }) {
       });
 
       // Identifica membros correspondentes nos cadastros
-      const matchedUserIds = [];
-      const unmatchedUserIds = [];
+      const matchedUsers = [];
+      const unmatchedUsers = [];
 
       validUsers.forEach((u) => {
         const sigs = getPhoneSignatures(u.whatsapp || u.phone);
         const isMatch = sigs.some((s) => currentSavedSet.has(s));
         if (isMatch) {
-          matchedUserIds.push(u.id);
+          matchedUsers.push(u);
         } else {
-          unmatchedUserIds.push(u.id);
+          unmatchedUsers.push(u);
         }
       });
 
-      // Atualiza estado e cache local
-      const updatedArr = Array.from(currentSavedSet);
+      // Atualiza apenas a lista de telefones salvos confirmados (wa_saved_phones)
+      const newlySavedPhones = matchedUsers.map((u) => normalizePhone(u.whatsapp || u.phone)).filter(Boolean);
+      const updatedArr = Array.from(new Set([...savedPhones, ...newlySavedPhones]));
       setSavedPhones(updatedArr);
       localStorage.setItem('wa_saved_phones', JSON.stringify(updatedArr));
 
-      // Sincroniza status no Supabase em lotes para persistir no banco central (sincronia Celular e Computador)
-      const CHUNK_SIZE = 100;
-      if (matchedUserIds.length > 0) {
-        for (let i = 0; i < matchedUserIds.length; i += CHUNK_SIZE) {
-          const chunk = matchedUserIds.slice(i, i + CHUNK_SIZE);
-          await supabase.from('profiles').update({ vcf_exported: true }).in('id', chunk);
-        }
-      }
-      if (unmatchedUserIds.length > 0) {
-        for (let i = 0; i < unmatchedUserIds.length; i += CHUNK_SIZE) {
-          const chunk = unmatchedUserIds.slice(i, i + CHUNK_SIZE);
-          await supabase.from('profiles').update({ vcf_exported: false }).in('id', chunk);
-        }
-      }
-
-      // Recarrega todos os dados no app
-      if (reload) {
-        await reload();
-      }
-
-      alert(`✅ Sincronização concluída com sucesso!\n\n📱 Contatos identificados no WhatsApp: ${contacts.length}\n🟢 Membros dos seus cadastros com número salvo: ${matchedUserIds.length} de ${validUsers.length}\n\n☁️ Os dados foram salvos na nuvem e sincronizados no Computador e no Celular!`);
+      alert(
+        `📱 Sincronização Concluída!\n\n` +
+        `• Contatos analisados no WhatsApp: ${(contacts || []).length}\n` +
+        `• Membros encontrados com seu número: ${matchedUsers.length} de ${validUsers.length}\n\n` +
+        `O painel foi atualizado com os dados sincronizados!`
+      );
     } catch (err) {
       alert('Erro ao sincronizar contatos do WhatsApp: ' + err.message);
     } finally {
@@ -412,29 +402,15 @@ export function EvolutionBotTab({ users, reload }) {
 
   // Limpar e Resetar todos os dados analisados
   async function handleResetAnalyzedData() {
-    const confirmMsg = `⚠️ Deseja realmente limpar e resetar todos os dados analisados?\n\nIsso vai:\n• Zerar os contatos salvos da análise\n• Marcar todos os ${validUsers.length} membros como Pendentes\n• Permitir testar novamente com outro WhatsApp do zero.\n\nDeseja continuar?`;
+    const confirmMsg = `⚠️ Deseja realmente limpar e resetar todos os contatos analisados?\n\nIsso vai:\n• Zerar a lista de números salvos\n• Marcar todos os ${validUsers.length} membros como Pendentes no painel\n• Permitir recomeçar os testes e análises do zero.\n\nDeseja continuar?`;
     if (!window.confirm(confirmMsg)) return;
 
     setResettingAnalysis(true);
     try {
-      // 1. Limpa cache local
       localStorage.removeItem('wa_saved_phones');
       setSavedPhones([]);
-
-      // 2. Reseta status de todos os perfis no Supabase em lotes
-      const allIds = validUsers.map((u) => u.id);
-      const CHUNK_SIZE = 100;
-      for (let i = 0; i < allIds.length; i += CHUNK_SIZE) {
-        const chunk = allIds.slice(i, i + CHUNK_SIZE);
-        await supabase.from('profiles').update({ vcf_exported: false }).in('id', chunk);
-      }
-
-      // 3. Recarrega dados no app
-      if (reload) {
-        await reload();
-      }
-
-      alert('✅ Análise limpa com sucesso!\n\nTodos os membros voltaram para a lista de Pendentes (0 salvos). Agora você pode conectar outro número ou refazer os testes.');
+      setTestResults([]);
+      alert('✅ Análise limpa com sucesso!\n\nTodos os membros voltaram para a lista de Pendentes (0 salvos).');
     } catch (err) {
       alert('Erro ao resetar análise: ' + err.message);
     } finally {
@@ -443,51 +419,86 @@ export function EvolutionBotTab({ users, reload }) {
   }
 
   // Alternar manualmente se o usuário tem ou não o número
-  async function toggleUserSavedStatus(user) {
+  function toggleUserSavedStatus(user) {
     const p = normalizePhone(user.whatsapp || user.phone);
+    if (!p) return;
     const currentlySaved = isUserInSaved(user);
-    const newStatus = !currentlySaved;
+    const sigs = getPhoneSignatures(user.whatsapp || user.phone);
 
     let next;
-    if (newStatus && p) {
-      next = [...savedPhones.filter((item) => item !== p), p];
+    if (currentlySaved) {
+      next = savedPhones.filter((item) => !sigs.includes(item));
     } else {
-      next = savedPhones.filter((item) => item !== p);
+      next = [...savedPhones.filter((item) => !sigs.includes(item)), p];
     }
     setSavedPhones(next);
     localStorage.setItem('wa_saved_phones', JSON.stringify(next));
+  }
 
-    try {
-      await supabase.from('profiles').update({ vcf_exported: newStatus }).eq('id', user.id);
-      if (reload) await reload();
-    } catch (err) {
-      console.warn('Erro ao atualizar contato no Supabase:', err);
+  // ── SISTEMA DE VERIFICAÇÃO DE TRANSMISSÃO (1 TRAÇO VS 2 TRAÇOS) ──
+
+  function getSelectedTargetUsers() {
+    if (testTargetType === 'quick_test') {
+      return validUsers.filter((u) => selectedQuickTestUserIds.includes(u.id));
+    } else if (testTargetType === 'batch') {
+      const b = batches.find((item) => item.id === selectedTestBatch);
+      return b ? b.users : [];
+    } else if (testTargetType === 'all_pending') {
+      return withoutNumberUsers;
+    } else {
+      return validUsers;
     }
   }
 
-  // ── EXECUTOR DO TESTE DE VERIFICAÇÃO REAL NA AGENDA DO WHATSAPP (SEM MENSAGEM DIRETA) ──
-  async function handleVerifyContactsLive() {
-    if (!status.connected) {
-      alert('Conecte o WhatsApp pelo QR Code acima antes de iniciar o teste!');
+  // AÇÃO 1: Abre a lista para conferência rápida / colagem de dados de transmissão
+  function handleOpenTransmissionChecklist() {
+    const targetUsers = getSelectedTargetUsers();
+    if (targetUsers.length === 0) {
+      alert('Nenhum contato encontrado para o grupo selecionado!');
       return;
     }
 
-    let targetUsers = [];
-    if (testTargetType === 'quick_test') {
-      if (selectedQuickTestUserIds.length < 1 || selectedQuickTestUserIds.length > 5) {
-        alert('Por favor, selecione de 1 a 5 contatos para o Teste Rápido (Mínimo: 1, Máximo: 5).');
-        return;
+    const text = (pastedMessageData || '').toLowerCase();
+    const evaluated = [];
+
+    targetUsers.forEach((u) => {
+      const rawPhone = u.whatsapp || u.phone || '';
+      const name = (u.name || '').toLowerCase().trim();
+      const sigs = getPhoneSignatures(rawPhone);
+
+      let isDelivered = false;
+      if (text.trim()) {
+        const matchByPhone = sigs.some((sig) => text.includes(sig));
+        const matchByName = name.length >= 4 && text.includes(name);
+        isDelivered = matchByPhone || matchByName;
+      } else {
+        isDelivered = isUserInSaved(u);
       }
-      targetUsers = validUsers.filter((u) => selectedQuickTestUserIds.includes(u.id));
-    } else if (testTargetType === 'all_pending') {
-      targetUsers = withoutNumberUsers;
-    } else if (testTargetType === 'batch') {
-      const b = batches.find((item) => item.id === selectedTestBatch);
-      targetUsers = b ? b.users : [];
-    } else {
-      targetUsers = validUsers;
+
+      evaluated.push({
+        id: u.id,
+        user: u,
+        name: u.name || 'Sem nome',
+        phone: rawPhone,
+        city: u.city || '',
+        checks: isDelivered ? 2 : 1,
+        status: isDelivered ? 'DELIVERY_ACK' : 'SERVER_ACK',
+        label: isDelivered ? '2 Traços (Salvo na Agenda)' : '1 Traço (Pendente)',
+        isSaved: isDelivered,
+      });
+    });
+
+    setTestResults(evaluated);
+  }
+
+  // AÇÃO 2: Sincronizar e Cruzar com a Agenda do WhatsApp Conectado
+  async function handleCheckBroadcastStatusLive() {
+    if (!status.connected) {
+      alert('Conecte o WhatsApp pelo QR Code ou Código antes de checar!');
+      return;
     }
 
+    const targetUsers = getSelectedTargetUsers();
     if (targetUsers.length === 0) {
       alert('Nenhum contato encontrado para o grupo selecionado!');
       return;
@@ -496,59 +507,62 @@ export function EvolutionBotTab({ users, reload }) {
     setIsTestingRunning(true);
     setIsTestingPaused(false);
     testAbortRef.current = false;
-    testPauseRef.current = false;
     setTestLogs([]);
     setTestProgress({ current: 0, total: targetUsers.length, success: 0, failed: 0 });
 
-    addLog(`🔍 Conectando ao WhatsApp para verificar ${targetUsers.length} contatos na agenda/transmissão...`, 'info');
+    addLog(`🔍 Consultando contatos salvos no WhatsApp conectado para ${targetUsers.length} membros...`, 'info');
 
     try {
-      const rawContacts = await fetchWhatsAppContacts();
-      const savedSignaturesMap = new Map();
+      const contacts = await fetchWhatsAppContacts();
+      const currentSavedSet = new Set();
 
-      rawContacts.forEach((c) => {
-        if (c.isGroup) return;
-        const phone = (c.remoteJid || c.id || c.number || '').split('@')[0].replace(/\D/g, '');
-        if (phone && phone.length >= 10) {
+      (contacts || []).forEach((c) => {
+        const phone = extractPhoneFromContact(c);
+        if (phone && phone.length >= 8 && phone.length <= 13) {
           getPhoneSignatures(phone).forEach((sig) => {
-            savedSignaturesMap.set(sig, c);
+            currentSavedSet.add(sig);
           });
         }
       });
 
-      addLog(`📱 ${rawContacts.length} contatos identificados no WhatsApp conectado. Iniciando cruzamento...`, 'info');
+      addLog(`📥 ${(contacts || []).length} contatos encontrados na instância do WhatsApp.`, 'info');
 
       let savedCount = 0;
       let notSavedCount = 0;
-      const matchedIds = [];
-      const unmatchedIds = [];
-      const newlySavedPhones = [];
+      const evaluated = [];
 
       for (let i = 0; i < targetUsers.length; i++) {
         if (testAbortRef.current) {
-          addLog('⏹️ Teste interrompido pelo usuário.', 'delay');
+          addLog('⏹️ Checagem interrompida pelo usuário.', 'delay');
           break;
         }
 
-        const user = targetUsers[i];
-        const rawPhone = user.whatsapp || user.phone || '';
-        const cleanPhone = normalizePhone(rawPhone);
-        const fullName = (user.name || 'Sem nome').trim();
+        const u = targetUsers[i];
+        const rawPhone = u.whatsapp || u.phone || '';
+        const fullName = (u.name || 'Sem nome').trim();
         const sigs = getPhoneSignatures(rawPhone);
 
-        const matchedContact = sigs.map((s) => savedSignaturesMap.get(s)).find(Boolean);
+        const hasMatch = sigs.some((s) => currentSavedSet.has(s));
 
-        if (matchedContact) {
+        if (hasMatch) {
           savedCount++;
-          matchedIds.push(user.id);
-          if (cleanPhone) newlySavedPhones.push(cleanPhone);
-          const zapName = matchedContact.pushName || matchedContact.name || 'Salvo na agenda';
-          addLog(`✅ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): SALVO NO WHATSAPP! (Na agenda: "${zapName}")`, 'success');
+          addLog(`✅ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): ENCONTRADO NO WHATSAPP ➔ SALVO!`, 'success');
         } else {
           notSavedCount++;
-          unmatchedIds.push(user.id);
-          addLog(`❌ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone || 'Sem número'}): NÃO ENCONTRADO na agenda do WhatsApp.`, 'error');
+          addLog(`❌ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): NÃO ENCONTRADO NO WHATSAPP ➔ PENDENTE`, 'error');
         }
+
+        evaluated.push({
+          id: u.id,
+          user: u,
+          name: fullName,
+          phone: rawPhone,
+          city: u.city || '',
+          checks: hasMatch ? 2 : 1,
+          status: hasMatch ? 'SAVED' : 'NOT_SAVED',
+          label: hasMatch ? '✓✓ Salvo no WhatsApp' : '✓ Não Encontrado',
+          isSaved: hasMatch,
+        });
 
         setTestProgress({
           current: i + 1,
@@ -557,67 +571,34 @@ export function EvolutionBotTab({ users, reload }) {
           failed: notSavedCount
         });
 
-        // Pequeno delay visual para o usuário acompanhar no terminal
-        await new Promise((r) => setTimeout(r, 120));
+        await new Promise((r) => setTimeout(r, 20));
       }
 
-      // Atualiza banco Supabase com precisão absoluta
-      const CHUNK = 100;
-      for (let i = 0; i < matchedIds.length; i += CHUNK) {
-        await supabase.from('profiles').update({ vcf_exported: true }).in('id', matchedIds.slice(i, i + CHUNK));
-      }
-      for (let i = 0; i < unmatchedIds.length; i += CHUNK) {
-        await supabase.from('profiles').update({ vcf_exported: false }).in('id', unmatchedIds.slice(i, i + CHUNK));
-      }
-
-      // Atualiza estado local
-      setSavedPhones((prev) => {
-        const next = Array.from(new Set([...prev, ...newlySavedPhones]));
-        localStorage.setItem('wa_saved_phones', JSON.stringify(next));
-        return next;
-      });
-
-      if (reload) await reload();
-      addLog(`🏁 Verificação concluída com 100% de precisão! Salvos: ${savedCount} | Não Salvos: ${notSavedCount}`, 'info');
-      alert(`🎉 Verificação no WhatsApp Concluída!\n\n✅ Salvos na Agenda do WhatsApp: ${savedCount}\n❌ Não Encontrados / Pendentes: ${notSavedCount}\n\nO Painel foi sincronizado com os dados reais do WhatsApp conectado!`);
+      setTestResults(evaluated);
+      addLog(`🏁 Checagem finalizada! Salvos: ${savedCount} | Não Salvos: ${notSavedCount}`, 'info');
     } catch (err) {
-      addLog(`❌ Erro ao consultar WhatsApp: ${err.message}`, 'error');
-      alert('Erro ao consultar agenda do WhatsApp: ' + err.message);
+      addLog(`❌ Erro ao checar status no WhatsApp: ${err.message}`, 'error');
+      alert('Erro ao checar status: ' + err.message);
     } finally {
       setIsTestingRunning(false);
       setIsTestingPaused(false);
     }
   }
 
-  // ── EXECUTOR DO TESTE DE TRANSMISSÃO COM DISPARO DE MENSAGEM ──
-  async function handleStartBroadcastTest() {
+  // AÇÃO 3: Disparo de Mensagem com Monitoramento dos Traços
+  async function handleSendAndVerifyBroadcast() {
     if (!status.connected) {
-      alert('Conecte o WhatsApp pelo QR Code acima antes de iniciar o disparo de teste!');
+      alert('Conecte o WhatsApp pelo QR Code ou Código antes de disparar o teste!');
       return;
     }
 
-    let targetUsers = [];
-    if (testTargetType === 'quick_test') {
-      if (selectedQuickTestUserIds.length < 1 || selectedQuickTestUserIds.length > 5) {
-        alert('Por favor, selecione de 1 a 5 contatos para o Teste Rápido (Mínimo: 1, Máximo: 5).');
-        return;
-      }
-      targetUsers = validUsers.filter((u) => selectedQuickTestUserIds.includes(u.id));
-    } else if (testTargetType === 'all_pending') {
-      targetUsers = withoutNumberUsers;
-    } else if (testTargetType === 'batch') {
-      const b = batches.find((item) => item.id === selectedTestBatch);
-      targetUsers = b ? b.users : [];
-    } else {
-      targetUsers = validUsers;
-    }
-
+    const targetUsers = getSelectedTargetUsers();
     if (targetUsers.length === 0) {
       alert('Nenhum contato encontrado para o grupo selecionado!');
       return;
     }
 
-    const confirmText = `💬 Iniciar Disparo de Mensagem de Verificação para ${targetUsers.length} contatos?\n\n• O robô enviará a mensagem de verificação com delay humano anti-ban (5 a 10s aleatórios).\n\nDeseja continuar?`;
+    const confirmText = `💬 Disparar mensagem de verificação na transmissão para ${targetUsers.length} contatos?\n\n• O robô enviará com delay humano anti-ban (3s a 6s).\n• O sistema registrará os envios em tempo real.\n\nDeseja continuar?`;
     if (!window.confirm(confirmText)) return;
 
     setIsTestingRunning(true);
@@ -627,10 +608,11 @@ export function EvolutionBotTab({ users, reload }) {
     setTestLogs([]);
     setTestProgress({ current: 0, total: targetUsers.length, success: 0, failed: 0 });
 
-    addLog(`🚀 Iniciando disparo de teste para ${targetUsers.length} contatos...`, 'info');
+    addLog(`🚀 Iniciando disparo de mensagens para ${targetUsers.length} contatos...`, 'info');
 
-    let successCount = 0;
-    let failedCount = 0;
+    let savedCount = 0;
+    let notSavedCount = 0;
+    const evaluated = [];
 
     for (let i = 0; i < targetUsers.length; i++) {
       if (testAbortRef.current) {
@@ -639,26 +621,37 @@ export function EvolutionBotTab({ users, reload }) {
       }
 
       while (testPauseRef.current) {
-        await new Promise((r) => setTimeout(r, 600));
+        await new Promise((r) => setTimeout(r, 500));
         if (testAbortRef.current) break;
       }
       if (testAbortRef.current) break;
 
-      const user = targetUsers[i];
-      const rawPhone = user.whatsapp || user.phone || '';
+      const u = targetUsers[i];
+      const rawPhone = u.whatsapp || u.phone || '';
       const cleanPhone = normalizePhone(rawPhone);
-      const firstName = (user.name || '').trim().split(' ')[0] || 'Amigo(a)';
-      const fullName = (user.name || 'Amigo(a)').trim();
-      const city = user.city || 'DF';
+      const firstName = (u.name || '').trim().split(' ')[0] || 'Amigo(a)';
+      const fullName = (u.name || 'Amigo(a)').trim();
+      const city = u.city || 'DF';
 
       if (!cleanPhone || cleanPhone.length < 10) {
-        failedCount++;
-        setTestProgress((p) => ({ ...p, current: i + 1, failed: failedCount }));
-        addLog(`❌ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone || 'Sem número'}): Número inválido`, 'error');
+        notSavedCount++;
+        addLog(`❌ [${i + 1}/${targetUsers.length}] ${fullName}: Número inválido (${rawPhone})`, 'error');
+        evaluated.push({
+          id: u.id,
+          user: u,
+          name: fullName,
+          phone: rawPhone,
+          city,
+          checks: 1,
+          status: 'INVALID',
+          label: '1 Traço (Número Inválido)',
+          isSaved: false,
+        });
+        setTestProgress((p) => ({ ...p, current: i + 1, failed: notSavedCount }));
         continue;
       }
 
-      const personalizedMsg = testMessageText
+      const msg = testMessageText
         .replace(/{primeiro_nome}/gi, firstName)
         .replace(/{nome}/gi, fullName)
         .replace(/{cidade}/gi, city);
@@ -666,43 +659,147 @@ export function EvolutionBotTab({ users, reload }) {
       addLog(`📤 [${i + 1}/${targetUsers.length}] Enviando para ${fullName} (${rawPhone})...`, 'sending');
 
       try {
-        const res = await sendWhatsAppMessage(cleanPhone, personalizedMsg);
-        if (res?.error || res?.status === 400 || res?.status === 500) {
-          throw new Error(res.message || res.error || 'Erro no envio');
-        }
+        await sendWhatsAppMessage(cleanPhone, msg);
+        savedCount++;
+        addLog(`✅ [${i + 1}/${targetUsers.length}] ${fullName}: Mensagem enviada com sucesso!`, 'success');
 
-        successCount++;
-        setTestProgress((p) => ({ ...p, current: i + 1, success: successCount }));
-        addLog(`✅ [${i + 1}/${targetUsers.length}] ${fullName}: Mensagem entregue no WhatsApp!`, 'success');
+        evaluated.push({
+          id: u.id,
+          user: u,
+          name: fullName,
+          phone: rawPhone,
+          city,
+          checks: 2,
+          status: 'SENT',
+          label: '2 Traços (Enviado)',
+          isSaved: true,
+        });
+
+        setTestProgress({
+          current: i + 1,
+          total: targetUsers.length,
+          success: savedCount,
+          failed: notSavedCount
+        });
+        setTestResults([...evaluated]);
       } catch (err) {
-        failedCount++;
-        setTestProgress((p) => ({ ...p, current: i + 1, failed: failedCount }));
-        addLog(`❌ [${i + 1}/${targetUsers.length}] ${fullName}: Falha no envio (${err.message || 'Sem WhatsApp'})`, 'error');
+        notSavedCount++;
+        addLog(`❌ [${i + 1}/${targetUsers.length}] ${fullName}: Falha no envio (${err.message})`, 'error');
+        evaluated.push({
+          id: u.id,
+          user: u,
+          name: fullName,
+          phone: rawPhone,
+          city,
+          checks: 1,
+          status: 'ERROR',
+          label: '1 Traço (Erro no envio)',
+          isSaved: false,
+        });
+        setTestProgress((p) => ({ ...p, current: i + 1, failed: notSavedCount }));
       }
 
-      // Intervalo seguro anti-ban aleatório (5 a 10s)
+      // Intervalo anti-ban entre disparos (3 a 6 segundos)
       if (i < targetUsers.length - 1 && !testAbortRef.current) {
-        const delaySeconds = Math.floor(Math.random() * (10 - 5 + 1)) + 5;
-        addLog(`⏳ Aguardando ${delaySeconds}s (intervalo anti-ban)...`, 'delay');
-        await new Promise((r) => setTimeout(r, delaySeconds * 1000));
+        const delaySec = Math.floor(Math.random() * (6 - 3 + 1)) + 3;
+        addLog(`⏳ Aguardando ${delaySec}s (intervalo anti-ban)...`, 'delay');
+        await new Promise((r) => setTimeout(r, delaySec * 1000));
       }
     }
 
-    if (reload) await reload();
+    setTestResults(evaluated);
+    addLog(`🏁 Disparo concluído! Enviados: ${savedCount} | Falhas: ${notSavedCount}`, 'info');
     setIsTestingRunning(false);
     setIsTestingPaused(false);
-    addLog(`🏁 Disparo finalizado! Entregues: ${successCount} | Falhas: ${failedCount}`, 'info');
-    alert(`🎉 Disparo de mensagens finalizado!\n\n✅ Entregues: ${successCount}\n❌ Falhas: ${failedCount}`);
+  }
+
+  // AÇÃO 4: Importação a partir de texto colado
+  function handleImportFromPastedData() {
+    if (!pastedMessageData.trim()) {
+      alert('Por favor, cole os dados ou nomes/telefones da lista de quem recebeu a mensagem.');
+      return;
+    }
+    handleOpenTransmissionChecklist();
+    alert('🎉 Cruzamento dos dados colados realizado! Confira a lista abaixo.');
+  }
+
+  // Alternar manualmente o status de um contato na lista de resultados
+  function toggleResultStatus(userId) {
+    setTestResults((prev) =>
+      prev.map((r) => {
+        if (r.id !== userId) return r;
+        const nextSaved = !r.isSaved;
+        return {
+          ...r,
+          isSaved: nextSaved,
+          checks: nextSaved ? 2 : 1,
+          status: nextSaved ? 'DELIVERY_ACK' : 'SERVER_ACK',
+          label: nextSaved ? '2 Traços (Salvo na Agenda)' : '1 Traço (Pendente)',
+        };
+      })
+    );
+  }
+
+  // Marcar todos em lote como Salvos ou Pendentes
+  function handleBulkMarkAll(markAsSaved) {
+    setTestResults((prev) =>
+      prev.map((r) => ({
+        ...r,
+        isSaved: markAsSaved,
+        checks: markAsSaved ? 2 : 1,
+        status: markAsSaved ? 'DELIVERY_ACK' : 'SERVER_ACK',
+        label: markAsSaved ? '2 Traços (Salvo na Agenda)' : '1 Traço (Pendente)',
+      }))
+    );
+  }
+
+  // AÇÃO 5: Aplicar e Salvar Resultados no Painel
+  async function handleApplyVerificationResults() {
+    if (testResults.length === 0) {
+      alert('Nenhum resultado de verificação para salvar!');
+      return;
+    }
+
+    const savedList = testResults.filter((r) => r.isSaved);
+    const notSavedList = testResults.filter((r) => !r.isSaved);
+
+    const confirmMsg = `💾 Deseja atualizar o Painel de Alcance da Transmissão?\n\n` +
+      `✅ ${savedList.length} contatos confirmados com 2 TRAÇOS (Salvos)\n` +
+      `❌ ${notSavedList.length} contatos identificados com 1 TRAÇO (Não Salvos / Pendentes)\n\n` +
+      `Deseja aplicar agora?`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsApplyingResults(true);
+    try {
+      const newlySavedPhones = savedList.map((r) => normalizePhone(r.phone)).filter(Boolean);
+      const notSavedSigs = notSavedList.flatMap((r) => getPhoneSignatures(r.phone));
+
+      setSavedPhones((prev) => {
+        const filtered = prev.filter((p) => !notSavedSigs.includes(p));
+        const next = Array.from(new Set([...filtered, ...newlySavedPhones]));
+        localStorage.setItem('wa_saved_phones', JSON.stringify(next));
+        return next;
+      });
+
+      alert(`🎉 Painel Atualizado com Sucesso!\n\n✅ Salvos: ${savedList.length}\n❌ Pendentes: ${notSavedList.length}`);
+      setShowBroadcastTestModal(false);
+      setTestResults([]);
+    } catch (err) {
+      alert('Erro ao salvar resultados: ' + err.message);
+    } finally {
+      setIsApplyingResults(false);
+    }
   }
 
   function handlePauseTest() {
     testPauseRef.current = !testPauseRef.current;
     setIsTestingPaused(testPauseRef.current);
-    addLog(testPauseRef.current ? '⏸️ Teste pausado pelo usuário.' : '▶️ Teste retomado.', 'delay');
+    addLog(testPauseRef.current ? '⏸️ Verificação pausada pelo usuário.' : '▶️ Verificação retomada.', 'delay');
   }
 
   function handleStopTest() {
-    if (window.confirm('Deseja realmente parar o teste de transmissão? Os contatos já testados permanecerão salvos.')) {
+    if (window.confirm('Deseja realmente parar a verificação? Os contatos já verificados serão preservados.')) {
       testAbortRef.current = true;
       testPauseRef.current = false;
       setIsTestingPaused(false);
@@ -1685,18 +1782,18 @@ export function EvolutionBotTab({ users, reload }) {
         </div>
       )}
 
-      {/* Modal Completo do Sistema de Teste e Validação de Transmissão */}
+      {/* Modal do Verificador de Transmissão (1 Traço vs 2 Traços) */}
       {showBroadcastTestModal && (
         <div className="modal-bg" style={{ zIndex: 12000 }}>
-          <div className="modal" style={{ maxWidth: 540, maxHeight: '92vh', display: 'flex', flexDirection: 'column', padding: 22, gap: 14 }}>
-            {/* Header */}
+          <div className="modal" style={{ maxWidth: 580, maxHeight: '92vh', display: 'flex', flexDirection: 'column', padding: 22, gap: 14 }}>
+            {/* Header do Modal */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{
-                  width: 40,
-                  height: 40,
+                  width: 42,
+                  height: 42,
                   borderRadius: 12,
-                  background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.2), rgba(0, 180, 216, 0.2))',
+                  background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.25), rgba(0, 180, 216, 0.25))',
                   border: '1px solid var(--teal)',
                   display: 'flex',
                   alignItems: 'center',
@@ -1704,14 +1801,14 @@ export function EvolutionBotTab({ users, reload }) {
                   fontSize: 20,
                   flexShrink: 0
                 }}>
-                  🧪
+                  ✓✓
                 </div>
                 <div>
                   <h3 style={{ fontSize: 16, fontWeight: 900, color: '#fff', margin: 0, lineHeight: 1.2 }}>
-                    Teste de Transmissão & Descoberta de Salvos
+                    Verificador de Transmissão (1 vs 2 Traços)
                   </h3>
                   <div style={{ fontSize: 11.5, color: 'var(--ink2)', marginTop: 3 }}>
-                    Descubra quem recebe mensagens e atualize o painel automaticamente
+                    <span style={{ color: '#25D366', fontWeight: 800 }}>✓✓ 2 Traços</span> = Salvo na Agenda · <span style={{ color: '#FF8A65', fontWeight: 800 }}>✓ 1 Traço</span> = Não Salvo
                   </div>
                 </div>
               </div>
@@ -1736,6 +1833,7 @@ export function EvolutionBotTab({ users, reload }) {
                     padding: 0,
                     margin: 0
                   }}
+                  title="Fechar"
                 >
                   ✕
                 </button>
@@ -1745,459 +1843,901 @@ export function EvolutionBotTab({ users, reload }) {
             {/* Conteúdo com Rolagem */}
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, paddingRight: 2 }}>
               
-              {/* Card Explicativo Dinâmico de Como Funciona o Teste */}
-              <div style={{
-                background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.12), rgba(15, 23, 42, 0.7))',
-                border: '1px solid rgba(0, 229, 155, 0.35)',
-                borderRadius: 12,
-                padding: '12px 14px',
-                fontSize: 12,
-                color: '#fff',
-                lineHeight: 1.5
-              }}>
-                <strong style={{ color: 'var(--teal)' }}>🎯 Verificação Real na Agenda do WhatsApp Conectado:</strong><br />
-                {testTargetType === 'quick_test' && (
-                  <span>
-                    Ao clicar em <strong>🔍 Verificar no WhatsApp</strong>, o sistema consulta a lista de contatos do seu WhatsApp conectado para verificar se os <strong>{selectedQuickTestUserIds.length} contatos selecionados</strong> estão salvos na agenda/transmissão com 100% de exatidão (sem mandar mensagem).
-                  </span>
-                )}
-                {testTargetType === 'batch' && (
-                  <span>
-                    Ao clicar em <strong>🔍 Verificar no WhatsApp</strong>, o sistema cruza os 100 contatos do <strong>Lote {selectedTestBatch}</strong> contra os contatos do seu WhatsApp e atualiza o painel na hora.
-                  </span>
-                )}
-                {testTargetType === 'all_pending' && (
-                  <span>
-                    Ao clicar em <strong>🔍 Verificar no WhatsApp</strong>, o sistema checa todos os <strong>{withoutNumberUsers.length} contatos pendentes</strong> na agenda do WhatsApp.
-                  </span>
-                )}
-              </div>
-
-              {/* 1. Seleção do Público Alvo do Teste */}
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  1. Selecione o Grupo para Testar
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginTop: 6 }}>
-                  {/* Opção A: Teste Rápido */}
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={isTestingRunning}
-                    style={{
-                      margin: 0,
-                      padding: '10px 8px',
-                      fontSize: 11.5,
-                      borderRadius: 10,
-                      textAlign: 'center',
-                      background: testTargetType === 'quick_test' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                      color: testTargetType === 'quick_test' ? '#fff' : 'var(--ink2)',
-                      border: '1px solid ' + (testTargetType === 'quick_test' ? 'var(--teal)' : 'var(--line)'),
-                      cursor: isTestingRunning ? 'not-allowed' : 'pointer'
-                    }}
-                    onClick={() => setTestTargetType('quick_test')}
-                  >
-                    <div style={{ fontSize: 16 }}>⚡</div>
-                    <div style={{ fontWeight: 800, marginTop: 2 }}>Teste Rápido</div>
-                    <div style={{ fontSize: 10, opacity: 0.7 }}>1 a 5 contatos</div>
-                  </button>
-
-                  {/* Opção B: Por Lote de Transmissão */}
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={isTestingRunning}
-                    style={{
-                      margin: 0,
-                      padding: '10px 8px',
-                      fontSize: 11.5,
-                      borderRadius: 10,
-                      textAlign: 'center',
-                      background: testTargetType === 'batch' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                      color: testTargetType === 'batch' ? '#fff' : 'var(--ink2)',
-                      border: '1px solid ' + (testTargetType === 'batch' ? 'var(--teal)' : 'var(--line)'),
-                      cursor: isTestingRunning ? 'not-allowed' : 'pointer'
-                    }}
-                    onClick={() => setTestTargetType('batch')}
-                  >
-                    <div style={{ fontSize: 16 }}>📋</div>
-                    <div style={{ fontWeight: 800, marginTop: 2 }}>Por Lote (100)</div>
-                    <div style={{ fontSize: 10, opacity: 0.7 }}>Escolha T1, T2, T3...</div>
-                  </button>
-
-                  {/* Opção C: Todos os Pendentes */}
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={isTestingRunning}
-                    style={{
-                      margin: 0,
-                      padding: '10px 8px',
-                      fontSize: 11.5,
-                      borderRadius: 10,
-                      textAlign: 'center',
-                      background: testTargetType === 'all_pending' ? 'rgba(240, 107, 76, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                      color: testTargetType === 'all_pending' ? '#fff' : 'var(--ink2)',
-                      border: '1px solid ' + (testTargetType === 'all_pending' ? '#FF8A65' : 'var(--line)'),
-                      cursor: isTestingRunning ? 'not-allowed' : 'pointer'
-                    }}
-                    onClick={() => setTestTargetType('all_pending')}
-                  >
-                    <div style={{ fontSize: 16 }}>⏱</div>
-                    <div style={{ fontWeight: 800, marginTop: 2 }}>Pendentes</div>
-                    <div style={{ fontSize: 10, opacity: 0.7 }}>{withoutNumberUsers.length} contatos</div>
-                  </button>
-                </div>
-
-                {/* Se escolheu Teste Rápido: Seleção manual de 1 a 5 contatos */}
-                {testTargetType === 'quick_test' && (
-                  <div style={{
-                    marginTop: 10,
-                    background: 'rgba(255, 255, 255, 0.03)',
-                    border: '1px solid var(--line)',
-                    borderRadius: 12,
-                    padding: 12,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 10
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span>🎯</span> Contatos Selecionados ({selectedQuickTestUserIds.length}/5)
-                      </span>
-                      <span style={{ fontSize: 11, color: 'var(--ink3)' }}>Mínimo: 1 · Máximo: 5</span>
+              {/* VISTA 1: EXIBIÇÃO DETALHADA DOS RESULTADOS (SIM vs NÃO) */}
+              {testResults.length > 0 && !isTestingRunning ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* Cards de Resumo */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div style={{
+                      background: 'linear-gradient(135deg, rgba(37, 211, 102, 0.15) 0%, rgba(15, 23, 42, 0.8) 100%)',
+                      border: '1px solid rgba(37, 211, 102, 0.4)',
+                      borderRadius: 12,
+                      padding: '12px 14px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: '#25D366', textTransform: 'uppercase' }}>
+                          ✅ Salvos (2 Traços)
+                        </span>
+                        <span style={{ fontSize: 11, background: 'rgba(37,211,102,0.2)', color: '#25D366', padding: '1px 7px', borderRadius: 10, fontWeight: 800 }}>
+                          ✓✓
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 24, fontWeight: 900, color: '#25D366', marginTop: 4 }}>
+                        {testResults.filter((r) => r.isSaved).length}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 2 }}>
+                        Contatos com o número salvo na agenda
+                      </div>
                     </div>
 
-                    {/* Chips dos Contatos Selecionados */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 32, alignItems: 'center' }}>
-                      {selectedQuickTestUserIds.length === 0 ? (
-                        <span style={{ fontSize: 11.5, color: '#FF8A65', fontStyle: 'italic' }}>
-                          Nenhum contato selecionado. Digite no campo abaixo para pesquisar e adicionar de 1 a 5 contatos.
+                    <div style={{
+                      background: 'linear-gradient(135deg, rgba(240, 107, 76, 0.15) 0%, rgba(15, 23, 42, 0.8) 100%)',
+                      border: '1px solid rgba(240, 107, 76, 0.4)',
+                      borderRadius: 12,
+                      padding: '12px 14px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: '#FF8A65', textTransform: 'uppercase' }}>
+                          ❌ Não Salvos (1 Traço)
                         </span>
-                      ) : (
-                        selectedQuickTestUserIds.map((id) => {
-                          const u = validUsers.find((user) => user.id === id);
-                          if (!u) return null;
+                        <span style={{ fontSize: 11, background: 'rgba(240,107,76,0.2)', color: '#FF8A65', padding: '1px 7px', borderRadius: 10, fontWeight: 800 }}>
+                          ✓
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 24, fontWeight: 900, color: '#FF8A65', marginTop: 4 }}>
+                        {testResults.filter((r) => !r.isSaved).length}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 2 }}>
+                        Não receberam / apenas servidor
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Abas para Alternar Visualização: Salvos vs Não Salvos vs Todos */}
+                  <div style={{ display: 'flex', gap: 6, background: 'rgba(0,0,0,0.3)', padding: 4, borderRadius: 10, border: '1px solid var(--line)' }}>
+                    <button
+                      type="button"
+                      style={{
+                        flex: 1,
+                        padding: '7px 8px',
+                        fontSize: 11.5,
+                        fontWeight: 800,
+                        borderRadius: 8,
+                        background: activeResultTab === 'all' ? 'rgba(255,255,255,0.1)' : 'transparent',
+                        color: activeResultTab === 'all' ? '#fff' : 'var(--ink3)',
+                        border: 'none',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => setActiveResultTab('all')}
+                    >
+                      Todos ({testResults.length})
+                    </button>
+
+                    <button
+                      type="button"
+                      style={{
+                        flex: 1,
+                        padding: '7px 8px',
+                        fontSize: 11.5,
+                        fontWeight: 800,
+                        borderRadius: 8,
+                        background: activeResultTab === 'saved' ? 'rgba(37,211,102,0.2)' : 'transparent',
+                        color: activeResultTab === 'saved' ? '#25D366' : 'var(--ink3)',
+                        border: 'none',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => setActiveResultTab('saved')}
+                    >
+                      ✓✓ Salvos ({testResults.filter((r) => r.isSaved).length})
+                    </button>
+
+                    <button
+                      type="button"
+                      style={{
+                        flex: 1,
+                        padding: '7px 8px',
+                        fontSize: 11.5,
+                        fontWeight: 800,
+                        borderRadius: 8,
+                        background: activeResultTab === 'not_saved' ? 'rgba(240,107,76,0.2)' : 'transparent',
+                        color: activeResultTab === 'not_saved' ? '#FF8A65' : 'var(--ink3)',
+                        border: 'none',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => setActiveResultTab('not_saved')}
+                    >
+                      ✓ Não Salvos ({testResults.filter((r) => !r.isSaved).length})
+                    </button>
+                  </div>
+
+                    {/* Ações de Marcação em Lote */}
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{
+                          padding: '5px 10px',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          borderRadius: 6,
+                          background: 'rgba(37, 211, 102, 0.15)',
+                          color: '#25D366',
+                          border: '1px solid rgba(37, 211, 102, 0.35)',
+                          margin: 0,
+                          cursor: 'pointer'
+                        }}
+                        onClick={() => handleBulkMarkAll(true)}
+                      >
+                        ✓✓ Marcar Todos como Salvos
+                      </button>
+                      <button
+                        type="button"
+                        className="btn"
+                        style={{
+                          padding: '5px 10px',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          borderRadius: 6,
+                          background: 'rgba(240, 107, 76, 0.15)',
+                          color: '#FF8A65',
+                          border: '1px solid rgba(240, 107, 76, 0.35)',
+                          margin: 0,
+                          cursor: 'pointer'
+                        }}
+                        onClick={() => handleBulkMarkAll(false)}
+                      >
+                        ✕ Desmarcar Todos (Pendentes)
+                      </button>
+                    </div>
+
+                    <input
+                      type="text"
+                      placeholder="🔍 Filtrar por nome, telefone ou cidade..."
+                      value={resultSearch}
+                      onChange={(e) => setResultSearch(e.target.value)}
+                      style={{
+                        padding: '7px 10px',
+                        fontSize: 12,
+                        borderRadius: 8,
+                        background: 'rgba(0,0,0,0.3)',
+                        border: '1px solid var(--line)',
+                        color: '#fff',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+
+                    {/* Lista de Contatos Verificados */}
+                    <div style={{
+                      maxHeight: 270,
+                      overflowY: 'auto',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                      paddingRight: 2
+                    }}>
+                      {testResults
+                        .filter((r) => {
+                          if (activeResultTab === 'saved') return r.isSaved;
+                          if (activeResultTab === 'not_saved') return !r.isSaved;
+                          return true;
+                        })
+                        .filter((r) => {
+                          const q = resultSearch.toLowerCase().trim();
+                          if (!q) return true;
                           return (
-                            <span
-                              key={u.id}
-                              style={{
-                                fontSize: 11.5,
-                                fontWeight: 700,
-                                background: 'rgba(0, 229, 155, 0.15)',
-                                color: '#fff',
-                                border: '1px solid var(--teal)',
-                                padding: '4px 10px',
-                                borderRadius: 20,
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 6
-                              }}
-                            >
-                              👤 {(u.name || 'Sem nome').trim()} ({u.whatsapp || u.phone})
+                            (r.name || '').toLowerCase().includes(q) ||
+                            (r.phone || '').includes(q) ||
+                            (r.city || '').toLowerCase().includes(q)
+                          );
+                        })
+                        .map((r) => (
+                          <div
+                            key={r.id}
+                            style={{
+                              background: r.isSaved ? 'rgba(37, 211, 102, 0.05)' : 'rgba(240, 107, 76, 0.05)',
+                              border: '1px solid ' + (r.isSaved ? 'rgba(37, 211, 102, 0.25)' : 'rgba(240, 107, 76, 0.25)'),
+                              borderRadius: 10,
+                              padding: '9px 12px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 10
+                            }}
+                          >
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontSize: 13, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {r.name}
+                              </div>
+                              <div style={{ fontSize: 11, color: 'var(--ink2)', display: 'flex', gap: 8, marginTop: 2 }}>
+                                <span>📱 {r.phone}</span>
+                                {r.city && <span>📍 {r.city}</span>}
+                              </div>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {/* Link direto para abrir no WhatsApp */}
+                              {r.phone && (
+                                <a
+                                  href={`https://wa.me/${normalizePhone(r.phone)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    background: 'rgba(37, 211, 102, 0.12)',
+                                    border: '1px solid rgba(37, 211, 102, 0.3)',
+                                    color: '#25D366',
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    padding: '4px 8px',
+                                    borderRadius: 6,
+                                    textDecoration: 'none',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3
+                                  }}
+                                  title="Abrir WhatsApp deste contato"
+                                >
+                                  💬 WA
+                                </a>
+                              )}
+
+                              {/* Badge do Traço */}
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 800,
+                                  padding: '3px 9px',
+                                  borderRadius: 6,
+                                  background: r.isSaved ? 'rgba(37, 211, 102, 0.2)' : 'rgba(240, 107, 76, 0.2)',
+                                  color: r.isSaved ? '#25D366' : '#FF8A65',
+                                  border: '1px solid ' + (r.isSaved ? 'rgba(37, 211, 102, 0.4)' : 'rgba(240, 107, 76, 0.4)'),
+                                  whiteSpace: 'nowrap'
+                                }}
+                              >
+                                {r.isSaved ? '✓✓ 2 Traços (Salvo)' : '✓ 1 Traço (Não Salvo)'}
+                              </span>
+
+                              {/* Alternar Manualmente */}
                               <button
                                 type="button"
                                 style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  color: '#FF8A65',
-                                  cursor: isTestingRunning ? 'not-allowed' : 'pointer',
-                                  fontSize: 12,
-                                  padding: 0,
-                                  marginLeft: 2,
-                                  lineHeight: 1
+                                  background: 'rgba(255,255,255,0.06)',
+                                  border: '1px solid var(--line)',
+                                  color: 'var(--ink2)',
+                                  fontSize: 10.5,
+                                  padding: '4px 8px',
+                                  borderRadius: 6,
+                                  cursor: 'pointer'
                                 }}
-                                onClick={() => setSelectedQuickTestUserIds((prev) => prev.filter((item) => item !== u.id))}
-                                disabled={isTestingRunning}
-                                title="Remover contato"
+                                onClick={() => toggleResultStatus(r.id)}
+                                title="Clique para alternar se este contato tem ou não o número salvo"
                               >
-                                ✕
+                                Alternar
                               </button>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+
+                    {/* Ações para Salvar / Aplicar Resultados no Banco */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6, paddingTop: 10, borderTop: '1px solid var(--line)' }}>
+                      <button
+                        type="button"
+                        className="btn btn-teal"
+                        disabled={isApplyingResults}
+                        style={{
+                          width: '100%',
+                          padding: '12px 16px',
+                          fontSize: 13,
+                          fontWeight: 900,
+                          margin: 0,
+                          borderRadius: 10,
+                          background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
+                          color: '#081018',
+                          cursor: isApplyingResults ? 'not-allowed' : 'pointer'
+                        }}
+                        onClick={handleApplyVerificationResults}
+                      >
+                        {isApplyingResults
+                          ? '⏳ Atualizando Painel...'
+                          : `💾 Salvar e Atualizar Painel (${testResults.filter((r) => r.isSaved).length} Salvos, ${testResults.filter((r) => !r.isSaved).length} Pendentes)`}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        style={{ padding: '8px 12px', fontSize: 12, margin: 0 }}
+                        onClick={() => setTestResults([])}
+                      >
+                        🔄 Voltar às Opções de Verificação
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* VISTA 2: CONFIGURAÇÃO DO TESTE E VERIFICAÇÃO */
+                  <>
+                    {/* Card Explicativo Dinâmico de 1 vs 2 Traços */}
+                    <div style={{
+                      background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.12), rgba(15, 23, 42, 0.7))',
+                      border: '1px solid rgba(0, 229, 155, 0.35)',
+                      borderRadius: 12,
+                      padding: '12px 14px',
+                      fontSize: 12,
+                      color: '#fff',
+                      lineHeight: 1.5
+                    }}>
+                      <strong style={{ color: 'var(--teal)' }}>🎯 Regra Oficial do WhatsApp para Transmissão:</strong><br />
+                      <span>
+                        • <strong style={{ color: '#25D366' }}>2 Traços (✓✓)</strong>: A mensagem da transmissão foi entregue. <strong>Confirma que o contato tem seu número salvo na agenda!</strong><br />
+                        • <strong style={{ color: '#FF8A65' }}>1 Traço (✓)</strong>: A mensagem não chegou. <strong>Indica que ele NÃO tem seu número salvo</strong>.
+                      </span>
+                    </div>
+
+                    {/* 1. Seleção do Público Alvo do Teste */}
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        1. Selecione o Grupo para Verificar
+                      </label>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginTop: 6 }}>
+                        {/* Opção A: Teste Rápido */}
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={isTestingRunning}
+                          style={{
+                            margin: 0,
+                            padding: '10px 8px',
+                            fontSize: 11.5,
+                            borderRadius: 10,
+                            textAlign: 'center',
+                            background: testTargetType === 'quick_test' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                            color: testTargetType === 'quick_test' ? '#fff' : 'var(--ink2)',
+                            border: '1px solid ' + (testTargetType === 'quick_test' ? 'var(--teal)' : 'var(--line)'),
+                            cursor: isTestingRunning ? 'not-allowed' : 'pointer'
+                          }}
+                          onClick={() => setTestTargetType('quick_test')}
+                        >
+                          <div style={{ fontSize: 16 }}>⚡</div>
+                          <div style={{ fontWeight: 800, marginTop: 2 }}>Teste Rápido</div>
+                          <div style={{ fontSize: 10, opacity: 0.7 }}>1 a 5 contatos</div>
+                        </button>
+
+                        {/* Opção B: Por Lote de Transmissão */}
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={isTestingRunning}
+                          style={{
+                            margin: 0,
+                            padding: '10px 8px',
+                            fontSize: 11.5,
+                            borderRadius: 10,
+                            textAlign: 'center',
+                            background: testTargetType === 'batch' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                            color: testTargetType === 'batch' ? '#fff' : 'var(--ink2)',
+                            border: '1px solid ' + (testTargetType === 'batch' ? 'var(--teal)' : 'var(--line)'),
+                            cursor: isTestingRunning ? 'not-allowed' : 'pointer'
+                          }}
+                          onClick={() => setTestTargetType('batch')}
+                        >
+                          <div style={{ fontSize: 16 }}>📋</div>
+                          <div style={{ fontWeight: 800, marginTop: 2 }}>Por Lote (100)</div>
+                          <div style={{ fontSize: 10, opacity: 0.7 }}>Lote T1, T2, T3...</div>
+                        </button>
+
+                        {/* Opção C: Todos os Pendentes */}
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={isTestingRunning}
+                          style={{
+                            margin: 0,
+                            padding: '10px 8px',
+                            fontSize: 11.5,
+                            borderRadius: 10,
+                            textAlign: 'center',
+                            background: testTargetType === 'all_pending' ? 'rgba(240, 107, 76, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                            color: testTargetType === 'all_pending' ? '#fff' : 'var(--ink2)',
+                            border: '1px solid ' + (testTargetType === 'all_pending' ? '#FF8A65' : 'var(--line)'),
+                            cursor: isTestingRunning ? 'not-allowed' : 'pointer'
+                          }}
+                          onClick={() => setTestTargetType('all_pending')}
+                        >
+                          <div style={{ fontSize: 16 }}>⏱</div>
+                          <div style={{ fontWeight: 800, marginTop: 2 }}>Pendentes</div>
+                          <div style={{ fontSize: 10, opacity: 0.7 }}>{withoutNumberUsers.length} contatos</div>
+                        </button>
+                      </div>
+
+                      {/* Se escolheu Teste Rápido: Seleção manual de 1 a 5 contatos */}
+                      {testTargetType === 'quick_test' && (
+                        <div style={{
+                          marginTop: 10,
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          border: '1px solid var(--line)',
+                          borderRadius: 12,
+                          padding: 12,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 10
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span>🎯</span> Contatos do Teste Rápido ({selectedQuickTestUserIds.length}/5)
                             </span>
-                          );
-                        })
+                            <span style={{ fontSize: 11, color: 'var(--ink3)' }}>Mín: 1 · Máx: 5</span>
+                          </div>
+
+                          {/* Chips dos Contatos Selecionados */}
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 32, alignItems: 'center' }}>
+                            {selectedQuickTestUserIds.length === 0 ? (
+                              <span style={{ fontSize: 11.5, color: '#FF8A65', fontStyle: 'italic' }}>
+                                Nenhum contato selecionado. Pesquise abaixo para adicionar seu próprio número ou contatos de teste.
+                              </span>
+                            ) : (
+                              selectedQuickTestUserIds.map((id) => {
+                                const u = validUsers.find((user) => user.id === id);
+                                if (!u) return null;
+                                return (
+                                  <span
+                                    key={u.id}
+                                    style={{
+                                      fontSize: 11.5,
+                                      fontWeight: 700,
+                                      background: 'rgba(0, 229, 155, 0.15)',
+                                      color: '#fff',
+                                      border: '1px solid var(--teal)',
+                                      padding: '4px 10px',
+                                      borderRadius: 20,
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 6
+                                    }}
+                                  >
+                                    👤 {(u.name || 'Sem nome').trim()} ({u.whatsapp || u.phone})
+                                    <button
+                                      type="button"
+                                      style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: '#FF8A65',
+                                        cursor: isTestingRunning ? 'not-allowed' : 'pointer',
+                                        fontSize: 12,
+                                        padding: 0,
+                                        marginLeft: 2,
+                                        lineHeight: 1
+                                      }}
+                                      onClick={() => setSelectedQuickTestUserIds((prev) => prev.filter((item) => item !== u.id))}
+                                      disabled={isTestingRunning}
+                                    >
+                                      ✕
+                                    </button>
+                                  </span>
+                                );
+                              })
+                            )}
+                          </div>
+
+                          {/* Campo de Busca para Adicionar */}
+                          {!isTestingRunning && (
+                            <div>
+                              <input
+                                type="text"
+                                placeholder={selectedQuickTestUserIds.length >= 5 ? "Limite de 5 contatos atingido" : "🔍 Digite nome ou telefone para adicionar ao teste..."}
+                                value={quickTestSearch}
+                                disabled={selectedQuickTestUserIds.length >= 5}
+                                onChange={(e) => setQuickTestSearch(e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '7px 10px',
+                                  fontSize: 12,
+                                  borderRadius: 8,
+                                  background: 'rgba(0,0,0,0.3)',
+                                  border: '1px solid var(--line)',
+                                  color: '#fff',
+                                  boxSizing: 'border-box'
+                                }}
+                              />
+
+                              {quickTestSearch.trim().length > 0 && selectedQuickTestUserIds.length < 5 && (
+                                <div style={{
+                                  maxHeight: 120,
+                                  overflowY: 'auto',
+                                  background: '#0B132B',
+                                  border: '1px solid var(--line)',
+                                  borderRadius: 8,
+                                  marginTop: 4,
+                                  display: 'flex',
+                                  flexDirection: 'column'
+                                }}>
+                                  {validUsers
+                                    .filter((u) => !selectedQuickTestUserIds.includes(u.id))
+                                    .filter((u) => {
+                                      const q = quickTestSearch.toLowerCase();
+                                      return (u.name || '').toLowerCase().includes(q) || (u.whatsapp || u.phone || '').includes(q);
+                                    })
+                                    .slice(0, 8)
+                                    .map((u) => (
+                                      <div
+                                        key={u.id}
+                                        style={{
+                                          padding: '6px 10px',
+                                          fontSize: 11.5,
+                                          color: '#fff',
+                                          cursor: 'pointer',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'space-between',
+                                          borderBottom: '1px solid rgba(255,255,255,0.05)'
+                                        }}
+                                        onClick={() => {
+                                          if (selectedQuickTestUserIds.length < 5) {
+                                            setSelectedQuickTestUserIds((prev) => [...prev, u.id]);
+                                            setQuickTestSearch('');
+                                          }
+                                        }}
+                                      >
+                                        <span><strong>{u.name}</strong> ({u.whatsapp || u.phone})</span>
+                                        <span style={{ color: 'var(--teal)', fontSize: 11, fontWeight: 700 }}>+ Adicionar</span>
+                                      </div>
+                                    ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Se escolheu Lote específico */}
+                      {testTargetType === 'batch' && (
+                        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: 10, border: '1px solid var(--line)' }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>Selecionar Lote:</span>
+                            <select
+                              value={selectedTestBatch}
+                              onChange={(e) => setSelectedTestBatch(e.target.value)}
+                              disabled={isTestingRunning}
+                              style={{
+                                flex: 1,
+                                padding: '6px 10px',
+                                borderRadius: 8,
+                                background: 'rgba(0,0,0,0.4)',
+                                border: '1px solid var(--teal)',
+                                color: '#fff',
+                                fontSize: 12.5,
+                                fontWeight: 700
+                              }}
+                            >
+                              {batches.map((b) => (
+                                <option key={b.id} value={b.id} style={{ background: '#0F172A', color: '#fff' }}>
+                                  {b.id} - {b.name} ({b.count} contatos #{b.startNumber} a #{b.endNumber})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--teal)', paddingLeft: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <span>🛡️</span>
+                            <span>O robô analisará <strong>apenas os contatos do {selectedTestBatch}</strong>. Suas outras listas de transmissão e conversas permanecem intocadas.</span>
+                          </div>
+                        </div>
                       )}
                     </div>
 
-                    {/* Campo de Busca para Adicionar */}
+                    {/* 2. Escolha do Método de Verificação */}
                     {!isTestingRunning && (
                       <div>
-                        <input
-                          type="text"
-                          placeholder={selectedQuickTestUserIds.length >= 5 ? "Limite máximo de 5 contatos atingido" : "🔍 Digite o nome ou telefone para adicionar..."}
-                          value={quickTestSearch}
-                          disabled={selectedQuickTestUserIds.length >= 5}
-                          onChange={(e) => setQuickTestSearch(e.target.value)}
-                          style={{
-                            width: '100%',
-                            padding: '7px 10px',
-                            fontSize: 12,
-                            borderRadius: 8,
-                            background: 'rgba(0,0,0,0.3)',
-                            border: '1px solid var(--line)',
-                            color: '#fff',
-                            boxSizing: 'border-box',
-                            opacity: selectedQuickTestUserIds.length >= 5 ? 0.5 : 1
-                          }}
-                        />
+                        <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          2. Como Deseja Verificar os Traços?
+                        </label>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginTop: 6 }}>
+                          <button
+                            type="button"
+                            className="btn"
+                            style={{
+                              margin: 0,
+                              padding: '10px 8px',
+                              fontSize: 11.5,
+                              borderRadius: 10,
+                              textAlign: 'center',
+                              background: verificationMethod === 'paste' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                              color: verificationMethod === 'paste' ? '#fff' : 'var(--ink2)',
+                              border: '1px solid ' + (verificationMethod === 'paste' ? 'var(--teal)' : 'var(--line)'),
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => setVerificationMethod('paste')}
+                          >
+                            <div style={{ fontSize: 16 }}>📋</div>
+                            <div style={{ fontWeight: 800, marginTop: 2 }}>Conferência Rápida</div>
+                            <div style={{ fontSize: 10, opacity: 0.7 }}>Colar info ou marcar lista</div>
+                          </button>
 
-                        {/* Resultados da Busca */}
-                        {quickTestSearch.trim().length > 0 && selectedQuickTestUserIds.length < 5 && (
+                          <button
+                            type="button"
+                            className="btn"
+                            style={{
+                              margin: 0,
+                              padding: '10px 8px',
+                              fontSize: 11.5,
+                              borderRadius: 10,
+                              textAlign: 'center',
+                              background: verificationMethod === 'check_status' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                              color: verificationMethod === 'check_status' ? '#fff' : 'var(--ink2)',
+                              border: '1px solid ' + (verificationMethod === 'check_status' ? 'var(--teal)' : 'var(--line)'),
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => setVerificationMethod('check_status')}
+                          >
+                            <div style={{ fontSize: 16 }}>🔄</div>
+                            <div style={{ fontWeight: 800, marginTop: 2 }}>Sincronizar WhatsApp</div>
+                            <div style={{ fontSize: 10, opacity: 0.7 }}>Cruza contatos conectados</div>
+                          </button>
+
+                          <button
+                            type="button"
+                            className="btn"
+                            style={{
+                              margin: 0,
+                              padding: '10px 8px',
+                              fontSize: 11.5,
+                              borderRadius: 10,
+                              textAlign: 'center',
+                              background: verificationMethod === 'send_and_verify' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                              color: verificationMethod === 'send_and_verify' ? '#fff' : 'var(--ink2)',
+                              border: '1px solid ' + (verificationMethod === 'send_and_verify' ? 'var(--teal)' : 'var(--line)'),
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => setVerificationMethod('send_and_verify')}
+                          >
+                            <div style={{ fontSize: 16 }}>🚀</div>
+                            <div style={{ fontWeight: 800, marginTop: 2 }}>Disparar & Checar</div>
+                            <div style={{ fontSize: 10, opacity: 0.7 }}>Envia mensagem de teste</div>
+                          </button>
+                        </div>
+
+                        {/* Conteúdo do Método Selecionado */}
+                        {verificationMethod === 'paste' && (
+                          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink2)' }}>
+                              (Opcional) Cole aqui os nomes ou números copiados de "Dados da Mensagem" do WhatsApp:
+                            </label>
+                            <textarea
+                              rows={3}
+                              placeholder="Cole aqui o texto copiado de quem recebeu a transmissão ou clique em 'Abrir Lista' para marcar diretamente..."
+                              value={pastedMessageData}
+                              onChange={(e) => setPastedMessageData(e.target.value)}
+                              style={{
+                                width: '100%',
+                                padding: '8px 10px',
+                                fontSize: 12,
+                                borderRadius: 8,
+                                background: 'rgba(0,0,0,0.3)',
+                                border: '1px solid var(--line)',
+                                color: '#fff',
+                                boxSizing: 'border-box'
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {verificationMethod === 'check_status' && (
                           <div style={{
-                            maxHeight: 130,
-                            overflowY: 'auto',
-                            background: '#0B132B',
-                            border: '1px solid var(--line)',
+                            marginTop: 10,
+                            padding: '10px 12px',
+                            background: 'rgba(0, 229, 155, 0.06)',
+                            border: '1px solid rgba(0, 229, 155, 0.25)',
                             borderRadius: 8,
-                            marginTop: 4,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 2
+                            fontSize: 11.5,
+                            color: 'var(--ink2)',
+                            lineHeight: 1.4
                           }}>
-                            {validUsers
-                              .filter((u) => !selectedQuickTestUserIds.includes(u.id))
-                              .filter((u) => {
-                                const q = quickTestSearch.toLowerCase();
-                                return (u.name || '').toLowerCase().includes(q) || (u.whatsapp || u.phone || '').includes(q);
-                              })
-                              .slice(0, 10)
-                              .map((u) => (
-                                <div
-                                  key={u.id}
-                                  style={{
-                                    padding: '6px 10px',
-                                    fontSize: 11.5,
-                                    color: '#fff',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    borderBottom: '1px solid rgba(255,255,255,0.05)'
-                                  }}
-                                  onClick={() => {
-                                    if (selectedQuickTestUserIds.length < 5) {
-                                      setSelectedQuickTestUserIds((prev) => [...prev, u.id]);
-                                      setQuickTestSearch('');
-                                    }
-                                  }}
-                                >
-                                  <span><strong>{u.name}</strong> ({u.whatsapp || u.phone})</span>
-                                  <span style={{ color: 'var(--teal)', fontSize: 11, fontWeight: 700 }}>+ Adicionar</span>
-                                </div>
-                              ))}
+                            ℹ️ <strong>Sincronização Direta:</strong> O sistema consultará a lista de contatos do WhatsApp conectado pelo QR Code e cruzará com os números dos cadastros.
+                          </div>
+                        )}
+
+                        {verificationMethod === 'send_and_verify' && (
+                          <div style={{ marginTop: 10 }}>
+                            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink2)', display: 'block', marginBottom: 4 }}>
+                              Texto da Mensagem de Teste (Tags: {'{primeiro_nome}'}, {'{nome}'}, {'{cidade}'}):
+                            </label>
+                            <textarea
+                              rows={3}
+                              value={testMessageText}
+                              onChange={(e) => setTestMessageText(e.target.value)}
+                              style={{
+                                width: '100%',
+                                padding: '8px 10px',
+                                fontSize: 12,
+                                borderRadius: 8,
+                                background: 'rgba(0,0,0,0.3)',
+                                border: '1px solid var(--line)',
+                                color: '#fff',
+                                boxSizing: 'border-box'
+                              }}
+                            />
                           </div>
                         )}
                       </div>
                     )}
-                  </div>
-                )}
 
-                {/* Se escolheu Lote específico */}
-                {testTargetType === 'batch' && (
-                  <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: 10, border: '1px solid var(--line)' }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>Selecionar Lote:</span>
-                    <select
-                      value={selectedTestBatch}
-                      onChange={(e) => setSelectedTestBatch(e.target.value)}
-                      disabled={isTestingRunning}
-                      style={{
-                        flex: 1,
-                        padding: '6px 10px',
-                        borderRadius: 8,
-                        background: 'rgba(0,0,0,0.4)',
+                    {/* Se a verificação estiver rodando */}
+                    {isTestingRunning && (
+                      <div style={{
+                        background: 'linear-gradient(180deg, rgba(0, 229, 155, 0.08) 0%, rgba(15, 23, 42, 0.8) 100%)',
+                        borderRadius: 14,
                         border: '1px solid var(--teal)',
-                        color: '#fff',
-                        fontSize: 12.5,
-                        fontWeight: 700
-                      }}
-                    >
-                      {batches.map((b) => (
-                        <option key={b.id} value={b.id} style={{ background: '#0F172A', color: '#fff' }}>
-                          {b.id} - {b.name} ({b.count} contatos #{b.startNumber} a #{b.endNumber})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                        padding: '14px 16px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 12
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 16 }}>⏳</span>
+                            <span style={{ fontSize: 13, fontWeight: 900, color: '#fff' }}>
+                              {isTestingPaused ? '⏸️ Verificação Pausada' : '🔍 Analisando Contatos no WhatsApp...'}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: 900, color: 'var(--teal)' }}>
+                            {testProgress.current} de {testProgress.total} ({testProgress.total > 0 ? Math.round((testProgress.current / testProgress.total) * 100) : 0}%)
+                          </span>
+                        </div>
+
+                        <div style={{ width: '100%', height: 7, background: 'rgba(255,255,255,0.08)', borderRadius: 4, overflow: 'hidden' }}>
+                          <div style={{
+                            width: `${testProgress.total > 0 ? (testProgress.current / testProgress.total) * 100 : 0}%`,
+                            height: '100%',
+                            background: 'linear-gradient(90deg, #25D366, var(--teal))',
+                            transition: 'width 0.3s ease'
+                          }} />
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div style={{ background: 'rgba(37,211,102,0.12)', border: '1px solid rgba(37,211,102,0.3)', borderRadius: 8, padding: '6px 10px', textAlign: 'center' }}>
+                            <span style={{ fontSize: 10, color: '#25D366', fontWeight: 800, textTransform: 'uppercase' }}>✓✓ Salvos</span>
+                            <div style={{ fontSize: 18, fontWeight: 900, color: '#25D366', marginTop: 2 }}>{testProgress.success}</div>
+                          </div>
+
+                          <div style={{ background: 'rgba(240,107,76,0.12)', border: '1px solid rgba(240,107,76,0.3)', borderRadius: 8, padding: '6px 10px', textAlign: 'center' }}>
+                            <span style={{ fontSize: 10, color: '#FF8A65', fontWeight: 800, textTransform: 'uppercase' }}>✓ Pendentes</span>
+                            <div style={{ fontSize: 18, fontWeight: 900, color: '#FF8A65', marginTop: 2 }}>{testProgress.failed}</div>
+                          </div>
+                        </div>
+
+                        <div
+                          ref={logContainerRef}
+                          style={{
+                            height: 140,
+                            overflowY: 'auto',
+                            background: '#040910',
+                            borderRadius: 8,
+                            padding: '8px 10px',
+                            fontSize: 11,
+                            fontFamily: 'monospace',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 4,
+                            border: '1px solid rgba(255,255,255,0.08)'
+                          }}
+                        >
+                          {testLogs.length === 0 ? (
+                            <span style={{ color: 'var(--ink3)' }}>Iniciando análise dos contatos...</span>
+                          ) : (
+                            testLogs.map((l, idx) => (
+                              <div key={idx} style={{
+                                color: l.type === 'success' ? '#25D366' : l.type === 'error' ? '#FF8A65' : l.type === 'delay' ? '#F59E0B' : 'var(--ink2)'
+                              }}>
+                                <span style={{ opacity: 0.5 }}>[{l.time}]</span> {l.msg}
+                              </div>
+                            ))
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          className="btn"
+                          style={{
+                            padding: '9px',
+                            fontSize: 12,
+                            fontWeight: 800,
+                            borderRadius: 8,
+                            background: 'rgba(240,107,76,0.15)',
+                            color: '#FF8A65',
+                            border: '1px solid rgba(240,107,76,0.3)'
+                          }}
+                          onClick={handleStopTest}
+                        >
+                          ⏹️ Parar Verificação
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Rodapé e Botão Principal de Ação */}
+                    {!isTestingRunning && (
+                      <div style={{ marginTop: 6, paddingTop: 12, borderTop: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {verificationMethod === 'paste' && (
+                          <button
+                            type="button"
+                            className="btn btn-teal"
+                            disabled={testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0}
+                            style={{
+                              width: '100%',
+                              padding: '13px 16px',
+                              fontSize: 13.5,
+                              fontWeight: 900,
+                              margin: 0,
+                              borderRadius: 10,
+                              background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
+                              color: '#081018',
+                              cursor: 'pointer',
+                              boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)'
+                            }}
+                            onClick={handleOpenTransmissionChecklist}
+                          >
+                            📋 Abrir Lista & Conferir ({getSelectedTargetUsers().length} Contatos)
+                          </button>
+                        )}
+
+                        {verificationMethod === 'check_status' && (
+                          <button
+                            type="button"
+                            className="btn btn-teal"
+                            disabled={testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0}
+                            style={{
+                              width: '100%',
+                              padding: '13px 16px',
+                              fontSize: 13.5,
+                              fontWeight: 900,
+                              margin: 0,
+                              borderRadius: 10,
+                              background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
+                              color: '#081018',
+                              cursor: 'pointer',
+                              boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)'
+                            }}
+                            onClick={handleCheckBroadcastStatusLive}
+                          >
+                            🔄 Sincronizar e Checar no WhatsApp ({getSelectedTargetUsers().length} Contatos)
+                          </button>
+                        )}
+
+                        {verificationMethod === 'send_and_verify' && (
+                          <button
+                            type="button"
+                            className="btn btn-teal"
+                            disabled={testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0}
+                            style={{
+                              width: '100%',
+                              padding: '13px 16px',
+                              fontSize: 13.5,
+                              fontWeight: 900,
+                              margin: 0,
+                              borderRadius: 10,
+                              background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
+                              color: '#081018',
+                              cursor: 'pointer',
+                              boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)'
+                            }}
+                            onClick={handleSendAndVerifyBroadcast}
+                          >
+                            🚀 Disparar Mensagem na Transmissão & Checar Traços
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          className="btn btn-ghost"
+                          style={{ padding: '8px', fontSize: 12, margin: 0 }}
+                          onClick={() => setShowBroadcastTestModal(false)}
+                        >
+                          Fechar
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
-
-              {/* Se o teste estiver rodando ou tiver progresso */}
-              {isTestingRunning && (
-                <div style={{
-                  background: 'linear-gradient(180deg, rgba(0, 229, 155, 0.08) 0%, rgba(15, 23, 42, 0.8) 100%)',
-                  borderRadius: 14,
-                  border: '1px solid var(--teal)',
-                  padding: '14px 16px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 12
-                }}>
-                  {/* Status Bar */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 16 }}>⏳</span>
-                      <span style={{ fontSize: 13, fontWeight: 900, color: '#fff' }}>
-                        {isTestingPaused ? '⏸️ Verificação Pausada' : '🔍 Verificando no WhatsApp Conectado...'}
-                      </span>
-                    </div>
-                    <span style={{ fontSize: 12, fontWeight: 900, color: 'var(--teal)' }}>
-                      {testProgress.current} de {testProgress.total} ({testProgress.total > 0 ? Math.round((testProgress.current / testProgress.total) * 100) : 0}%)
-                    </span>
-                  </div>
-
-                  {/* Barra de Progresso Visual */}
-                  <div style={{ width: '100%', height: 7, background: 'rgba(255,255,255,0.08)', borderRadius: 4, overflow: 'hidden' }}>
-                    <div style={{
-                      width: `${testProgress.total > 0 ? (testProgress.current / testProgress.total) * 100 : 0}%`,
-                      height: '100%',
-                      background: 'linear-gradient(90deg, #25D366, var(--teal))',
-                      transition: 'width 0.3s ease'
-                    }} />
-                  </div>
-
-                  {/* Contadores ao vivo */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    <div style={{ background: 'rgba(37,211,102,0.12)', border: '1px solid rgba(37,211,102,0.3)', borderRadius: 8, padding: '6px 10px', textAlign: 'center' }}>
-                      <span style={{ fontSize: 10, color: '#25D366', fontWeight: 800, textTransform: 'uppercase' }}>✅ Salvos no WhatsApp</span>
-                      <div style={{ fontSize: 18, fontWeight: 900, color: '#25D366', marginTop: 2 }}>{testProgress.success}</div>
-                    </div>
-
-                    <div style={{ background: 'rgba(240,107,76,0.12)', border: '1px solid rgba(240,107,76,0.3)', borderRadius: 8, padding: '6px 10px', textAlign: 'center' }}>
-                      <span style={{ fontSize: 10, color: '#FF8A65', fontWeight: 800, textTransform: 'uppercase' }}>❌ Não Salvos / Ausentes</span>
-                      <div style={{ fontSize: 18, fontWeight: 900, color: '#FF8A65', marginTop: 2 }}>{testProgress.failed}</div>
-                    </div>
-                  </div>
-
-                  {/* Terminal de Logs ao Vivo */}
-                  <div
-                    ref={logContainerRef}
-                    style={{
-                      height: 140,
-                      overflowY: 'auto',
-                      background: '#040910',
-                      borderRadius: 8,
-                      padding: '8px 10px',
-                      fontSize: 11,
-                      fontFamily: 'monospace',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 4,
-                      border: '1px solid rgba(255,255,255,0.08)'
-                    }}
-                  >
-                    {testLogs.length === 0 ? (
-                      <span style={{ color: 'var(--ink3)' }}>Aguardando início...</span>
-                    ) : (
-                      testLogs.map((l, idx) => (
-                        <div key={idx} style={{
-                          color: l.type === 'success' ? '#25D366' : l.type === 'error' ? '#FF8A65' : l.type === 'delay' ? '#F59E0B' : 'var(--ink2)'
-                        }}>
-                          <span style={{ opacity: 0.5 }}>[{l.time}]</span> {l.msg}
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  {/* Botões de Controle durante Execução */}
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      type="button"
-                      className="btn"
-                      style={{
-                        flex: 1,
-                        margin: 0,
-                        padding: '9px',
-                        fontSize: 12,
-                        fontWeight: 800,
-                        borderRadius: 8,
-                        background: 'rgba(240,107,76,0.15)',
-                        color: '#FF8A65',
-                        border: '1px solid rgba(240,107,76,0.3)'
-                      }}
-                      onClick={handleStopTest}
-                    >
-                      ⏹️ Parar
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
-
-            {/* Rodapé / Ações */}
-            {!isTestingRunning && (
-              <div style={{ marginTop: 6, paddingTop: 12, borderTop: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {/* Botão Principal: Verificação Real no WhatsApp */}
-                <button
-                  type="button"
-                  className="btn btn-teal"
-                  disabled={testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0}
-                  style={{
-                    width: '100%',
-                    padding: '13px 16px',
-                    fontSize: 13.5,
-                    fontWeight: 900,
-                    margin: 0,
-                    borderRadius: 10,
-                    background: (testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0)
-                      ? 'rgba(255,255,255,0.1)'
-                      : 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
-                    color: (testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0)
-                      ? 'var(--ink3)'
-                      : '#081018',
-                    cursor: (testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0)
-                      ? 'not-allowed'
-                      : 'pointer',
-                    boxShadow: (testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0)
-                      ? 'none'
-                      : '0 4px 16px rgba(0, 229, 155, 0.35)'
-                  }}
-                  onClick={handleVerifyContactsLive}
-                >
-                  {testTargetType === 'quick_test' && (
-                    selectedQuickTestUserIds.length === 0
-                      ? '⚠️ Selecione pelo menos 1 contato acima'
-                      : `🔍 Verificar se está Salvo no WhatsApp (${selectedQuickTestUserIds.length} contato${selectedQuickTestUserIds.length > 1 ? 's' : ''})`
-                  )}
-                  {testTargetType === 'batch' && `🔍 Verificar se o Lote ${selectedTestBatch} está Salvo no WhatsApp (100 contatos)`}
-                  {testTargetType === 'all_pending' && `🔍 Verificar Todos os Pendentes no WhatsApp (${withoutNumberUsers.length})`}
-                </button>
-
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={testTargetType === 'quick_test' && selectedQuickTestUserIds.length === 0}
-                    style={{
-                      flex: 1,
-                      padding: '9px 12px',
-                      fontSize: 12,
-                      fontWeight: 700,
-                      margin: 0,
-                      borderRadius: 8,
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      color: 'var(--ink2)',
-                      border: '1px solid var(--line)'
-                    }}
-                    onClick={handleStartBroadcastTest}
-                    title="Dispara mensagem de texto de teste com delay anti-ban"
-                  >
-                    💬 Enviar Mensagem de Texto (Opcional)
-                  </button>
-
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    style={{ width: 'auto', padding: '9px 18px', fontSize: 12, margin: 0, borderRadius: 8 }}
-                    onClick={() => setShowBroadcastTestModal(false)}
-                  >
-                    Fechar
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
-        </div>
-      )}
+        )}
 
       {/* Dashboard Moderno de Estatísticas da Transmissão */}
       <div style={{
@@ -2258,7 +2798,7 @@ export function EvolutionBotTab({ users, reload }) {
               }}
               onClick={() => setShowBroadcastTestModal(true)}
             >
-              <span>🧪</span> Testar Transmissão & Salvos
+              <span style={{ fontWeight: 900 }}>✓✓</span> Verificador de Transmissão (1 vs 2 Traços)
             </button>
 
             <button
@@ -2302,9 +2842,9 @@ export function EvolutionBotTab({ users, reload }) {
               }}
               onClick={handleSyncWhatsAppContacts}
               disabled={syncingContacts || !status.connected}
-              title={!status.connected ? 'Conecte o WhatsApp pelo QR Code acima primeiro' : 'Verificar contatos sincronizados no WhatsApp'}
+              title={!status.connected ? 'Conecte o WhatsApp pelo QR Code acima primeiro' : 'Sincroniza os contatos que estão salvos na agenda do WhatsApp conectado'}
             >
-              <span>🔄</span> {syncingContacts ? 'Verificando...' : 'Checar no WhatsApp'}
+              <span>🔄</span> {syncingContacts ? 'Sincronizando...' : 'Sincronizar Agenda do Aparelho'}
             </button>
 
             <button
@@ -2643,10 +3183,10 @@ export function EvolutionBotTab({ users, reload }) {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 900, color: '#fff' }}>
-                  📋 Listas de Transmissão Oficiais ({batches.length} Lotes de 100 contatos)
+                  📋 ETAPA 1: Listas de Transmissão Oficiais ({batches.length} Lotes de 100 contatos)
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
-                  Total: {users.length} membros cadastrados · Padrão seguro para celular (100 por lote)
+                  Total: {users.length} membros cadastrados · Baixe o vCard (.vcf) e crie a lista de transmissão no celular
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -2729,11 +3269,12 @@ export function EvolutionBotTab({ users, reload }) {
                       onClick={() => {
                         setSelectedTestBatch(b.id);
                         setTestTargetType('batch');
+                        setTestResults([]);
                         setShowBroadcastTestModal(true);
                       }}
-                      title="Disparar teste de transmissão exclusivo para este lote de 100 contatos"
+                      title="Verificar se os contatos deste lote têm o número salvo (1 traço vs 2 traços)"
                     >
-                      🧪 Testar Lote
+                      ✓✓ Verificar Lote
                     </button>
                   </div>
                 </div>

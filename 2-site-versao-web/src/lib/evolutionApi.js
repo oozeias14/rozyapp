@@ -270,9 +270,15 @@ export async function disconnectInstance() {
 
 export async function sendWhatsAppMessage(number, text) {
   const { instanceName } = getEvolutionConfig();
-  let cleanNumber = (number || '').replace(/\D/g, '');
-  if (cleanNumber.length === 10 || cleanNumber.length === 11) {
-    cleanNumber = '55' + cleanNumber;
+  let cleanNumber = (number || '').toString().trim();
+  
+  // Se não for um JID com @ (ex: broadcast ou grupo), formata como número internacional brasileiro
+  if (!cleanNumber.includes('@')) {
+    let digits = cleanNumber.replace(/\D/g, '');
+    if (digits.length === 10 || digits.length === 11) {
+      digits = '55' + digits;
+    }
+    cleanNumber = digits;
   }
 
   // Delay de digitação humano (1.5s a 3.0s)
@@ -289,6 +295,56 @@ export async function sendWhatsAppMessage(number, text) {
       }
     }),
   });
+}
+
+// ── CONSULTA E STATUS DE MENSAGENS (1 TRAÇO VS 2 TRAÇOS) ───────────
+
+export async function fetchWhatsAppMessages(params = {}) {
+  const { instanceName } = getEvolutionConfig();
+  try {
+    const data = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        where: params.where || {},
+        limit: params.limit || 100,
+      }),
+    });
+    const records = data?.messages?.records || (Array.isArray(data) ? data : []);
+    return records;
+  } catch (err) {
+    console.warn('Erro ao buscar mensagens do WhatsApp:', err);
+    return [];
+  }
+}
+
+// Avalia se uma mensagem individual tem 2 traços (entregue/lida) ou 1 traço (apenas servidor)
+export function evaluateMessageDelivery(msg) {
+  if (!msg) return { has2Checks: false, status: 'NOT_FOUND', label: 'Não enviada' };
+
+  const updates = Array.isArray(msg.MessageUpdate) ? msg.MessageUpdate : [];
+  const directStatus = (msg.status || '').toUpperCase();
+
+  // Verifica se há recibo de entrega (DELIVERY_ACK) ou leitura (READ / PLAYED)
+  const isRead = updates.some(u => (u.status || '').toUpperCase() === 'READ' || (u.status || '').toUpperCase() === 'PLAYED') ||
+                 directStatus === 'READ' || directStatus === 'PLAYED';
+
+  const isDelivered = isRead || updates.some(u => (u.status || '').toUpperCase() === 'DELIVERY_ACK') ||
+                      directStatus === 'DELIVERY_ACK';
+
+  const isServerAck = updates.some(u => (u.status || '').toUpperCase() === 'SERVER_ACK') ||
+                      directStatus === 'SERVER_ACK';
+
+  if (isRead) {
+    return { has2Checks: true, isRead: true, status: 'READ', label: '2 Traços Azuis (Lido)', checks: 2 };
+  }
+  if (isDelivered) {
+    return { has2Checks: true, isRead: false, status: 'DELIVERY_ACK', label: '2 Traços Cinzas (Entregue / Salvo)', checks: 2 };
+  }
+  if (isServerAck) {
+    return { has2Checks: false, isRead: false, status: 'SERVER_ACK', label: '1 Traço (Apenas Servidor / Não Salvo)', checks: 1 };
+  }
+
+  return { has2Checks: false, isRead: false, status: directStatus || 'PENDING', label: '1 Traço (Pendente)', checks: 1 };
 }
 
 // ── CHECAGEM PRÉVIA DE NÚMEROS NO WHATSAPP ─────────────────────────
@@ -361,3 +417,4 @@ export function generateTransmissionBatches(users, maxPerBatch = 250) {
 
   return batches;
 }
+
