@@ -666,7 +666,7 @@ export default function AuthScreen({ onLoggedIn }) {
             onClick={installPwa}
           >
             <img src="/icons/icon-192.png" alt="" style={{ width: '18px', height: '18px', borderRadius: '4px' }} />
-            Faça o Download do Aplicativo
+            Click para Instalar o Aplicativo
           </button>
         </div>
       )}
@@ -757,7 +757,7 @@ export default function AuthScreen({ onLoggedIn }) {
           <div className="modal" style={{ maxWidth: 380, textAlign: 'center', padding: '24px' }}>
             <div style={{ fontSize: '40px', marginBottom: '12px' }}>📱</div>
             <h3 style={{ fontSize: '16.5px', color: 'var(--teal)', marginBottom: '16px', fontWeight: '700' }}>
-              Faça o Download do Aplicativo
+              Click para Instalar o Aplicativo
             </h3>
 
             {isIOS ? (
