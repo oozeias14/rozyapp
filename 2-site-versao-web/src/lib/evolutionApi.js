@@ -418,3 +418,192 @@ export function generateTransmissionBatches(users, maxPerBatch = 250) {
   return batches;
 }
 
+// ── AUDITORIA DE LISTAS DE TRANSMISSÃO (@broadcast) NO WHATSAPP ────
+
+export async function fetchWhatsAppChats() {
+  const { instanceName } = getEvolutionConfig();
+  try {
+    const data = await evolutionFetch(`/chat/findChats/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    return Array.isArray(data) ? data : (data?.chats || []);
+  } catch (err) {
+    try {
+      const dataGet = await evolutionFetch(`/chat/findChats/${instanceName}`);
+      return Array.isArray(dataGet) ? dataGet : (dataGet?.chats || []);
+    } catch (e) {
+      console.warn('Erro ao buscar chats do WhatsApp:', e);
+      return [];
+    }
+  }
+}
+
+export async function searchBroadcastLists(tag = '') {
+  const chats = await fetchWhatsAppChats();
+  const cleanTag = (tag || '').toLowerCase().trim();
+
+  // Filtra conversas que sejam listas de transmissão ou que tenham @broadcast no JID
+  const broadcastChats = (chats || []).filter((c) => {
+    const id = (c.id || c.jid || '').toLowerCase();
+    const name = (c.name || c.subject || c.pushName || '').toLowerCase();
+    const isBroadcast = c.isBroadcast || id.includes('@broadcast');
+    
+    if (cleanTag) {
+      const matchesTag = name.includes(cleanTag) || id.includes(cleanTag);
+      return isBroadcast || matchesTag;
+    }
+    return isBroadcast;
+  });
+
+  return broadcastChats;
+}
+
+export async function fetchBroadcastLastMessage(broadcastJid) {
+  const { instanceName } = getEvolutionConfig();
+  if (!broadcastJid) return null;
+
+  try {
+    // 1. Tenta buscar mensagens filtradas pelo JID da lista
+    const data = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        where: {
+          key: {
+            remoteJid: broadcastJid
+          }
+        },
+        limit: 5,
+      }),
+    });
+    const records = data?.messages?.records || (Array.isArray(data) ? data : []);
+    if (records.length > 0) {
+      return records[records.length - 1] || records[0];
+    }
+  } catch (err) {
+    console.warn('Erro na busca de mensagens específicas do broadcast:', err);
+  }
+
+  // Fallback: Busca geral nas mensagens mais recentes
+  try {
+    const allMsgs = await fetchWhatsAppMessages({ limit: 50 });
+    const match = allMsgs.find(m => {
+      const rJid = (m?.key?.remoteJid || '').toLowerCase();
+      const bJid = broadcastJid.toLowerCase();
+      return rJid === bJid || (m?.broadcast && rJid.includes('@broadcast'));
+    });
+    return match || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Extrai quem recebeu (✓✓) e quem não recebeu (✓) da mensagem da transmissão
+export function auditBroadcastDeliveryReceipts(broadcastMessage, targetUsers = []) {
+  if (!broadcastMessage) {
+    return {
+      messageText: '',
+      messageTimestamp: null,
+      evaluatedUsers: targetUsers.map(u => ({
+        id: u.id,
+        user: u,
+        name: u.name || 'Sem nome',
+        phone: u.whatsapp || u.phone || '',
+        city: u.city || '',
+        checks: 1,
+        status: 'SERVER_ACK',
+        label: '1 Traço (Pendente)',
+        isSaved: false,
+      })),
+      savedCount: 0,
+      notSavedCount: targetUsers.length
+    };
+  }
+
+  const msgText = broadcastMessage?.message?.conversation ||
+                  broadcastMessage?.message?.extendedTextMessage?.text ||
+                  broadcastMessage?.text ||
+                  'Mensagem da Lista de Transmissão';
+
+  const msgTimestamp = broadcastMessage?.messageTimestamp || broadcastMessage?.createdAt;
+
+  // Mapa de status dos destinatários na mensagem do WhatsApp
+  const receiptsMap = new Map(); // phoneSignature -> { checks: 1 | 2, status, isSaved }
+
+  // 1. Analisa MessageUpdate (recibos individuais de entrega/leitura de Baileys)
+  const updates = Array.isArray(broadcastMessage.MessageUpdate) ? broadcastMessage.MessageUpdate : [];
+  updates.forEach(u => {
+    const participantJid = u.participant || u.fromMeJid || u.key?.participant || '';
+    const cleanNum = participantJid.replace(/\D/g, '');
+    const st = (u.status || '').toUpperCase();
+    const is2Checks = st === 'DELIVERY_ACK' || st === 'READ' || st === 'PLAYED' || st === '2' || st === '3' || st === '4';
+
+    if (cleanNum) {
+      receiptsMap.set(cleanNum, {
+        checks: is2Checks ? 2 : 1,
+        status: st || (is2Checks ? 'DELIVERY_ACK' : 'SERVER_ACK'),
+        isSaved: is2Checks
+      });
+    }
+  });
+
+  // 2. Analisa campo userReceipt ou status se presente
+  const userReceipts = Array.isArray(broadcastMessage.userReceipt) ? broadcastMessage.userReceipt : [];
+  userReceipts.forEach(ur => {
+    const userJid = ur.userJid || ur.jid || '';
+    const cleanNum = userJid.replace(/\D/g, '');
+    const is2Checks = ur.receiptTimestamp || ur.readTimestamp || ur.playedTimestamp;
+    if (cleanNum) {
+      receiptsMap.set(cleanNum, {
+        checks: is2Checks ? 2 : 1,
+        status: is2Checks ? 'DELIVERY_ACK' : 'SERVER_ACK',
+        isSaved: Boolean(is2Checks)
+      });
+    }
+  });
+
+  let savedCount = 0;
+  let notSavedCount = 0;
+
+  const evaluatedUsers = targetUsers.map(u => {
+    const rawPhone = u.whatsapp || u.phone || '';
+    const clean = rawPhone.replace(/\D/g, '');
+    
+    // Busca combinações possíveis com e sem 55, com e sem nono dígito
+    let matchReceipt = null;
+    if (clean) {
+      matchReceipt = receiptsMap.get(clean) ||
+                     receiptsMap.get('55' + clean) ||
+                     receiptsMap.get(clean.startsWith('55') ? clean.substring(2) : clean);
+    }
+
+    const is2Checks = matchReceipt?.checks === 2;
+    if (is2Checks) {
+      savedCount++;
+    } else {
+      notSavedCount++;
+    }
+
+    return {
+      id: u.id,
+      user: u,
+      name: u.name || 'Sem nome',
+      phone: rawPhone,
+      city: u.city || '',
+      checks: is2Checks ? 2 : 1,
+      status: is2Checks ? 'DELIVERY_ACK' : 'SERVER_ACK',
+      label: is2Checks ? '✓✓ 2 Traços (Salvo na Agenda)' : '✓ 1 Traço (Não Salvo / Pendente)',
+      isSaved: is2Checks,
+    };
+  });
+
+  return {
+    messageText: msgText,
+    messageTimestamp: msgTimestamp,
+    evaluatedUsers,
+    savedCount,
+    notSavedCount
+  };
+}
+
+

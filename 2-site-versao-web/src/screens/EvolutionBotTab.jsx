@@ -13,6 +13,10 @@ import {
   evaluateMessageDelivery,
   checkWhatsAppNumbers,
   fetchWhatsAppContacts,
+  fetchWhatsAppChats,
+  searchBroadcastLists,
+  fetchBroadcastLastMessage,
+  auditBroadcastDeliveryReceipts,
   generateTransmissionBatches,
   DEFAULT_INSTANCE_NAME 
 } from '../lib/evolutionApi';
@@ -58,7 +62,10 @@ export function EvolutionBotTab({ users, reload }) {
   const [showBroadcastTestModal, setShowBroadcastTestModal] = useState(false);
   const [testTargetType, setTestTargetType] = useState('batch'); // 'batch' | 'all_pending' | 'all'
   const [selectedTestBatch, setSelectedTestBatch] = useState('T1');
-  const [verificationMethod, setVerificationMethod] = useState('paste'); // 'paste' | 'check_status' | 'send_and_verify'
+  const [verificationMethod, setVerificationMethod] = useState('auto_broadcast'); // 'auto_broadcast' | 'check_status' | 'send_and_verify' | 'paste'
+  const [detectedBroadcastLists, setDetectedBroadcastLists] = useState([]);
+  const [selectedBroadcastJid, setSelectedBroadcastJid] = useState('');
+  const [foundBroadcastMessage, setFoundBroadcastMessage] = useState(null);
   const [testResults, setTestResults] = useState([]); // array de { id, user, name, phone, city, checks: 1 | 2, status, label, isSaved }
   const [activeResultTab, setActiveResultTab] = useState('all'); // 'all' | 'saved' | 'not_saved'
   const [resultSearch, setResultSearch] = useState('');
@@ -426,6 +433,109 @@ export function EvolutionBotTab({ users, reload }) {
       return withoutNumberUsers;
     } else {
       return validUsers;
+    }
+  }
+
+  // 📡 AÇÃO 0 (PRINCIPAL): Auditoria Automática da Transmissão por Tag / Nome
+  async function handleAutoAuditBroadcastLive() {
+    if (!status.connected) {
+      alert('Conecte o WhatsApp pelo QR Code ou Código antes de auditar!');
+      return;
+    }
+
+    const targetUsers = getSelectedTargetUsers();
+    if (targetUsers.length === 0) {
+      alert('Nenhum contato encontrado para o lote selecionado!');
+      return;
+    }
+
+    setIsTestingRunning(true);
+    setIsTestingPaused(false);
+    testAbortRef.current = false;
+    setTestLogs([]);
+    setTestProgress({ current: 0, total: targetUsers.length, success: 0, failed: 0 });
+
+    addLog(`📡 Buscando Lista de Transmissão para o lote "${selectedTestBatch}" no WhatsApp conectado...`, 'info');
+
+    try {
+      // 1. Busca listas de transmissão no WhatsApp com a tag (ex: T1, T2, etc.)
+      const lists = await searchBroadcastLists(selectedTestBatch);
+      setDetectedBroadcastLists(lists);
+
+      let targetJid = selectedBroadcastJid;
+      let targetName = '';
+
+      if (!targetJid && lists.length > 0) {
+        const match = lists.find(l => {
+          const name = (l.name || l.subject || '').toLowerCase();
+          return name.includes(selectedTestBatch.toLowerCase());
+        }) || lists[0];
+
+        targetJid = match.id || match.jid;
+        targetName = match.name || match.subject || 'Lista de Transmissão';
+      }
+
+      if (targetJid) {
+        addLog(`✅ Lista localizada no WhatsApp: "${targetName || targetJid}"`, 'success');
+      } else {
+        addLog(`ℹ️ Varrendo conversas e mensagens com recibos de transmissão para o lote ${selectedTestBatch}...`, 'info');
+      }
+
+      // 2. Busca a última mensagem disparada na transmissão
+      addLog(`🔍 Capturando última mensagem e recibos de entrega oficiais (1 vs 2 Traços)...`, 'info');
+      const lastMsg = await fetchBroadcastLastMessage(targetJid);
+      setFoundBroadcastMessage(lastMsg);
+
+      if (lastMsg) {
+        const preview = (lastMsg?.message?.conversation || lastMsg?.message?.extendedTextMessage?.text || lastMsg?.text || '').slice(0, 70);
+        addLog(`📨 Mensagem da transmissão localizada: "${preview || 'Mensagem de transmissão'}..."`, 'info');
+      } else {
+        addLog(`ℹ️ Nenhuma mensagem específica de transmissão no cache recente. O robô auditará cruzando com os contatos conectados.`, 'delay');
+      }
+
+      // 3. Audita os recibos oficiais de entrega
+      const auditResult = auditBroadcastDeliveryReceipts(lastMsg, targetUsers);
+      
+      let savedCount = 0;
+      let notSavedCount = 0;
+      const evaluated = [];
+
+      for (let i = 0; i < auditResult.evaluatedUsers.length; i++) {
+        if (testAbortRef.current) {
+          addLog('⏹️ Auditoria interrompida pelo usuário.', 'delay');
+          break;
+        }
+
+        const item = auditResult.evaluatedUsers[i];
+        if (item.checks === 2) {
+          savedCount++;
+          addLog(`✓✓ [${i + 1}/${targetUsers.length}] ${item.name} (${item.phone}): 2 TRAÇOS ➔ SALVO NA AGENDA!`, 'success');
+        } else {
+          notSavedCount++;
+          addLog(`✓ [${i + 1}/${targetUsers.length}] ${item.name} (${item.phone}): 1 TRAÇO ➔ PENDENTE`, 'error');
+        }
+
+        evaluated.push(item);
+
+        setTestProgress({
+          current: i + 1,
+          total: targetUsers.length,
+          success: savedCount,
+          failed: notSavedCount,
+        });
+
+        await new Promise(r => setTimeout(r, 15));
+      }
+
+      setTestResults(evaluated);
+      addLog(`🏁 Auditoria finalizada! 2 Traços (Salvos): ${savedCount} | 1 Traço (Pendentes): ${notSavedCount}`, 'info');
+
+    } catch (err) {
+      addLog(`❌ Erro durante a auditoria da transmissão: ${err.message}`, 'error');
+      alert('Erro na auditoria: ' + err.message);
+    } finally {
+      setIsTestingRunning(false);
+      setIsTestingPaused(false);
     }
   }
 
@@ -2245,7 +2355,8 @@ export function EvolutionBotTab({ users, reload }) {
                         <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           2. Como Deseja Verificar os Traços?
                         </label>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginTop: 6 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginTop: 6 }}>
+                          {/* Opção 1 (Principal): Auditoria da Transmissão */}
                           <button
                             type="button"
                             className="btn"
@@ -2255,18 +2366,19 @@ export function EvolutionBotTab({ users, reload }) {
                               fontSize: 11.5,
                               borderRadius: 10,
                               textAlign: 'center',
-                              background: verificationMethod === 'paste' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                              color: verificationMethod === 'paste' ? '#fff' : 'var(--ink2)',
-                              border: '1px solid ' + (verificationMethod === 'paste' ? 'var(--teal)' : 'var(--line)'),
+                              background: verificationMethod === 'auto_broadcast' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                              color: verificationMethod === 'auto_broadcast' ? '#fff' : 'var(--ink2)',
+                              border: '1px solid ' + (verificationMethod === 'auto_broadcast' ? 'var(--teal)' : 'var(--line)'),
                               cursor: 'pointer'
                             }}
-                            onClick={() => setVerificationMethod('paste')}
+                            onClick={() => setVerificationMethod('auto_broadcast')}
                           >
-                            <div style={{ fontSize: 16 }}>📋</div>
-                            <div style={{ fontWeight: 800, marginTop: 2 }}>Conferência Rápida</div>
-                            <div style={{ fontSize: 10, opacity: 0.7 }}>Colar info ou marcar lista</div>
+                            <div style={{ fontSize: 16 }}>📡</div>
+                            <div style={{ fontWeight: 800, marginTop: 2 }}>Auditoria Transmissão</div>
+                            <div style={{ fontSize: 10, opacity: 0.7 }}>Lê mensagem enviada ({selectedTestBatch})</div>
                           </button>
 
+                          {/* Opção 2: Sincronizar WhatsApp */}
                           <button
                             type="button"
                             className="btn"
@@ -2284,10 +2396,11 @@ export function EvolutionBotTab({ users, reload }) {
                             onClick={() => setVerificationMethod('check_status')}
                           >
                             <div style={{ fontSize: 16 }}>🔄</div>
-                            <div style={{ fontWeight: 800, marginTop: 2 }}>Sincronizar WhatsApp</div>
-                            <div style={{ fontSize: 10, opacity: 0.7 }}>Cruza contatos conectados</div>
+                            <div style={{ fontWeight: 800, marginTop: 2 }}>Sincronizar Agenda</div>
+                            <div style={{ fontSize: 10, opacity: 0.7 }}>Cruza contatos salvos</div>
                           </button>
 
+                          {/* Opção 3: Disparo de Mensagem */}
                           <button
                             type="button"
                             className="btn"
@@ -2306,11 +2419,84 @@ export function EvolutionBotTab({ users, reload }) {
                           >
                             <div style={{ fontSize: 16 }}>🚀</div>
                             <div style={{ fontWeight: 800, marginTop: 2 }}>Disparar & Checar</div>
-                            <div style={{ fontSize: 10, opacity: 0.7 }}>Envia mensagem de teste</div>
+                            <div style={{ fontSize: 10, opacity: 0.7 }}>Envia mensagem robô</div>
+                          </button>
+
+                          {/* Opção 4: Conferência Rápida / Manual */}
+                          <button
+                            type="button"
+                            className="btn"
+                            style={{
+                              margin: 0,
+                              padding: '10px 8px',
+                              fontSize: 11.5,
+                              borderRadius: 10,
+                              textAlign: 'center',
+                              background: verificationMethod === 'paste' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                              color: verificationMethod === 'paste' ? '#fff' : 'var(--ink2)',
+                              border: '1px solid ' + (verificationMethod === 'paste' ? 'var(--teal)' : 'var(--line)'),
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => setVerificationMethod('paste')}
+                          >
+                            <div style={{ fontSize: 16 }}>📋</div>
+                            <div style={{ fontWeight: 800, marginTop: 2 }}>Conferência Rápida</div>
+                            <div style={{ fontSize: 10, opacity: 0.7 }}>Colar info / Marcar</div>
                           </button>
                         </div>
 
                         {/* Conteúdo do Método Selecionado */}
+                        {verificationMethod === 'auto_broadcast' && (
+                          <div style={{
+                            marginTop: 10,
+                            padding: '12px 14px',
+                            background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.08), rgba(15, 23, 42, 0.6))',
+                            border: '1px solid rgba(0, 229, 155, 0.3)',
+                            borderRadius: 10,
+                            fontSize: 12,
+                            color: '#fff',
+                            lineHeight: 1.5,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 8
+                          }}>
+                            <div>
+                              <strong style={{ color: 'var(--teal)' }}>🎯 Como funciona a Auditoria Automática:</strong><br />
+                              <span>
+                                1. O robô busca no seu WhatsApp a lista de transmissão com tag <strong>"{selectedTestBatch}"</strong> (ex: <em>Candido lista {selectedTestBatch}</em>).<br />
+                                2. Lê a <strong>última mensagem enviada</strong> no celular e audita os recibos oficiais de entrega.<br />
+                                3. Classifica instantaneamente quem deu <strong>2 Traços (✓✓ Salvo na Agenda)</strong> e quem deu <strong>1 Traço (✓ Pendente)</strong>.
+                              </span>
+                            </div>
+
+                            {detectedBroadcastLists.length > 0 && (
+                              <div style={{ marginTop: 4, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontSize: 11, color: 'var(--ink2)', fontWeight: 700 }}>Lista no WhatsApp:</span>
+                                <select
+                                  value={selectedBroadcastJid}
+                                  onChange={(e) => setSelectedBroadcastJid(e.target.value)}
+                                  style={{
+                                    flex: 1,
+                                    padding: '5px 8px',
+                                    borderRadius: 6,
+                                    background: 'rgba(0,0,0,0.5)',
+                                    border: '1px solid var(--teal)',
+                                    color: '#fff',
+                                    fontSize: 11.5
+                                  }}
+                                >
+                                  <option value="">Automático (Busca por "{selectedTestBatch}")</option>
+                                  {detectedBroadcastLists.map((l) => (
+                                    <option key={l.id || l.jid} value={l.id || l.jid}>
+                                      {l.name || l.subject || l.id}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {verificationMethod === 'paste' && (
                           <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
                             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink2)' }}>
@@ -2470,6 +2656,29 @@ export function EvolutionBotTab({ users, reload }) {
                     {/* Rodapé e Botão Principal de Ação */}
                     {!isTestingRunning && (
                       <div style={{ marginTop: 6, paddingTop: 12, borderTop: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {verificationMethod === 'auto_broadcast' && (
+                          <button
+                            type="button"
+                            className="btn btn-teal"
+                            disabled={getSelectedTargetUsers().length === 0}
+                            style={{
+                              width: '100%',
+                              padding: '13px 16px',
+                              fontSize: 13.5,
+                              fontWeight: 900,
+                              margin: 0,
+                              borderRadius: 10,
+                              background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
+                              color: '#081018',
+                              cursor: 'pointer',
+                              boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)'
+                            }}
+                            onClick={handleAutoAuditBroadcastLive}
+                          >
+                            📡 Auditar Mensagem da Transmissão {selectedTestBatch} ({getSelectedTargetUsers().length} Contatos)
+                          </button>
+                        )}
+
                         {verificationMethod === 'paste' && (
                           <button
                             type="button"
