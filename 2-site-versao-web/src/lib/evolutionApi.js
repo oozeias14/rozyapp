@@ -420,6 +420,48 @@ export function generateTransmissionBatches(users, maxPerBatch = 250) {
 
 // ── AUDITORIA DE LISTAS DE TRANSMISSÃO (@broadcast) NO WHATSAPP ────
 
+// ── GERADOR DE ASSINATURAS DE TELEFONE (DDD + 8/9 DÍGITOS) ─────────
+
+export function getPhoneSignatures(p) {
+  let clean = (p || '').toString().replace(/\D/g, '');
+  if (!clean) return [];
+  if (clean.startsWith('0')) clean = clean.substring(1);
+  if (clean.startsWith('55') && clean.length >= 12) clean = clean.substring(2);
+
+  // Se o número estiver sem DDD (8 ou 9 dígitos), aplica o DDD padrão 61 (DF)
+  if (clean.length === 8 || clean.length === 9) {
+    clean = '61' + clean;
+  }
+
+  if (clean.length === 11) {
+    const ddd = clean.substring(0, 2);
+    const rest = clean.substring(3); // 8 dígitos finais
+    return [
+      '55' + clean,
+      clean,
+      '55' + ddd + rest,
+      ddd + rest,
+      '55' + ddd + '9' + rest,
+      ddd + '9' + rest
+    ];
+  } else if (clean.length === 10) {
+    const ddd = clean.substring(0, 2);
+    const rest = clean.substring(2); // 8 dígitos
+    return [
+      '55' + clean,
+      clean,
+      '55' + ddd + '9' + rest,
+      ddd + '9' + rest,
+      '55' + ddd + rest,
+      ddd + rest
+    ];
+  } else {
+    return [clean, '55' + clean];
+  }
+}
+
+// ── AUDITORIA DE TODAS AS LISTAS DE TRANSMISSÃO E MENSAGENS ────────
+
 export async function fetchWhatsAppChats() {
   const { instanceName } = getEvolutionConfig();
   try {
@@ -443,7 +485,6 @@ export async function searchBroadcastLists(tag = '') {
   const chats = await fetchWhatsAppChats();
   const cleanTag = (tag || '').toLowerCase().trim();
 
-  // Filtra conversas que sejam listas de transmissão ou que tenham @broadcast no JID
   const broadcastChats = (chats || []).filter((c) => {
     const id = (c.id || c.jid || '').toLowerCase();
     const name = (c.name || c.subject || c.pushName || '').toLowerCase();
@@ -459,125 +500,185 @@ export async function searchBroadcastLists(tag = '') {
   return broadcastChats;
 }
 
-export async function fetchBroadcastLastMessage(broadcastJid) {
+// 📡 Varredura Geral de TODAS as Transmissões e Recibos de Entrega do WhatsApp
+export async function fetchAllWhatsAppTransmissionReceipts() {
   const { instanceName } = getEvolutionConfig();
-  if (!broadcastJid) return null;
+  const receiptsMap = new Map(); // signature -> { checks: 1 | 2, status, label, source, timestamp }
+  let totalMessagesAnalyzed = 0;
+  let contactsWith2ChecksCount = 0;
 
+  // 1. Consulta mensagens enviadas pela instância (fromMe: true e geral)
   try {
-    // 1. Tenta buscar mensagens filtradas pelo JID da lista
-    const data = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+    const msgsPost = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
       method: 'POST',
       body: JSON.stringify({
         where: {
           key: {
-            remoteJid: broadcastJid
+            fromMe: true
           }
         },
-        limit: 5,
+        limit: 300,
       }),
-    });
-    const records = data?.messages?.records || (Array.isArray(data) ? data : []);
-    if (records.length > 0) {
-      return records[records.length - 1] || records[0];
+    }).catch(() => null);
+
+    const msgsList = msgsPost?.messages?.records || (Array.isArray(msgsPost) ? msgsPost : []);
+    
+    // Fallback adicional: busca geral se msgsList estiver vazio
+    let allMsgs = msgsList;
+    if (allMsgs.length === 0) {
+      allMsgs = await fetchWhatsAppMessages({ limit: 300 });
     }
+
+    totalMessagesAnalyzed = allMsgs.length;
+
+    allMsgs.forEach((msg) => {
+      const remoteJid = msg?.key?.remoteJid || msg?.remoteJid || '';
+      const directStatus = (msg?.status || '').toUpperCase();
+      const updates = Array.isArray(msg?.MessageUpdate) ? msg.MessageUpdate : [];
+      const userReceipts = Array.isArray(msg?.userReceipt) ? msg.userReceipt : [];
+
+      // A) Se for mensagem direta para um contato
+      if (remoteJid && !remoteJid.includes('@g.us') && !remoteJid.includes('status@broadcast')) {
+        const cleanPhone = remoteJid.replace(/\D/g, '');
+        const isRead = updates.some(u => (u.status || '').toUpperCase() === 'READ' || (u.status || '').toUpperCase() === 'PLAYED') ||
+                       directStatus === 'READ' || directStatus === 'PLAYED';
+        const isDelivered = isRead || updates.some(u => (u.status || '').toUpperCase() === 'DELIVERY_ACK') ||
+                            directStatus === 'DELIVERY_ACK';
+
+        if (cleanPhone) {
+          const checks = isDelivered ? 2 : 1;
+          const statusLabel = isRead ? '✓✓ 2 Traços Azuis (Lido)' : isDelivered ? '✓✓ 2 Traços (Entregue / Salvo)' : '✓ 1 Traço (Pendente)';
+          
+          getPhoneSignatures(cleanPhone).forEach((sig) => {
+            // Se já tiver 2 traços gravado, preserva
+            const existing = receiptsMap.get(sig);
+            if (!existing || (!existing.is2Checks && isDelivered)) {
+              receiptsMap.set(sig, {
+                checks,
+                is2Checks: isDelivered,
+                status: isDelivered ? 'DELIVERY_ACK' : 'SERVER_ACK',
+                label: statusLabel,
+                source: 'chat_message',
+                phone: cleanPhone
+              });
+            }
+          });
+        }
+      }
+
+      // B) Se houver MessageUpdate com participantes (mensagens de broadcast)
+      updates.forEach((u) => {
+        const pJid = u.participant || u.fromMeJid || u.key?.participant || '';
+        const cleanNum = pJid.replace(/\D/g, '');
+        const st = (u.status || '').toUpperCase();
+        const is2Checks = st === 'DELIVERY_ACK' || st === 'READ' || st === 'PLAYED' || st === '2' || st === '3' || st === '4';
+
+        if (cleanNum) {
+          getPhoneSignatures(cleanNum).forEach((sig) => {
+            const existing = receiptsMap.get(sig);
+            if (!existing || (!existing.is2Checks && is2Checks)) {
+              receiptsMap.set(sig, {
+                checks: is2Checks ? 2 : 1,
+                is2Checks,
+                status: is2Checks ? 'DELIVERY_ACK' : 'SERVER_ACK',
+                label: is2Checks ? '✓✓ 2 Traços (Salvo na Agenda)' : '✓ 1 Traço (Pendente)',
+                source: 'broadcast_update',
+                phone: cleanNum
+              });
+            }
+          });
+        }
+      });
+
+      // C) Se houver userReceipt
+      userReceipts.forEach((ur) => {
+        const uJid = ur.userJid || ur.jid || '';
+        const cleanNum = uJid.replace(/\D/g, '');
+        const is2Checks = Boolean(ur.receiptTimestamp || ur.readTimestamp || ur.playedTimestamp);
+
+        if (cleanNum) {
+          getPhoneSignatures(cleanNum).forEach((sig) => {
+            const existing = receiptsMap.get(sig);
+            if (!existing || (!existing.is2Checks && is2Checks)) {
+              receiptsMap.set(sig, {
+                checks: is2Checks ? 2 : 1,
+                is2Checks,
+                status: is2Checks ? 'DELIVERY_ACK' : 'SERVER_ACK',
+                label: is2Checks ? '✓✓ 2 Traços (Salvo na Agenda)' : '✓ 1 Traço (Pendente)',
+                source: 'user_receipt',
+                phone: cleanNum
+              });
+            }
+          });
+        }
+      });
+    });
   } catch (err) {
-    console.warn('Erro na busca de mensagens específicas do broadcast:', err);
+    console.warn('Erro ao consultar mensagens para auditoria:', err);
   }
 
-  // Fallback: Busca geral nas mensagens mais recentes
+  // 2. Consulta a agenda de contatos do WhatsApp conectado para complementar
   try {
-    const allMsgs = await fetchWhatsAppMessages({ limit: 50 });
-    const match = allMsgs.find(m => {
-      const rJid = (m?.key?.remoteJid || '').toLowerCase();
-      const bJid = broadcastJid.toLowerCase();
-      return rJid === bJid || (m?.broadcast && rJid.includes('@broadcast'));
+    const contacts = await fetchWhatsAppContacts();
+    (contacts || []).forEach((c) => {
+      const raw = c.id || c.jid || c.number || '';
+      const cleanPhone = raw.replace(/\D/g, '');
+      if (cleanPhone && cleanPhone.length >= 8 && cleanPhone.length <= 13) {
+        getPhoneSignatures(cleanPhone).forEach((sig) => {
+          if (!receiptsMap.has(sig)) {
+            receiptsMap.set(sig, {
+              checks: 2,
+              is2Checks: true,
+              status: 'DELIVERY_ACK',
+              label: '✓✓ 2 Traços (Salvo no WhatsApp)',
+              source: 'contacts_agenda',
+              phone: cleanPhone
+            });
+          }
+        });
+      }
     });
-    return match || null;
   } catch (e) {
-    return null;
+    console.warn('Erro ao sincronizar contatos da agenda:', e);
   }
+
+  // Conta total com 2 traços
+  const seenPhones = new Set();
+  receiptsMap.forEach((val) => {
+    if (val.is2Checks && val.phone && !seenPhones.has(val.phone)) {
+      seenPhones.add(val.phone);
+      contactsWith2ChecksCount++;
+    }
+  });
+
+  return {
+    receiptsMap,
+    totalMessagesAnalyzed,
+    contactsWith2ChecksCount,
+  };
 }
 
-// Extrai quem recebeu (✓✓) e quem não recebeu (✓) da mensagem da transmissão
-export function auditBroadcastDeliveryReceipts(broadcastMessage, targetUsers = []) {
-  if (!broadcastMessage) {
-    return {
-      messageText: '',
-      messageTimestamp: null,
-      evaluatedUsers: targetUsers.map(u => ({
-        id: u.id,
-        user: u,
-        name: u.name || 'Sem nome',
-        phone: u.whatsapp || u.phone || '',
-        city: u.city || '',
-        checks: 1,
-        status: 'SERVER_ACK',
-        label: '1 Traço (Pendente)',
-        isSaved: false,
-      })),
-      savedCount: 0,
-      notSavedCount: targetUsers.length
-    };
-  }
-
-  const msgText = broadcastMessage?.message?.conversation ||
-                  broadcastMessage?.message?.extendedTextMessage?.text ||
-                  broadcastMessage?.text ||
-                  'Mensagem da Lista de Transmissão';
-
-  const msgTimestamp = broadcastMessage?.messageTimestamp || broadcastMessage?.createdAt;
-
-  // Mapa de status dos destinatários na mensagem do WhatsApp
-  const receiptsMap = new Map(); // phoneSignature -> { checks: 1 | 2, status, isSaved }
-
-  // 1. Analisa MessageUpdate (recibos individuais de entrega/leitura de Baileys)
-  const updates = Array.isArray(broadcastMessage.MessageUpdate) ? broadcastMessage.MessageUpdate : [];
-  updates.forEach(u => {
-    const participantJid = u.participant || u.fromMeJid || u.key?.participant || '';
-    const cleanNum = participantJid.replace(/\D/g, '');
-    const st = (u.status || '').toUpperCase();
-    const is2Checks = st === 'DELIVERY_ACK' || st === 'READ' || st === 'PLAYED' || st === '2' || st === '3' || st === '4';
-
-    if (cleanNum) {
-      receiptsMap.set(cleanNum, {
-        checks: is2Checks ? 2 : 1,
-        status: st || (is2Checks ? 'DELIVERY_ACK' : 'SERVER_ACK'),
-        isSaved: is2Checks
-      });
-    }
-  });
-
-  // 2. Analisa campo userReceipt ou status se presente
-  const userReceipts = Array.isArray(broadcastMessage.userReceipt) ? broadcastMessage.userReceipt : [];
-  userReceipts.forEach(ur => {
-    const userJid = ur.userJid || ur.jid || '';
-    const cleanNum = userJid.replace(/\D/g, '');
-    const is2Checks = ur.receiptTimestamp || ur.readTimestamp || ur.playedTimestamp;
-    if (cleanNum) {
-      receiptsMap.set(cleanNum, {
-        checks: is2Checks ? 2 : 1,
-        status: is2Checks ? 'DELIVERY_ACK' : 'SERVER_ACK',
-        isSaved: Boolean(is2Checks)
-      });
-    }
-  });
-
+// Extrai quem recebeu (✓✓) e quem não recebeu (✓) da transmissão para um grupo de usuários
+export function auditBroadcastDeliveryReceipts(receiptsMap, targetUsers = []) {
   let savedCount = 0;
   let notSavedCount = 0;
 
-  const evaluatedUsers = targetUsers.map(u => {
+  const evaluatedUsers = targetUsers.map((u) => {
     const rawPhone = u.whatsapp || u.phone || '';
-    const clean = rawPhone.replace(/\D/g, '');
-    
-    // Busca combinações possíveis com e sem 55, com e sem nono dígito
+    const sigs = getPhoneSignatures(rawPhone);
+
     let matchReceipt = null;
-    if (clean) {
-      matchReceipt = receiptsMap.get(clean) ||
-                     receiptsMap.get('55' + clean) ||
-                     receiptsMap.get(clean.startsWith('55') ? clean.substring(2) : clean);
+    if (receiptsMap instanceof Map) {
+      for (const sig of sigs) {
+        if (receiptsMap.has(sig)) {
+          matchReceipt = receiptsMap.get(sig);
+          break;
+        }
+      }
     }
 
-    const is2Checks = matchReceipt?.checks === 2;
+    const is2Checks = matchReceipt?.is2Checks || matchReceipt?.checks === 2;
+
     if (is2Checks) {
       savedCount++;
     } else {
@@ -592,18 +693,17 @@ export function auditBroadcastDeliveryReceipts(broadcastMessage, targetUsers = [
       city: u.city || '',
       checks: is2Checks ? 2 : 1,
       status: is2Checks ? 'DELIVERY_ACK' : 'SERVER_ACK',
-      label: is2Checks ? '✓✓ 2 Traços (Salvo na Agenda)' : '✓ 1 Traço (Não Salvo / Pendente)',
+      label: is2Checks ? (matchReceipt?.label || '✓✓ 2 Traços (Salvo na Agenda)') : '✓ 1 Traço (Não Salvo / Pendente)',
       isSaved: is2Checks,
     };
   });
 
   return {
-    messageText: msgText,
-    messageTimestamp: msgTimestamp,
     evaluatedUsers,
     savedCount,
-    notSavedCount
+    notSavedCount,
   };
 }
+
 
 

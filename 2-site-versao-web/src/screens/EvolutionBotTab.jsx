@@ -15,9 +15,10 @@ import {
   fetchWhatsAppContacts,
   fetchWhatsAppChats,
   searchBroadcastLists,
-  fetchBroadcastLastMessage,
+  fetchAllWhatsAppTransmissionReceipts,
   auditBroadcastDeliveryReceipts,
   generateTransmissionBatches,
+  getPhoneSignatures,
   DEFAULT_INSTANCE_NAME 
 } from '../lib/evolutionApi';
 import { supabase } from '../lib/supabase';
@@ -436,7 +437,7 @@ export function EvolutionBotTab({ users, reload }) {
     }
   }
 
-  // 📡 AÇÃO 0 (PRINCIPAL): Auditoria Automática da Transmissão por Tag / Nome
+  // 📡 AÇÃO 0 (PRINCIPAL): Auditoria Completa de Todas as Transmissões do WhatsApp
   async function handleAutoAuditBroadcastLive() {
     if (!status.connected) {
       alert('Conecte o WhatsApp pelo QR Code ou Código antes de auditar!');
@@ -445,7 +446,7 @@ export function EvolutionBotTab({ users, reload }) {
 
     const targetUsers = getSelectedTargetUsers();
     if (targetUsers.length === 0) {
-      alert('Nenhum contato encontrado para o lote selecionado!');
+      alert('Nenhum contato encontrado para o grupo selecionado!');
       return;
     }
 
@@ -455,46 +456,18 @@ export function EvolutionBotTab({ users, reload }) {
     setTestLogs([]);
     setTestProgress({ current: 0, total: targetUsers.length, success: 0, failed: 0 });
 
-    addLog(`📡 Buscando Lista de Transmissão para o lote "${selectedTestBatch}" no WhatsApp conectado...`, 'info');
+    addLog(`📡 Iniciando auditoria completa de todas as transmissões e mensagens do WhatsApp conectado...`, 'info');
 
     try {
-      // 1. Busca listas de transmissão no WhatsApp com a tag (ex: T1, T2, etc.)
-      const lists = await searchBroadcastLists(selectedTestBatch);
-      setDetectedBroadcastLists(lists);
+      addLog(`🔍 Varrendo conversas recentes, mensagens de saída, listas de transmissão e agenda...`, 'info');
+      const { receiptsMap, totalMessagesAnalyzed, contactsWith2ChecksCount } = await fetchAllWhatsAppTransmissionReceipts();
 
-      let targetJid = selectedBroadcastJid;
-      let targetName = '';
+      addLog(`📥 ${totalMessagesAnalyzed} mensagens e conversas analisadas com sucesso.`, 'info');
+      addLog(`🔎 ${contactsWith2ChecksCount} contatos encontrados com recibo confirmado (✓✓ 2 Traços).`, 'success');
+      addLog(`📊 Cruzando os status com os ${targetUsers.length} membros do ${testTargetType === 'batch' ? `Lote ${selectedTestBatch}` : 'grupo selecionado'}...`, 'info');
 
-      if (!targetJid && lists.length > 0) {
-        const match = lists.find(l => {
-          const name = (l.name || l.subject || '').toLowerCase();
-          return name.includes(selectedTestBatch.toLowerCase());
-        }) || lists[0];
-
-        targetJid = match.id || match.jid;
-        targetName = match.name || match.subject || 'Lista de Transmissão';
-      }
-
-      if (targetJid) {
-        addLog(`✅ Lista localizada no WhatsApp: "${targetName || targetJid}"`, 'success');
-      } else {
-        addLog(`ℹ️ Varrendo conversas e mensagens com recibos de transmissão para o lote ${selectedTestBatch}...`, 'info');
-      }
-
-      // 2. Busca a última mensagem disparada na transmissão
-      addLog(`🔍 Capturando última mensagem e recibos de entrega oficiais (1 vs 2 Traços)...`, 'info');
-      const lastMsg = await fetchBroadcastLastMessage(targetJid);
-      setFoundBroadcastMessage(lastMsg);
-
-      if (lastMsg) {
-        const preview = (lastMsg?.message?.conversation || lastMsg?.message?.extendedTextMessage?.text || lastMsg?.text || '').slice(0, 70);
-        addLog(`📨 Mensagem da transmissão localizada: "${preview || 'Mensagem de transmissão'}..."`, 'info');
-      } else {
-        addLog(`ℹ️ Nenhuma mensagem específica de transmissão no cache recente. O robô auditará cruzando com os contatos conectados.`, 'delay');
-      }
-
-      // 3. Audita os recibos oficiais de entrega
-      const auditResult = auditBroadcastDeliveryReceipts(lastMsg, targetUsers);
+      // Audita os usuários do lote com o mapa completo de recibos
+      const auditResult = auditBroadcastDeliveryReceipts(receiptsMap, targetUsers);
       
       let savedCount = 0;
       let notSavedCount = 0;
@@ -2461,39 +2434,13 @@ export function EvolutionBotTab({ users, reload }) {
                             gap: 8
                           }}>
                             <div>
-                              <strong style={{ color: 'var(--teal)' }}>🎯 Como funciona a Auditoria Automática:</strong><br />
+                              <strong style={{ color: 'var(--teal)' }}>🎯 Auditoria Geral de Transmissões:</strong><br />
                               <span>
-                                1. O robô busca no seu WhatsApp a lista de transmissão com tag <strong>"{selectedTestBatch}"</strong> (ex: <em>Candido lista {selectedTestBatch}</em>).<br />
-                                2. Lê a <strong>última mensagem enviada</strong> no celular e audita os recibos oficiais de entrega.<br />
-                                3. Classifica instantaneamente quem deu <strong>2 Traços (✓✓ Salvo na Agenda)</strong> e quem deu <strong>1 Traço (✓ Pendente)</strong>.
+                                1. O robô varre <strong>todas as mensagens e listas de transmissão disparadas no seu WhatsApp</strong>.<br />
+                                2. Lê os recibos oficiais de entrega (✓✓ 2 Traços) em todas as conversas do aparelho com suporte automático a 8 e 9 dígitos.<br />
+                                3. Cruza instantaneamente com os contatos do <strong>{testTargetType === 'batch' ? `Lote ${selectedTestBatch}` : 'grupo selecionado'}</strong> e exibe o status de cada membro.
                               </span>
                             </div>
-
-                            {detectedBroadcastLists.length > 0 && (
-                              <div style={{ marginTop: 4, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ fontSize: 11, color: 'var(--ink2)', fontWeight: 700 }}>Lista no WhatsApp:</span>
-                                <select
-                                  value={selectedBroadcastJid}
-                                  onChange={(e) => setSelectedBroadcastJid(e.target.value)}
-                                  style={{
-                                    flex: 1,
-                                    padding: '5px 8px',
-                                    borderRadius: 6,
-                                    background: 'rgba(0,0,0,0.5)',
-                                    border: '1px solid var(--teal)',
-                                    color: '#fff',
-                                    fontSize: 11.5
-                                  }}
-                                >
-                                  <option value="">Automático (Busca por "{selectedTestBatch}")</option>
-                                  {detectedBroadcastLists.map((l) => (
-                                    <option key={l.id || l.jid} value={l.id || l.jid}>
-                                      {l.name || l.subject || l.id}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            )}
                           </div>
                         )}
 
