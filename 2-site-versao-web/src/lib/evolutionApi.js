@@ -500,15 +500,15 @@ export async function searchBroadcastLists(tag = '') {
   return broadcastChats;
 }
 
-// 📡 Varredura Geral de TODAS as Transmissões e Recibos de Entrega do WhatsApp
+// 📡 Varredura Geral de TODAS as Transmissões e Recibos de Mensagens do WhatsApp
 export async function fetchAllWhatsAppTransmissionReceipts() {
   const { instanceName } = getEvolutionConfig();
   const receiptsMap = new Map(); // signature -> { checks: 1 | 2, status, label, source, timestamp }
   let totalMessagesAnalyzed = 0;
   let contactsWith2ChecksCount = 0;
 
-  // 1. Consulta mensagens enviadas pela instância (fromMe: true e geral)
   try {
+    // 1. Consulta mensagens enviadas pela instância (fromMe: true)
     const msgsPost = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
       method: 'POST',
       body: JSON.stringify({
@@ -517,46 +517,75 @@ export async function fetchAllWhatsAppTransmissionReceipts() {
             fromMe: true
           }
         },
-        limit: 300,
+        limit: 500,
       }),
     }).catch(() => null);
 
     const msgsList = msgsPost?.messages?.records || (Array.isArray(msgsPost) ? msgsPost : []);
     
-    // Fallback adicional: busca geral se msgsList estiver vazio
-    let allMsgs = msgsList;
-    if (allMsgs.length === 0) {
-      allMsgs = await fetchWhatsAppMessages({ limit: 300 });
-    }
+    // 2. Consulta mensagens gerais recentes para capturar respostas e recibos
+    const msgsGeneral = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        limit: 500,
+      }),
+    }).catch(() => null);
+
+    const msgsGeneralList = msgsGeneral?.messages?.records || (Array.isArray(msgsGeneral) ? msgsGeneral : []);
+
+    // Unifica mensagens únicas por ID
+    const msgMap = new Map();
+    msgsList.forEach((m) => m?.id && msgMap.set(m.id, m));
+    msgsGeneralList.forEach((m) => m?.id && msgMap.set(m.id, m));
+    const allMsgs = Array.from(msgMap.values());
 
     totalMessagesAnalyzed = allMsgs.length;
 
     allMsgs.forEach((msg) => {
       const remoteJid = msg?.key?.remoteJid || msg?.remoteJid || '';
+      const fromMe = msg?.key?.fromMe ?? true;
       const directStatus = (msg?.status || '').toUpperCase();
       const updates = Array.isArray(msg?.MessageUpdate) ? msg.MessageUpdate : [];
       const userReceipts = Array.isArray(msg?.userReceipt) ? msg.userReceipt : [];
 
-      // A) Se for mensagem direta para um contato
-      if (remoteJid && !remoteJid.includes('@g.us') && !remoteJid.includes('status@broadcast')) {
-        const cleanPhone = remoteJid.replace(/\D/g, '');
+      // A) Se for mensagem recebida (fromMe: false), o contato certamente recebeu/interagiu
+      if (!fromMe && remoteJid && !remoteJid.includes('@g.us')) {
+        let raw = remoteJid.includes('@') ? remoteJid.split('@')[0] : remoteJid;
+        const cleanPhone = raw.replace(/\D/g, '');
+        if (cleanPhone) {
+          getPhoneSignatures(cleanPhone).forEach((sig) => {
+            receiptsMap.set(sig, {
+              checks: 2,
+              is2Checks: true,
+              status: 'READ',
+              label: '✓✓ 2 Traços (Mensagem Recebida / Interagiu)',
+              source: 'incoming_message',
+              phone: cleanPhone
+            });
+          });
+        }
+      }
+
+      // B) Se for mensagem direta enviada para um contato
+      if (fromMe && remoteJid && !remoteJid.includes('@g.us') && !remoteJid.includes('status@broadcast')) {
+        let raw = remoteJid.includes('@') ? remoteJid.split('@')[0] : remoteJid;
+        const cleanPhone = raw.replace(/\D/g, '');
         const isRead = updates.some(u => (u.status || '').toUpperCase() === 'READ' || (u.status || '').toUpperCase() === 'PLAYED') ||
                        directStatus === 'READ' || directStatus === 'PLAYED';
         const isDelivered = isRead || updates.some(u => (u.status || '').toUpperCase() === 'DELIVERY_ACK') ||
                             directStatus === 'DELIVERY_ACK';
 
-        if (cleanPhone) {
+        if (cleanPhone && isDelivered) {
           const checks = isDelivered ? 2 : 1;
-          const statusLabel = isRead ? '✓✓ 2 Traços Azuis (Lido)' : isDelivered ? '✓✓ 2 Traços (Entregue / Salvo)' : '✓ 1 Traço (Pendente)';
+          const statusLabel = isRead ? '✓✓ 2 Traços Azuis (Lido)' : '✓✓ 2 Traços (Entregue)';
           
           getPhoneSignatures(cleanPhone).forEach((sig) => {
-            // Se já tiver 2 traços gravado, preserva
             const existing = receiptsMap.get(sig);
             if (!existing || (!existing.is2Checks && isDelivered)) {
               receiptsMap.set(sig, {
                 checks,
                 is2Checks: isDelivered,
-                status: isDelivered ? 'DELIVERY_ACK' : 'SERVER_ACK',
+                status: isRead ? 'READ' : 'DELIVERY_ACK',
                 label: statusLabel,
                 source: 'chat_message',
                 phone: cleanPhone
@@ -566,84 +595,61 @@ export async function fetchAllWhatsAppTransmissionReceipts() {
         }
       }
 
-      // B) Se houver MessageUpdate com participantes (mensagens de broadcast)
+      // C) Se houver MessageUpdate com participantes (mensagens de broadcast)
       updates.forEach((u) => {
         const pJid = u.participant || u.fromMeJid || u.key?.participant || '';
-        const cleanNum = pJid.replace(/\D/g, '');
-        const st = (u.status || '').toUpperCase();
-        const is2Checks = st === 'DELIVERY_ACK' || st === 'READ' || st === 'PLAYED' || st === '2' || st === '3' || st === '4';
+        if (pJid) {
+          let raw = pJid.includes('@') ? pJid.split('@')[0] : pJid;
+          const cleanNum = raw.replace(/\D/g, '');
+          const st = (u.status || '').toUpperCase();
+          const is2Checks = st === 'DELIVERY_ACK' || st === 'READ' || st === 'PLAYED' || st === '2' || st === '3' || st === '4';
 
-        if (cleanNum) {
-          getPhoneSignatures(cleanNum).forEach((sig) => {
-            const existing = receiptsMap.get(sig);
-            if (!existing || (!existing.is2Checks && is2Checks)) {
-              receiptsMap.set(sig, {
-                checks: is2Checks ? 2 : 1,
-                is2Checks,
-                status: is2Checks ? 'DELIVERY_ACK' : 'SERVER_ACK',
-                label: is2Checks ? '✓✓ 2 Traços (Salvo na Agenda)' : '✓ 1 Traço (Pendente)',
-                source: 'broadcast_update',
-                phone: cleanNum
-              });
-            }
-          });
+          if (cleanNum && is2Checks) {
+            getPhoneSignatures(cleanNum).forEach((sig) => {
+              const existing = receiptsMap.get(sig);
+              if (!existing || (!existing.is2Checks && is2Checks)) {
+                receiptsMap.set(sig, {
+                  checks: 2,
+                  is2Checks: true,
+                  status: st,
+                  label: '✓✓ 2 Traços (Entregue na Transmissão)',
+                  source: 'broadcast_update',
+                  phone: cleanNum
+                });
+              }
+            });
+          }
         }
       });
 
-      // C) Se houver userReceipt
+      // D) Se houver userReceipt
       userReceipts.forEach((ur) => {
         const uJid = ur.userJid || ur.jid || '';
-        const cleanNum = uJid.replace(/\D/g, '');
-        const is2Checks = Boolean(ur.receiptTimestamp || ur.readTimestamp || ur.playedTimestamp);
+        if (uJid) {
+          let raw = uJid.includes('@') ? uJid.split('@')[0] : uJid;
+          const cleanNum = raw.replace(/\D/g, '');
+          const is2Checks = Boolean(ur.receiptTimestamp || ur.readTimestamp || ur.playedTimestamp);
 
-        if (cleanNum) {
-          getPhoneSignatures(cleanNum).forEach((sig) => {
-            const existing = receiptsMap.get(sig);
-            if (!existing || (!existing.is2Checks && is2Checks)) {
-              receiptsMap.set(sig, {
-                checks: is2Checks ? 2 : 1,
-                is2Checks,
-                status: is2Checks ? 'DELIVERY_ACK' : 'SERVER_ACK',
-                label: is2Checks ? '✓✓ 2 Traços (Salvo na Agenda)' : '✓ 1 Traço (Pendente)',
-                source: 'user_receipt',
-                phone: cleanNum
-              });
-            }
-          });
+          if (cleanNum && is2Checks) {
+            getPhoneSignatures(cleanNum).forEach((sig) => {
+              const existing = receiptsMap.get(sig);
+              if (!existing || (!existing.is2Checks && is2Checks)) {
+                receiptsMap.set(sig, {
+                  checks: 2,
+                  is2Checks: true,
+                  status: 'DELIVERY_ACK',
+                  label: '✓✓ 2 Traços (Recibo Confirmado)',
+                  source: 'user_receipt',
+                  phone: cleanNum
+                });
+              }
+            });
+          }
         }
       });
     });
   } catch (err) {
     console.warn('Erro ao consultar mensagens para auditoria:', err);
-  }
-
-  // 2. Consulta a agenda de contatos do WhatsApp conectado para complementar
-  try {
-    const contacts = await fetchWhatsAppContacts();
-    (contacts || []).forEach((c) => {
-      let raw = c.remoteJid || c.jid || c.number || c.phone || '';
-      if (!raw && typeof c.id === 'string' && (c.id.includes('@') || /^\d{8,15}$/.test(c.id))) {
-        raw = c.id;
-      }
-      if (raw.includes('@')) raw = raw.split('@')[0];
-      const cleanPhone = raw.replace(/\D/g, '');
-      if (cleanPhone && cleanPhone.length >= 8 && cleanPhone.length <= 15) {
-        getPhoneSignatures(cleanPhone).forEach((sig) => {
-          if (!receiptsMap.has(sig)) {
-            receiptsMap.set(sig, {
-              checks: 2,
-              is2Checks: true,
-              status: 'DELIVERY_ACK',
-              label: '✓✓ 2 Traços (Salvo no WhatsApp)',
-              source: 'contacts_agenda',
-              phone: cleanPhone
-            });
-          }
-        });
-      }
-    });
-  } catch (e) {
-    console.warn('Erro ao sincronizar contatos da agenda:', e);
   }
 
   // Conta total com 2 traços

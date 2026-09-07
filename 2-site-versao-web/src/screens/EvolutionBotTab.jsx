@@ -471,7 +471,7 @@ export function EvolutionBotTab({ users, reload }) {
     addLog(`📡 Iniciando auditoria completa de todas as transmissões e mensagens do WhatsApp conectado...`, 'info');
 
     try {
-      addLog(`🔍 Varrendo conversas recentes, mensagens de saída, listas de transmissão e agenda...`, 'info');
+      addLog(`🔍 Varrendo mensagens enviadas, transmissões e recibos de entrega reais (sem agenda antiga)...`, 'info');
       const { receiptsMap, totalMessagesAnalyzed, contactsWith2ChecksCount } = await fetchAllWhatsAppTransmissionReceipts();
 
       addLog(`📥 ${totalMessagesAnalyzed} mensagens e conversas analisadas com sucesso.`, 'info');
