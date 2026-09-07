@@ -411,14 +411,27 @@ export function doesMessageContainPhrase(m, targetPhrase) {
     ''
   ).toLowerCase();
 
+  // 1. Match exato no texto direto
   if (directText.includes(cleanTarget)) return true;
 
+  // 2. Match por todas as palavras chaves significativas
+  const words = cleanTarget.split(/\s+/).filter(w => w.length >= 2);
+  if (words.length > 1 && words.every(w => directText.includes(w))) {
+    return true;
+  }
+
+  // 3. Busca profunda no JSON completo da mensagem
   try {
     const jsonStr = JSON.stringify(m).toLowerCase();
-    return jsonStr.includes(cleanTarget);
+    if (jsonStr.includes(cleanTarget)) return true;
+    if (words.length > 1 && words.every(w => jsonStr.includes(w))) {
+      return true;
+    }
   } catch (e) {
-    return false;
+    // ignore JSON stringify errors
   }
+
+  return false;
 }
 
 // Helper para extrair todos os telefones envolvidos numa mensagem (inclui destinatários de transmissão userReceipt e MessageUpdate)
@@ -714,31 +727,32 @@ export function getPhoneSignatures(p) {
     clean = '61' + clean;
   }
 
+  const sigs = new Set();
+  sigs.add(clean);
+  sigs.add('55' + clean);
+
   if (clean.length === 11) {
     const ddd = clean.substring(0, 2);
-    const rest = clean.substring(3); // 8 dígitos finais
-    return [
-      '55' + clean,
-      clean,
-      '55' + ddd + rest,
-      ddd + rest,
-      '55' + ddd + '9' + rest,
-      ddd + '9' + rest
-    ];
+    const nineDigits = clean.substring(2); // ex: 992623060
+    const eightDigits = clean.substring(3); // ex: 92623060
+    sigs.add('55' + clean);
+    sigs.add(clean);
+    sigs.add('55' + ddd + eightDigits);
+    sigs.add(ddd + eightDigits);
+    sigs.add(nineDigits);
+    sigs.add(eightDigits);
   } else if (clean.length === 10) {
     const ddd = clean.substring(0, 2);
-    const rest = clean.substring(2); // 8 dígitos
-    return [
-      '55' + clean,
-      clean,
-      '55' + ddd + '9' + rest,
-      ddd + '9' + rest,
-      '55' + ddd + rest,
-      ddd + rest
-    ];
-  } else {
-    return [clean, '55' + clean];
+    const eightDigits = clean.substring(2); // ex: 92623060
+    sigs.add('55' + clean);
+    sigs.add(clean);
+    sigs.add('55' + ddd + '9' + eightDigits);
+    sigs.add(ddd + '9' + eightDigits);
+    sigs.add('9' + eightDigits);
+    sigs.add(eightDigits);
   }
+
+  return Array.from(sigs);
 }
 
 // ── AUDITORIA DE TODAS AS LISTAS DE TRANSMISSÃO E MENSAGENS ────────
