@@ -349,7 +349,7 @@ export function evaluateMessageDelivery(msg) {
 
 // Consulta direta e determinística do status de entrega na conversa individual do contato
 export async function getContactDeliveryStatusDirect(phone) {
-  const clean = (phone || '').toString().replace(/\D/g, '');
+  const clean = extractCleanPhone(phone);
   if (!clean) return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem número)', status: 'PENDING' };
 
   const sigs = getPhoneSignatures(clean);
@@ -395,7 +395,7 @@ export async function getContactDeliveryStatusDirect(phone) {
 // Helper para verificar se uma mensagem contém a frase buscada (inclui busca profunda no JSON)
 export function doesMessageContainPhrase(m, targetPhrase) {
   if (!m || !targetPhrase) return false;
-  const cleanTarget = targetPhrase.toLowerCase().trim();
+  const cleanTarget = targetPhrase.toLowerCase().trim().replace(/^["']|["']$/g, '');
   if (!cleanTarget) return false;
 
   const directText = (
@@ -480,6 +480,9 @@ export async function scanAllChatsForPhrase(phraseText) {
 
     const listSent = msgsSent?.messages?.records || (Array.isArray(msgsSent) ? msgsSent : []);
 
+    // 3. Busca todos os chats/conversas abertas
+    const chats = await fetchWhatsAppChats().catch(() => []);
+
     // Unifica mensagens
     const msgMap = new Map();
     listGeneral.forEach((m) => m?.id && msgMap.set(m.id, m));
@@ -494,6 +497,15 @@ export async function scanAllChatsForPhrase(phraseText) {
         });
       }
     });
+
+    (chats || []).forEach((c) => {
+      if (doesMessageContainPhrase(c, targetPhrase)) {
+        const foundPhones = extractPhonesFromMessage(c);
+        foundPhones.forEach((p) => {
+          getPhoneSignatures(p).forEach((sig) => matchedSigs.add(sig));
+        });
+      }
+    });
   } catch (e) {
     console.warn('Erro ao escanear conversas por frase:', e);
   }
@@ -502,8 +514,8 @@ export async function scanAllChatsForPhrase(phraseText) {
 }
 
 export async function checkContactHasBroadcastPhrase(phone, phraseText, preScannedSigs = null) {
-  const cleanPhone = (phone || '').toString().replace(/\D/g, '');
-  const targetPhrase = (phraseText || '').toLowerCase().trim();
+  const cleanPhone = extractCleanPhone(phone);
+  const targetPhrase = (phraseText || '').toLowerCase().trim().replace(/^["']|["']$/g, '');
 
   if (!cleanPhone || !targetPhrase) {
     return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem frase ou sem número)', status: 'PENDING' };
@@ -524,21 +536,45 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
     }
   }
 
-  // 2. Checa diretamente nas conversas individuais do contato (tentando assinaturas com e sem 55/9)
-  const jids = sigs.map((s) => `${s}@s.whatsapp.net`);
-  for (const jid of jids) {
+  // 2. Checa diretamente nas conversas do contato usando Prisma contains + JID
+  for (const sig of sigs) {
     try {
-      const msgs = await fetchWhatsAppMessages({
+      // Tenta busca por substring do número de telefone (Prisma contains)
+      const msgsContains = await fetchWhatsAppMessages({
+        where: {
+          remoteJid: {
+            contains: sig
+          }
+        },
+        limit: 50
+      }).catch(() => null);
+
+      if (Array.isArray(msgsContains) && msgsContains.length > 0) {
+        for (const m of msgsContains) {
+          if (doesMessageContainPhrase(m, targetPhrase)) {
+            return {
+              has2Checks: true,
+              checks: 2,
+              status: 'DELIVERY_ACK',
+              label: `✓✓ 2 Traços (Frase "${phraseText}" encontrada no chat!)`
+            };
+          }
+        }
+      }
+
+      // Tenta busca direta por key.remoteJid
+      const jid = `${sig}@s.whatsapp.net`;
+      const msgsJid = await fetchWhatsAppMessages({
         where: {
           key: {
             remoteJid: jid
           }
         },
         limit: 50
-      });
+      }).catch(() => null);
 
-      if (Array.isArray(msgs) && msgs.length > 0) {
-        for (const m of msgs) {
+      if (Array.isArray(msgsJid) && msgsJid.length > 0) {
+        for (const m of msgsJid) {
           if (doesMessageContainPhrase(m, targetPhrase)) {
             return {
               has2Checks: true,
@@ -567,7 +603,7 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
 export async function checkWhatsAppNumbers(numbersArray) {
   const { instanceName } = getEvolutionConfig();
   const cleanNumbers = numbersArray.map(n => {
-    let clean = (n || '').replace(/\D/g, '');
+    let clean = extractCleanPhone(n);
     if (clean.length === 10 || clean.length === 11) clean = '55' + clean;
     return clean;
   }).filter(Boolean);
@@ -610,8 +646,8 @@ export async function fetchWhatsAppContacts() {
 export function generateTransmissionBatches(users, maxPerBatch = 250) {
   // Filtra apenas membros com telefone válido
   const validUsers = users.filter((u) => {
-    const phone = (u.whatsapp || u.phone || '').replace(/\D/g, '');
-    return phone.length >= 10;
+    const phone = extractCleanPhone(u.whatsapp || u.phone);
+    return phone.length >= 8;
   });
 
   const batches = [];
@@ -635,10 +671,40 @@ export function generateTransmissionBatches(users, maxPerBatch = 250) {
 
 // ── AUDITORIA DE LISTAS DE TRANSMISSÃO (@broadcast) NO WHATSAPP ────
 
+// Extrai telefone limpo de URLs do WhatsApp (ex: https://api.whatsapp.com/send/?phone=61992623060&text&type=phone_number&app_absent=0) ou texto bruto
+export function extractCleanPhone(p) {
+  if (!p) return '';
+  let str = p.toString().trim();
+
+  // Se for uma URL do WhatsApp com query string phone=
+  if (str.includes('phone=')) {
+    const match = str.match(/phone=([0-9+]+)/i);
+    if (match && match[1]) {
+      str = match[1];
+    }
+  } else if (str.includes('wa.me/')) {
+    const match = str.match(/wa\.me\/([0-9+]+)/i);
+    if (match && match[1]) {
+      str = match[1];
+    }
+  } else if (str.includes('http://') || str.includes('https://')) {
+    str = str.split('?')[0];
+  }
+
+  let clean = str.replace(/\D/g, '');
+
+  // Se o número tiver 12 dígitos e NÃO começar com 55 (ex: 619926230600 originado de app_absent=0)
+  if (clean.length === 12 && !clean.startsWith('55') && clean.endsWith('0')) {
+    clean = clean.substring(0, 11);
+  }
+
+  return clean;
+}
+
 // ── GERADOR DE ASSINATURAS DE TELEFONE (DDD + 8/9 DÍGITOS) ─────────
 
 export function getPhoneSignatures(p) {
-  let clean = (p || '').toString().replace(/\D/g, '');
+  let clean = extractCleanPhone(p);
   if (!clean) return [];
   if (clean.startsWith('0')) clean = clean.substring(1);
   if (clean.startsWith('55') && clean.length >= 12) clean = clean.substring(2);

@@ -22,6 +22,7 @@ import {
   checkContactHasBroadcastPhrase,
   generateTransmissionBatches,
   getPhoneSignatures,
+  extractCleanPhone,
   DEFAULT_INSTANCE_NAME 
 } from '../lib/evolutionApi';
 import { supabase } from '../lib/supabase';
@@ -101,7 +102,7 @@ export function EvolutionBotTab({ users, reload }) {
   }, [testLogs]);
 
   function getPhoneSignatures(p) {
-    let clean = (p || '').replace(/\D/g, '');
+    let clean = extractCleanPhone(p);
     if (!clean) return [];
     if (clean.startsWith('0')) clean = clean.substring(1);
     if (clean.startsWith('55') && clean.length >= 12) clean = clean.substring(2);
@@ -153,7 +154,7 @@ export function EvolutionBotTab({ users, reload }) {
     if (raw.includes('@g.us') || raw.includes('broadcast')) return '';
     if (raw.includes('@')) raw = raw.split('@')[0];
     if (raw.includes(':')) raw = raw.split(':')[0];
-    const digits = raw.replace(/\D/g, '');
+    const digits = extractCleanPhone(raw);
     if (digits.length >= 8 && digits.length <= 15) {
       return digits;
     }
@@ -174,7 +175,7 @@ export function EvolutionBotTab({ users, reload }) {
   }
 
   function normalizePhone(p) {
-    let clean = (p || '').replace(/\D/g, '');
+    let clean = extractCleanPhone(p);
     if (!clean) return '';
     if (clean.length === 10 || clean.length === 11) clean = '55' + clean;
     return clean;
@@ -2254,7 +2255,7 @@ export function EvolutionBotTab({ users, reload }) {
                               {/* Link direto para abrir no WhatsApp */}
                               {r.phone && (
                                 <a
-                                  href={`https://wa.me/${normalizePhone(r.phone)}`}
+                                  href={`https://api.whatsapp.com/send/?phone=${normalizePhone(r.phone)}&text&type=phone_number&app_absent=0`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   style={{
