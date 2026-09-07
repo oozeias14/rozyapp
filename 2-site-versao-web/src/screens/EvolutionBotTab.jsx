@@ -134,12 +134,24 @@ export function EvolutionBotTab({ users, reload }) {
   function extractPhoneFromContact(c) {
     if (!c) return '';
     if (c.isGroup) return '';
-    let raw = typeof c === 'string' ? c : (c.remoteJid || c.jid || c.id || c.number || c.phone || '');
+    let raw = '';
+    if (typeof c === 'string') {
+      raw = c;
+    } else {
+      raw = c.remoteJid || c.jid || c.number || c.phone || '';
+      if (!raw && typeof c.id === 'string' && (c.id.includes('@') || /^\d{8,15}$/.test(c.id))) {
+        raw = c.id;
+      }
+    }
     if (typeof raw !== 'string') raw = String(raw || '');
     if (raw.includes('@g.us') || raw.includes('broadcast')) return '';
     if (raw.includes('@')) raw = raw.split('@')[0];
     if (raw.includes(':')) raw = raw.split(':')[0];
-    return raw.replace(/\D/g, '');
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length >= 8 && digits.length <= 15) {
+      return digits;
+    }
+    return '';
   }
 
   // Set reativo para checagem O(1) ultra-rápida de contatos confirmados no WhatsApp
@@ -349,7 +361,7 @@ export function EvolutionBotTab({ users, reload }) {
 
       (contacts || []).forEach((c) => {
         const phone = extractPhoneFromContact(c);
-        if (phone && phone.length >= 8 && phone.length <= 13) {
+        if (phone && phone.length >= 8 && phone.length <= 15) {
           getPhoneSignatures(phone).forEach((sig) => {
             currentSavedSet.add(sig);
           });
@@ -503,6 +515,20 @@ export function EvolutionBotTab({ users, reload }) {
       setTestResults(evaluated);
       addLog(`🏁 Auditoria finalizada! 2 Traços (Salvos): ${savedCount} | 1 Traço (Pendentes): ${notSavedCount}`, 'info');
 
+      // Auto-atualização dos salvos encontrados na auditoria (2 traços confirmados)
+      const confirmedSavedPhones = evaluated
+        .filter((item) => item.checks === 2)
+        .map((item) => normalizePhone(item.phone))
+        .filter(Boolean);
+
+      if (confirmedSavedPhones.length > 0) {
+        setSavedPhones((prev) => {
+          const next = Array.from(new Set([...prev, ...confirmedSavedPhones]));
+          localStorage.setItem('wa_saved_phones', JSON.stringify(next));
+          return next;
+        });
+      }
+
     } catch (err) {
       addLog(`❌ Erro durante a auditoria da transmissão: ${err.message}`, 'error');
       alert('Erro na auditoria: ' + err.message);
@@ -580,7 +606,7 @@ export function EvolutionBotTab({ users, reload }) {
 
       (contacts || []).forEach((c) => {
         const phone = extractPhoneFromContact(c);
-        if (phone && phone.length >= 8 && phone.length <= 13) {
+        if (phone && phone.length >= 8 && phone.length <= 15) {
           getPhoneSignatures(phone).forEach((sig) => {
             currentSavedSet.add(sig);
           });
@@ -638,6 +664,20 @@ export function EvolutionBotTab({ users, reload }) {
 
       setTestResults(evaluated);
       addLog(`🏁 Checagem finalizada! Salvos: ${savedCount} | Não Salvos: ${notSavedCount}`, 'info');
+
+      // Auto-atualização dos salvos encontrados
+      const confirmedSavedPhones = evaluated
+        .filter((item) => item.checks === 2)
+        .map((item) => normalizePhone(item.phone))
+        .filter(Boolean);
+
+      if (confirmedSavedPhones.length > 0) {
+        setSavedPhones((prev) => {
+          const next = Array.from(new Set([...prev, ...confirmedSavedPhones]));
+          localStorage.setItem('wa_saved_phones', JSON.stringify(next));
+          return next;
+        });
+      }
     } catch (err) {
       addLog(`❌ Erro ao checar status no WhatsApp: ${err.message}`, 'error');
       alert('Erro ao checar status: ' + err.message);

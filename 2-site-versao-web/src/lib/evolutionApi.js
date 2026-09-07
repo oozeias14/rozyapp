@@ -621,9 +621,13 @@ export async function fetchAllWhatsAppTransmissionReceipts() {
   try {
     const contacts = await fetchWhatsAppContacts();
     (contacts || []).forEach((c) => {
-      const raw = c.id || c.jid || c.number || '';
+      let raw = c.remoteJid || c.jid || c.number || c.phone || '';
+      if (!raw && typeof c.id === 'string' && (c.id.includes('@') || /^\d{8,15}$/.test(c.id))) {
+        raw = c.id;
+      }
+      if (raw.includes('@')) raw = raw.split('@')[0];
       const cleanPhone = raw.replace(/\D/g, '');
-      if (cleanPhone && cleanPhone.length >= 8 && cleanPhone.length <= 13) {
+      if (cleanPhone && cleanPhone.length >= 8 && cleanPhone.length <= 15) {
         getPhoneSignatures(cleanPhone).forEach((sig) => {
           if (!receiptsMap.has(sig)) {
             receiptsMap.set(sig, {
