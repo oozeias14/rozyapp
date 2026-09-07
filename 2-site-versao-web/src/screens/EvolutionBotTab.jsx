@@ -17,6 +17,7 @@ import {
   searchBroadcastLists,
   fetchAllWhatsAppTransmissionReceipts,
   auditBroadcastDeliveryReceipts,
+  getContactDeliveryStatusDirect,
   generateTransmissionBatches,
   getPhoneSignatures,
   DEFAULT_INSTANCE_NAME 
@@ -436,14 +437,13 @@ export function EvolutionBotTab({ users, reload }) {
     addLog(`📡 Iniciando auditoria completa de todas as transmissões e mensagens do WhatsApp conectado...`, 'info');
 
     try {
-      addLog(`🔍 Varrendo transmissões ativas, recibos de mensagens e nomes do WhatsApp...`, 'info');
+      addLog(`🔍 Varrendo recibos e histórico de conversas no WhatsApp conectado...`, 'info');
       const receiptsData = await fetchAllWhatsAppTransmissionReceipts();
 
       addLog(`📥 ${receiptsData.totalMessagesAnalyzed} mensagens e conversas analisadas com sucesso.`, 'info');
-      addLog(`🔎 ${receiptsData.contactsWith2ChecksCount} contatos confirmados no WhatsApp.`, 'success');
-      addLog(`📊 Cruzando os status (Telefone + Nome) com os ${targetUsers.length} membros do ${testTargetType === 'batch' ? `Lote ${selectedTestBatch}` : 'grupo selecionado'}...`, 'info');
+      addLog(`📊 Auditando detalhadamente ${targetUsers.length} contatos selecionados...`, 'info');
 
-      // Audita os usuários do lote com o mapeamento duplo (Telefone + Nome)
+      // Audita os usuários selecionados
       const auditResult = auditBroadcastDeliveryReceipts(receiptsData, targetUsers);
       
       let savedCount = 0;
@@ -456,7 +456,23 @@ export function EvolutionBotTab({ users, reload }) {
           break;
         }
 
-        const item = auditResult.evaluatedUsers[i];
+        let item = auditResult.evaluatedUsers[i];
+        const u = targetUsers[i];
+
+        // Se ainda não tiver 2 traços confirmados, consulta diretamente a conversa individual do contato para máxima precisão
+        if (item.checks !== 2 && (u.whatsapp || u.phone)) {
+          const directCheck = await getContactDeliveryStatusDirect(u.whatsapp || u.phone);
+          if (directCheck.has2Checks) {
+            item = {
+              ...item,
+              checks: 2,
+              status: directCheck.status || 'DELIVERY_ACK',
+              label: directCheck.label || '✓✓ 2 Traços (Entregue no WhatsApp)',
+              isSaved: true
+            };
+          }
+        }
+
         if (item.checks === 2) {
           savedCount++;
           addLog(`✓✓ [${i + 1}/${targetUsers.length}] ${item.name} (${item.phone}): 2 TRAÇOS ➔ SALVO NA AGENDA!`, 'success');
@@ -474,7 +490,7 @@ export function EvolutionBotTab({ users, reload }) {
           failed: notSavedCount,
         });
 
-        await new Promise(r => setTimeout(r, 15));
+        await new Promise(r => setTimeout(r, 40));
       }
 
       setTestResults(evaluated);

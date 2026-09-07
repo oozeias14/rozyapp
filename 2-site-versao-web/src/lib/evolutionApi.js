@@ -347,6 +347,51 @@ export function evaluateMessageDelivery(msg) {
   return { has2Checks: false, isRead: false, status: directStatus || 'PENDING', label: '1 Traço (Pendente)', checks: 1 };
 }
 
+// Consulta direta e determinística do status de entrega na conversa individual do contato
+export async function getContactDeliveryStatusDirect(phone) {
+  const clean = (phone || '').toString().replace(/\D/g, '');
+  if (!clean) return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem número)', status: 'PENDING' };
+
+  const sigs = getPhoneSignatures(clean);
+  const jids = sigs.map((s) => `${s}@s.whatsapp.net`);
+
+  for (const jid of jids) {
+    try {
+      const msgs = await fetchWhatsAppMessages({
+        where: {
+          key: {
+            remoteJid: jid
+          }
+        },
+        limit: 15
+      });
+
+      if (Array.isArray(msgs) && msgs.length > 0) {
+        // Se houver qualquer mensagem recebida do contato (fromMe: false), confirma 2 traços
+        const hasIncoming = msgs.some((m) => m?.key?.fromMe === false || m?.fromMe === false);
+        if (hasIncoming) {
+          return { has2Checks: true, checks: 2, label: '✓✓ 2 Traços (Mensagem Recebida / Interagiu)', status: 'READ' };
+        }
+
+        // Verifica mensagens enviadas
+        for (const m of msgs) {
+          const evalResult = evaluateMessageDelivery(m);
+          if (evalResult.has2Checks) {
+            return evalResult;
+          }
+        }
+
+        // Tem conversa enviada, mas ficou em 1 traço (não entregue)
+        return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Não Entregue / Não Salvo)', status: 'SERVER_ACK' };
+      }
+    } catch (e) {
+      // continua tentando
+    }
+  }
+
+  return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Pendente / Sem Mensagem Entregue)', status: 'NOT_FOUND' };
+}
+
 // ── CHECAGEM PRÉVIA DE NÚMEROS NO WHATSAPP ─────────────────────────
 
 export async function checkWhatsAppNumbers(numbersArray) {
