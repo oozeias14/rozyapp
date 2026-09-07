@@ -471,15 +471,15 @@ export function EvolutionBotTab({ users, reload }) {
     addLog(`📡 Iniciando auditoria completa de todas as transmissões e mensagens do WhatsApp conectado...`, 'info');
 
     try {
-      addLog(`🔍 Varrendo mensagens enviadas, transmissões e recibos de entrega reais (sem agenda antiga)...`, 'info');
-      const { receiptsMap, totalMessagesAnalyzed, contactsWith2ChecksCount } = await fetchAllWhatsAppTransmissionReceipts();
+      addLog(`🔍 Varrendo transmissões ativas, recibos de mensagens e nomes do WhatsApp...`, 'info');
+      const receiptsData = await fetchAllWhatsAppTransmissionReceipts();
 
-      addLog(`📥 ${totalMessagesAnalyzed} mensagens e conversas analisadas com sucesso.`, 'info');
-      addLog(`🔎 ${contactsWith2ChecksCount} contatos encontrados com recibo confirmado (✓✓ 2 Traços).`, 'success');
-      addLog(`📊 Cruzando os status com os ${targetUsers.length} membros do ${testTargetType === 'batch' ? `Lote ${selectedTestBatch}` : 'grupo selecionado'}...`, 'info');
+      addLog(`📥 ${receiptsData.totalMessagesAnalyzed} mensagens e conversas analisadas com sucesso.`, 'info');
+      addLog(`🔎 ${receiptsData.contactsWith2ChecksCount} contatos confirmados no WhatsApp.`, 'success');
+      addLog(`📊 Cruzando os status (Telefone + Nome) com os ${targetUsers.length} membros do ${testTargetType === 'batch' ? `Lote ${selectedTestBatch}` : 'grupo selecionado'}...`, 'info');
 
-      // Audita os usuários do lote com o mapa completo de recibos
-      const auditResult = auditBroadcastDeliveryReceipts(receiptsMap, targetUsers);
+      // Audita os usuários do lote com o mapeamento duplo (Telefone + Nome)
+      const auditResult = auditBroadcastDeliveryReceipts(receiptsData, targetUsers);
       
       let savedCount = 0;
       let notSavedCount = 0;

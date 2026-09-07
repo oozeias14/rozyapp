@@ -660,6 +660,48 @@ export async function fetchAllWhatsAppTransmissionReceipts() {
     console.warn('Erro ao consultar mensagens para auditoria:', err);
   }
 
+  // 5. Consulta a agenda de contatos do WhatsApp conectado para suporte a nomes (PushNames)
+  const nameReceiptsMap = new Map();
+  try {
+    const contacts = await fetchWhatsAppContacts();
+    (contacts || []).forEach((c) => {
+      let raw = c.remoteJid || c.jid || c.number || c.phone || '';
+      if (raw.includes('@')) raw = raw.split('@')[0];
+      const cleanPhone = raw.replace(/\D/g, '');
+      const pushName = (c.pushName || c.name || '').toLowerCase().trim();
+
+      if (cleanPhone && cleanPhone.length >= 8 && cleanPhone.length <= 15) {
+        getPhoneSignatures(cleanPhone).forEach((sig) => {
+          if (!receiptsMap.has(sig)) {
+            receiptsMap.set(sig, {
+              checks: 2,
+              is2Checks: true,
+              status: 'DELIVERY_ACK',
+              label: '✓✓ 2 Traços (Salvo no WhatsApp)',
+              source: 'contacts_agenda',
+              phone: cleanPhone,
+              name: pushName
+            });
+          }
+        });
+      }
+
+      if (pushName.length >= 3) {
+        nameReceiptsMap.set(pushName, {
+          checks: 2,
+          is2Checks: true,
+          status: 'DELIVERY_ACK',
+          label: '✓✓ 2 Traços (Confirmado pelo Nome)',
+          source: 'contacts_agenda',
+          phone: cleanPhone,
+          name: pushName
+        });
+      }
+    });
+  } catch (e) {
+    console.warn('Erro ao consultar agenda para nomes:', e);
+  }
+
   // Conta total com 2 traços
   const seenPhones = new Set();
   receiptsMap.forEach((val) => {
@@ -671,25 +713,47 @@ export async function fetchAllWhatsAppTransmissionReceipts() {
 
   return {
     receiptsMap,
+    nameReceiptsMap,
     totalMessagesAnalyzed,
     contactsWith2ChecksCount,
   };
 }
 
 // Extrai quem recebeu (✓✓) e quem não recebeu (✓) da transmissão para um grupo de usuários
-export function auditBroadcastDeliveryReceipts(receiptsMap, targetUsers = []) {
+export function auditBroadcastDeliveryReceipts(receiptsData, targetUsers = []) {
+  const receiptsMap = receiptsData?.receiptsMap || (receiptsData instanceof Map ? receiptsData : new Map());
+  const nameReceiptsMap = receiptsData?.nameReceiptsMap || new Map();
+
   let savedCount = 0;
   let notSavedCount = 0;
 
   const evaluatedUsers = targetUsers.map((u) => {
     const rawPhone = u.whatsapp || u.phone || '';
+    const uName = (u.name || '').toLowerCase().trim();
+    const firstName = uName.split(' ')[0];
     const sigs = getPhoneSignatures(rawPhone);
 
     let matchReceipt = null;
-    if (receiptsMap instanceof Map) {
-      for (const sig of sigs) {
-        if (receiptsMap.has(sig)) {
-          matchReceipt = receiptsMap.get(sig);
+
+    // 1. Tenta correspondência por telefone (DDD + 8/9 dígitos)
+    for (const sig of sigs) {
+      if (receiptsMap.has(sig)) {
+        matchReceipt = receiptsMap.get(sig);
+        break;
+      }
+    }
+
+    // 2. Se não encontrou por telefone, tenta correspondência inteligente por Nome / Primeiro Nome (bidirecional)
+    if (!matchReceipt && uName.length >= 3) {
+      for (const [k, v] of nameReceiptsMap.entries()) {
+        const kFirst = k.split(' ')[0];
+        if (
+          k.includes(uName) ||
+          uName.includes(k) ||
+          (firstName.length >= 3 && k.includes(firstName)) ||
+          (kFirst.length >= 3 && uName.includes(kFirst))
+        ) {
+          matchReceipt = v;
           break;
         }
       }
@@ -711,7 +775,7 @@ export function auditBroadcastDeliveryReceipts(receiptsMap, targetUsers = []) {
       city: u.city || '',
       checks: is2Checks ? 2 : 1,
       status: is2Checks ? 'DELIVERY_ACK' : 'SERVER_ACK',
-      label: is2Checks ? (matchReceipt?.label || '✓✓ 2 Traços (Salvo na Agenda)') : '✓ 1 Traço (Não Salvo / Pendente)',
+      label: is2Checks ? (matchReceipt?.label || '✓✓ 2 Traços (Salvo no WhatsApp)') : '✓ 1 Traço (Não Salvo / Pendente)',
       isSaved: is2Checks,
     };
   });
