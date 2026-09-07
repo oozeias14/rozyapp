@@ -431,7 +431,7 @@ export function extractPhonesFromMessage(m) {
     if (jid.includes('@g.us')) return; // ignora grupos
     let raw = jid.includes('@') ? jid.split('@')[0] : jid;
     if (raw.includes(':')) raw = raw.split(':')[0];
-    const clean = raw.replace(/\D/g, '');
+    const clean = extractCleanPhone(raw);
     if (clean && clean.length >= 8 && clean.length <= 15) {
       phones.add(clean);
     }
