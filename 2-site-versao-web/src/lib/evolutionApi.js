@@ -392,6 +392,114 @@ export async function getContactDeliveryStatusDirect(phone) {
   return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Pendente / Sem Mensagem Entregue)', status: 'NOT_FOUND' };
 }
 
+// ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO (IDEIA DO USUÁRIO) ────
+
+export async function scanAllChatsForPhrase(phraseText) {
+  const targetPhrase = (phraseText || '').toLowerCase().trim();
+  const matchedSigs = new Set();
+  if (!targetPhrase) return matchedSigs;
+
+  try {
+    const msgs = await fetchWhatsAppMessages({ limit: 500 });
+    (msgs || []).forEach((m) => {
+      const bodyText = (
+        m.message?.conversation ||
+        m.message?.extendedTextMessage?.text ||
+        m.message?.imageMessage?.caption ||
+        m.message?.videoMessage?.caption ||
+        m.body ||
+        m.text ||
+        ''
+      ).toLowerCase();
+
+      if (bodyText.includes(targetPhrase)) {
+        const rJid = m.key?.remoteJid || m.remoteJid || '';
+        if (rJid && !rJid.includes('@g.us')) {
+          let clean = rJid.split('@')[0].replace(/\D/g, '');
+          if (clean) {
+            getPhoneSignatures(clean).forEach((sig) => matchedSigs.add(sig));
+          }
+        }
+      }
+    });
+  } catch (e) {
+    console.warn('Erro ao escanear conversas por frase:', e);
+  }
+
+  return matchedSigs;
+}
+
+export async function checkContactHasBroadcastPhrase(phone, phraseText, preScannedSigs = null) {
+  const cleanPhone = (phone || '').toString().replace(/\D/g, '');
+  const targetPhrase = (phraseText || '').toLowerCase().trim();
+
+  if (!cleanPhone || !targetPhrase) {
+    return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem frase ou sem número)', status: 'PENDING' };
+  }
+
+  const sigs = getPhoneSignatures(cleanPhone);
+
+  // 1. Checa no escaneamento prévio rápido
+  if (preScannedSigs && preScannedSigs instanceof Set) {
+    const hasMatch = sigs.some((sig) => preScannedSigs.has(sig));
+    if (hasMatch) {
+      return {
+        has2Checks: true,
+        checks: 2,
+        status: 'DELIVERY_ACK',
+        label: `✓✓ 2 Traços (Frase "${phraseText}" encontrada na conversa!)`
+      };
+    }
+  }
+
+  // 2. Checa diretamente na conversa do contato
+  const jids = sigs.map((s) => `${s}@s.whatsapp.net`);
+  for (const jid of jids) {
+    try {
+      const msgs = await fetchWhatsAppMessages({
+        where: {
+          key: {
+            remoteJid: jid
+          }
+        },
+        limit: 30
+      });
+
+      if (Array.isArray(msgs) && msgs.length > 0) {
+        for (const m of msgs) {
+          const bodyText = (
+            m.message?.conversation ||
+            m.message?.extendedTextMessage?.text ||
+            m.message?.imageMessage?.caption ||
+            m.message?.videoMessage?.caption ||
+            m.body ||
+            m.text ||
+            ''
+          ).toLowerCase();
+
+          if (bodyText.includes(targetPhrase)) {
+            return {
+              has2Checks: true,
+              checks: 2,
+              status: 'DELIVERY_ACK',
+              label: `✓✓ 2 Traços (Frase "${phraseText}" encontrada na conversa!)`
+            };
+          }
+        }
+      }
+    } catch (e) {
+      // continua tentando outras assinaturas
+    }
+  }
+
+  return {
+    has2Checks: false,
+    checks: 1,
+    status: 'NOT_FOUND',
+    label: `✓ 1 Traço (Frase "${phraseText}" não está na conversa)`
+  };
+}
+
 // ── CHECAGEM PRÉVIA DE NÚMEROS NO WHATSAPP ─────────────────────────
 
 export async function checkWhatsAppNumbers(numbersArray) {

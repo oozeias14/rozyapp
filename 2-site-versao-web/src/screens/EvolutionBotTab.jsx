@@ -18,6 +18,8 @@ import {
   fetchAllWhatsAppTransmissionReceipts,
   auditBroadcastDeliveryReceipts,
   getContactDeliveryStatusDirect,
+  scanAllChatsForPhrase,
+  checkContactHasBroadcastPhrase,
   generateTransmissionBatches,
   getPhoneSignatures,
   DEFAULT_INSTANCE_NAME 
@@ -66,7 +68,8 @@ export function EvolutionBotTab({ users, reload }) {
   const [customSelectedUserIds, setCustomSelectedUserIds] = useState([]);
   const [customContactSearch, setCustomContactSearch] = useState('');
   const [selectedTestBatch, setSelectedTestBatch] = useState('T1');
-  const [verificationMethod, setVerificationMethod] = useState('auto_broadcast'); // 'auto_broadcast' | 'check_status' | 'send_and_verify' | 'paste'
+  const [verificationMethod, setVerificationMethod] = useState('phrase_track'); // 'phrase_track' | 'auto_broadcast' | 'send_and_verify' | 'paste'
+  const [broadcastPhraseText, setBroadcastPhraseText] = useState('teste 1234');
   const [detectedBroadcastLists, setDetectedBroadcastLists] = useState([]);
   const [selectedBroadcastJid, setSelectedBroadcastJid] = useState('');
   const [foundBroadcastMessage, setFoundBroadcastMessage] = useState(null);
@@ -513,6 +516,116 @@ export function EvolutionBotTab({ users, reload }) {
     } catch (err) {
       addLog(`❌ Erro durante a auditoria da transmissão: ${err.message}`, 'error');
       alert('Erro na auditoria: ' + err.message);
+    } finally {
+      setIsTestingRunning(false);
+      setIsTestingPaused(false);
+    }
+  }
+
+  // 📝 RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO (Ideia Brilhante do Usuário)
+  async function handleAuditByPhraseLive() {
+    if (!status.connected) {
+      alert('Conecte o WhatsApp pelo QR Code ou Código antes de rastrear!');
+      return;
+    }
+
+    const cleanPhrase = (broadcastPhraseText || '').trim();
+    if (!cleanPhrase) {
+      alert('⚠️ Por favor, digite a palavra ou frase única que você enviou na Lista de Transmissão (ex: teste 1234)!');
+      return;
+    }
+
+    const targetUsers = getSelectedTargetUsers();
+    if (targetUsers.length === 0) {
+      if (testTargetType === 'custom') {
+        alert('⚠️ Por favor, pesquise e marque pelo menos 1 contato na lista de contatos específicos para rastrear!');
+      } else {
+        alert('Nenhum contato encontrado para o grupo selecionado!');
+      }
+      return;
+    }
+
+    setIsTestingRunning(true);
+    setIsTestingPaused(false);
+    testAbortRef.current = false;
+    setTestLogs([]);
+    setTestProgress({ current: 0, total: targetUsers.length, success: 0, failed: 0 });
+
+    addLog(`📝 Iniciando rastreamento por frase "${cleanPhrase}" nas conversas do WhatsApp...`, 'info');
+
+    try {
+      addLog(`⚡ Escaneando histórico recente para localizar conversas contendo "${cleanPhrase}"...`, 'info');
+      const preScannedSigs = await scanAllChatsForPhrase(cleanPhrase);
+
+      addLog(`📊 Auditando ${targetUsers.length} contatos selecionados para verificar a presença da frase na conversa...`, 'info');
+
+      let savedCount = 0;
+      let notSavedCount = 0;
+      const evaluated = [];
+
+      for (let i = 0; i < targetUsers.length; i++) {
+        if (testAbortRef.current) {
+          addLog('⏹️ Rastreamento interrompido pelo usuário.', 'delay');
+          break;
+        }
+
+        const u = targetUsers[i];
+        const rawPhone = u.whatsapp || u.phone || '';
+        const fullName = (u.name || 'Sem nome').trim();
+
+        const phraseCheck = await checkContactHasBroadcastPhrase(rawPhone, cleanPhrase, preScannedSigs);
+        const is2Checks = phraseCheck.has2Checks;
+
+        if (is2Checks) {
+          savedCount++;
+          addLog(`✓✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): FRASE "${cleanPhrase}" ENCONTRADA ➔ SALVO! (2 Traços)`, 'success');
+        } else {
+          notSavedCount++;
+          addLog(`✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): FRASE NÃO ENCONTRADA ➔ PENDENTE (1 Traço)`, 'error');
+        }
+
+        evaluated.push({
+          id: u.id,
+          user: u,
+          name: fullName,
+          phone: rawPhone,
+          city: u.city || '',
+          checks: is2Checks ? 2 : 1,
+          status: is2Checks ? 'DELIVERY_ACK' : 'SERVER_ACK',
+          label: is2Checks ? `✓✓ 2 Traços (Frase "${cleanPhrase}" no chat)` : `✓ 1 Traço (Sem frase "${cleanPhrase}")`,
+          isSaved: is2Checks,
+        });
+
+        setTestProgress({
+          current: i + 1,
+          total: targetUsers.length,
+          success: savedCount,
+          failed: notSavedCount,
+        });
+
+        await new Promise(r => setTimeout(r, 30));
+      }
+
+      setTestResults(evaluated);
+      addLog(`🏁 Rastreamento por frase finalizado! Frase encontrada (Salvos): ${savedCount} | Não encontrada (Pendentes): ${notSavedCount}`, 'info');
+
+      // Auto-atualização dos salvos encontrados na auditoria (2 traços confirmados)
+      const confirmedSavedPhones = evaluated
+        .filter((item) => item.isSaved)
+        .map((item) => normalizePhone(item.phone))
+        .filter(Boolean);
+
+      if (confirmedSavedPhones.length > 0) {
+        setSavedPhones((prev) => {
+          const next = Array.from(new Set([...prev, ...confirmedSavedPhones]));
+          localStorage.setItem('wa_saved_phones', JSON.stringify(next));
+          return next;
+        });
+      }
+
+    } catch (err) {
+      addLog(`❌ Erro no rastreamento por frase: ${err.message}`, 'error');
+      alert('Erro no rastreamento: ' + err.message);
     } finally {
       setIsTestingRunning(false);
       setIsTestingPaused(false);
@@ -2499,8 +2612,31 @@ export function EvolutionBotTab({ users, reload }) {
                         <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           2. Como Deseja Verificar os Traços?
                         </label>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginTop: 6 }}>
-                          {/* Opção 1 (Principal): Auditoria da Transmissão */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginTop: 6 }}>
+                          {/* Opção 1 (SUPER RECOMENDADO / IDEIA DO USUÁRIO): Rastrear por Frase da Transmissão */}
+                          <button
+                            type="button"
+                            className="btn"
+                            style={{
+                              margin: 0,
+                              padding: '10px 8px',
+                              fontSize: 11.5,
+                              borderRadius: 10,
+                              textAlign: 'center',
+                              background: verificationMethod === 'phrase_track' ? 'rgba(0, 229, 155, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                              color: verificationMethod === 'phrase_track' ? '#fff' : 'var(--ink2)',
+                              border: '1px solid ' + (verificationMethod === 'phrase_track' ? 'var(--teal)' : 'var(--line)'),
+                              cursor: 'pointer',
+                              boxShadow: verificationMethod === 'phrase_track' ? '0 0 12px rgba(0, 229, 155, 0.3)' : 'none'
+                            }}
+                            onClick={() => setVerificationMethod('phrase_track')}
+                          >
+                            <div style={{ fontSize: 16 }}>📝</div>
+                            <div style={{ fontWeight: 900, marginTop: 2, color: verificationMethod === 'phrase_track' ? 'var(--teal)' : 'inherit' }}>Rastrear Frase</div>
+                            <div style={{ fontSize: 10, opacity: 0.8 }}>Busca texto no WhatsApp</div>
+                          </button>
+
+                          {/* Opção 2: Auditoria Geral de Recibos */}
                           <button
                             type="button"
                             className="btn"
@@ -2518,55 +2654,11 @@ export function EvolutionBotTab({ users, reload }) {
                             onClick={() => setVerificationMethod('auto_broadcast')}
                           >
                             <div style={{ fontSize: 16 }}>📡</div>
-                            <div style={{ fontWeight: 800, marginTop: 2 }}>Auditoria Transmissão</div>
-                            <div style={{ fontSize: 10, opacity: 0.7 }}>Lê mensagem enviada ({selectedTestBatch})</div>
+                            <div style={{ fontWeight: 800, marginTop: 2 }}>Recibos do WA</div>
+                            <div style={{ fontSize: 10, opacity: 0.7 }}>Lê recibos gerais</div>
                           </button>
 
-                          {/* Opção 2: Sincronizar WhatsApp */}
-                          <button
-                            type="button"
-                            className="btn"
-                            style={{
-                              margin: 0,
-                              padding: '10px 8px',
-                              fontSize: 11.5,
-                              borderRadius: 10,
-                              textAlign: 'center',
-                              background: verificationMethod === 'check_status' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                              color: verificationMethod === 'check_status' ? '#fff' : 'var(--ink2)',
-                              border: '1px solid ' + (verificationMethod === 'check_status' ? 'var(--teal)' : 'var(--line)'),
-                              cursor: 'pointer'
-                            }}
-                            onClick={() => setVerificationMethod('check_status')}
-                          >
-                            <div style={{ fontSize: 16 }}>🔄</div>
-                            <div style={{ fontWeight: 800, marginTop: 2 }}>Sincronizar Agenda</div>
-                            <div style={{ fontSize: 10, opacity: 0.7 }}>Cruza contatos salvos</div>
-                          </button>
-
-                          {/* Opção 3: Disparo de Mensagem */}
-                          <button
-                            type="button"
-                            className="btn"
-                            style={{
-                              margin: 0,
-                              padding: '10px 8px',
-                              fontSize: 11.5,
-                              borderRadius: 10,
-                              textAlign: 'center',
-                              background: verificationMethod === 'send_and_verify' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                              color: verificationMethod === 'send_and_verify' ? '#fff' : 'var(--ink2)',
-                              border: '1px solid ' + (verificationMethod === 'send_and_verify' ? 'var(--teal)' : 'var(--line)'),
-                              cursor: 'pointer'
-                            }}
-                            onClick={() => setVerificationMethod('send_and_verify')}
-                          >
-                            <div style={{ fontSize: 16 }}>🚀</div>
-                            <div style={{ fontWeight: 800, marginTop: 2 }}>Disparar & Checar</div>
-                            <div style={{ fontSize: 10, opacity: 0.7 }}>Envia mensagem robô</div>
-                          </button>
-
-                          {/* Opção 4: Conferência Rápida / Manual */}
+                          {/* Opção 3: Conferência Rápida / Manual */}
                           <button
                             type="button"
                             className="btn"
@@ -2585,9 +2677,77 @@ export function EvolutionBotTab({ users, reload }) {
                           >
                             <div style={{ fontSize: 16 }}>📋</div>
                             <div style={{ fontWeight: 800, marginTop: 2 }}>Conferência Rápida</div>
-                            <div style={{ fontSize: 10, opacity: 0.7 }}>Colar info / Marcar</div>
+                            <div style={{ fontSize: 10, opacity: 0.7 }}>Marcar manual</div>
+                          </button>
+
+                          {/* Opção 4: Disparo de Mensagem */}
+                          <button
+                            type="button"
+                            className="btn"
+                            style={{
+                              margin: 0,
+                              padding: '10px 8px',
+                              fontSize: 11.5,
+                              borderRadius: 10,
+                              textAlign: 'center',
+                              background: verificationMethod === 'send_and_verify' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                              color: verificationMethod === 'send_and_verify' ? '#fff' : 'var(--ink2)',
+                              border: '1px solid ' + (verificationMethod === 'send_and_verify' ? 'var(--teal)' : 'var(--line)'),
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => setVerificationMethod('send_and_verify')}
+                          >
+                            <div style={{ fontSize: 16 }}>🚀</div>
+                            <div style={{ fontWeight: 800, marginTop: 2 }}>Disparar & Checar</div>
+                            <div style={{ fontSize: 10, opacity: 0.7 }}>Robô envia teste</div>
                           </button>
                         </div>
+
+                        {/* Conteúdo do Método Selecionado */}
+                        {verificationMethod === 'phrase_track' && (
+                          <div style={{
+                            marginTop: 10,
+                            padding: '12px 14px',
+                            background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.12), rgba(15, 23, 42, 0.8))',
+                            border: '1.5px solid var(--teal)',
+                            borderRadius: 10,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 8
+                          }}>
+                            <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.5 }}>
+                              <strong style={{ color: 'var(--teal)' }}>💡 Rastreamento por Frase da Transmissão:</strong><br />
+                              <span>
+                                Quando você envia uma Lista de Transmissão no seu celular, o WhatsApp <strong>cria uma conversa individual com quem tem seu número salvo</strong> e insere o texto enviado lá.<br />
+                                O robô vai buscar quem possui essa palavra/frase exata na conversa e marcar como <strong style={{ color: '#25D366' }}>✓✓ 2 Traços (Salvo)</strong>!
+                              </span>
+                            </div>
+
+                            <div style={{ marginTop: 2 }}>
+                              <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--teal)', textTransform: 'uppercase' }}>
+                                Digite uma Frase ou Palavra-Chave da Transmissão Enviada:
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="ex: teste 1234 ou Olá pessoal, novidades..."
+                                value={broadcastPhraseText}
+                                onChange={(e) => setBroadcastPhraseText(e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  padding: '9px 12px',
+                                  fontSize: 13,
+                                  fontWeight: 700,
+                                  borderRadius: 8,
+                                  background: 'rgba(0,0,0,0.5)',
+                                  border: '1.5px solid var(--teal)',
+                                  color: '#fff',
+                                  marginTop: 4,
+                                  boxSizing: 'border-box'
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
 
                         {/* Conteúdo do Método Selecionado */}
                         {verificationMethod === 'auto_broadcast' && (
@@ -2774,6 +2934,28 @@ export function EvolutionBotTab({ users, reload }) {
                     {/* Rodapé e Botão Principal de Ação */}
                     {!isTestingRunning && (
                       <div style={{ marginTop: 6, paddingTop: 12, borderTop: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {verificationMethod === 'phrase_track' && (
+                          <button
+                            type="button"
+                            className="btn btn-teal"
+                            disabled={getSelectedTargetUsers().length === 0 || !broadcastPhraseText.trim()}
+                            style={{
+                              width: '100%',
+                              padding: '13px 16px',
+                              fontSize: 13.5,
+                              fontWeight: 900,
+                              margin: 0,
+                              borderRadius: 10,
+                              background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
+                              color: '#081018',
+                              cursor: 'pointer',
+                              boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)'
+                            }}
+                            onClick={handleAuditByPhraseLive}
+                          >
+                            📝 Rastrear Frase "{broadcastPhraseText.trim() || '...'}" ({getSelectedTargetUsers().length} Contatos)
+                          </button>
+                        )}
                         {verificationMethod === 'auto_broadcast' && (
                           <button
                             type="button"
