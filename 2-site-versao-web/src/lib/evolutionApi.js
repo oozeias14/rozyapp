@@ -540,6 +540,56 @@ export function doesMessageContainPhrase(m, targetPhrase) {
   return false;
 }
 
+// Helper para extrair apenas dígitos numéricos de um telefone ou JID
+export function extractCleanPhone(p) {
+  if (!p) return '';
+  let str = typeof p === 'string' ? p : String(p || '');
+  if (str.includes('@')) str = str.split('@')[0];
+  if (str.includes(':')) str = str.split(':')[0];
+  const digits = str.replace(/\D/g, '');
+  return digits;
+}
+
+// Helper universal para gerar todas as assinaturas possíveis de um telefone brasileiro (8, 9, 10, 11 dígitos, com/sem DDD 61, com/sem 55)
+export function getPhoneSignatures(p) {
+  let clean = extractCleanPhone(p);
+  if (!clean) return [];
+  const sigs = new Set();
+  sigs.add(clean);
+  if (clean.startsWith('0')) sigs.add(clean.substring(1));
+  if (clean.startsWith('55') && clean.length >= 12) sigs.add(clean.substring(2));
+
+  let num = clean;
+  if (num.startsWith('55') && num.length >= 12) num = num.substring(2);
+  if (num.length === 8 || num.length === 9) num = '61' + num;
+
+  if (num.length === 11) {
+    const ddd = num.substring(0, 2);
+    const rest8 = num.substring(3); // 8 dígitos finais
+    const rest9 = num.substring(2); // 9 dígitos finais
+    sigs.add('55' + num);
+    sigs.add(num);
+    sigs.add('55' + ddd + rest8);
+    sigs.add(ddd + rest8);
+    sigs.add(rest8);
+    sigs.add(rest9);
+  } else if (num.length === 10) {
+    const ddd = num.substring(0, 2);
+    const rest8 = num.substring(2); // 8 dígitos finais
+    sigs.add('55' + num);
+    sigs.add(num);
+    sigs.add('55' + ddd + '9' + rest8);
+    sigs.add(ddd + '9' + rest8);
+    sigs.add(rest8);
+    sigs.add('9' + rest8);
+  }
+
+  if (clean.length >= 8) sigs.add(clean.slice(-8));
+  if (clean.length >= 9) sigs.add(clean.slice(-9));
+
+  return Array.from(sigs);
+}
+
 // Helper para extrair todos os telefones envolvidos numa mensagem (inclui destinatários de transmissão userReceipt e MessageUpdate)
 export function extractPhonesFromMessage(m, lidToPhone = new Map()) {
   const phones = new Set();
@@ -580,8 +630,8 @@ export function extractPhonesFromMessage(m, lidToPhone = new Map()) {
   return phones;
 }
 
-// Helper para verificar se a mensagem foi enviada/recebida dentro da janela de horas especificada (padrão 2h)
-export function isMessageWithinHours(msg, maxHours = 2) {
+// Helper para verificar se a mensagem foi enviada/recebida dentro da janela de horas especificada (padrão 1h)
+export function isMessageWithinHours(msg, maxHours = 1) {
   if (!msg) return false;
   
   let ts = msg.messageTimestamp || msg.createdAt || msg.updatedAt;
@@ -609,7 +659,7 @@ export function isMessageWithinHours(msg, maxHours = 2) {
   const nowSec = Math.floor(Date.now() / 1000);
   const diffHours = (nowSec - ts) / 3600;
 
-  return diffHours >= -1.0 && diffHours <= (maxHours || 2);
+  return diffHours >= -1.0 && diffHours <= (maxHours || 1);
 }
 
 // ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO ────
@@ -617,7 +667,6 @@ export function isMessageWithinHours(msg, maxHours = 2) {
 export async function scanAllChatsForPhrase(phraseText, maxHours = 1) {
   const targetPhrase = (phraseText || '').toLowerCase().trim().replace(/^["']|["']$/g, '');
   const matchedSigs = new Set();
-  if (!targetPhrase) return matchedSigs;
 
   try {
     const { instanceName } = getEvolutionConfig();
@@ -712,10 +761,12 @@ export async function scanAllChatsForPhrase(phraseText, maxHours = 1) {
     // 5. Constrói dicionário completo de tradução LID <-> Telefone real
     const lidToPhone = buildLidPhoneMapping(chats, allMsgs, contacts);
 
-    // 6. Mapeia IDs de mensagens que contêm a frase enviada dentro da janela de tempo
+    // 6. Mapeia IDs de mensagens que contêm a frase enviada dentro da janela de tempo (ou todas as transmissões recentes se sem frase)
     const matchingMessageIds = new Set();
     allMsgs.forEach((m) => {
-      if (doesMessageContainPhrase(m, targetPhrase) && isMessageWithinHours(m, maxHours)) {
+      const isBroadcast = (m.key?.remoteJid || m.remoteJid || '').includes('@broadcast') || m.broadcast;
+      const matches = targetPhrase ? doesMessageContainPhrase(m, targetPhrase) : isBroadcast;
+      if (matches && isMessageWithinHours(m, maxHours)) {
         if (m.key?.id) matchingMessageIds.add(m.key.id);
         if (m.id) matchingMessageIds.add(m.id);
       }
@@ -723,28 +774,16 @@ export async function scanAllChatsForPhrase(phraseText, maxHours = 1) {
 
     (chats || []).forEach((c) => {
       const isRecent = isMessageWithinHours(c.lastMessage, maxHours) || isMessageWithinHours(c, maxHours);
-      if (isRecent && (doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase))) {
+      const matches = targetPhrase 
+        ? (doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase))
+        : (c.remoteJid || c.id || '').includes('@broadcast');
+      if (isRecent && matches) {
         if (c.lastMessage?.key?.id) matchingMessageIds.add(c.lastMessage.key.id);
         if (c.lastMessage?.id) matchingMessageIds.add(c.lastMessage.id);
       }
     });
 
-    // 7. Processa mensagens que contêm a frase ou referenciam o ID da mensagem de transmissão
-    allMsgs.forEach((m) => {
-      const hasPhrase = doesMessageContainPhrase(m, targetPhrase);
-      const matchesId = (m.key?.id && matchingMessageIds.has(m.key.id)) || (m.id && matchingMessageIds.has(m.id));
-      const reactionParentId = m.message?.reactionMessage?.key?.id;
-      const referencesBroadcastWithPhrase = reactionParentId && matchingMessageIds.has(reactionParentId);
-
-      if ((hasPhrase || matchesId || referencesBroadcastWithPhrase) && isMessageWithinHours(m, maxHours)) {
-        const foundPhones = extractPhonesFromMessage(m, lidToPhone);
-        foundPhones.forEach((p) => {
-          getPhoneSignatures(p).forEach((sig) => matchedSigs.add(sig));
-        });
-      }
-    });
-
-    // 8. Processa recibos de status associados às mensagens de transmissão que contêm a frase
+    // 7. Processa recibos de status associados às mensagens de transmissão encontradas
     statusRecords.forEach((sr) => {
       const matchesKey = sr.keyId && matchingMessageIds.has(sr.keyId);
       const matchesMsg = sr.messageId && matchingMessageIds.has(sr.messageId);
@@ -761,9 +800,24 @@ export async function scanAllChatsForPhrase(phraseText, maxHours = 1) {
       }
     });
 
+    // 8. Processa mensagens diretas que contêm a frase ou referenciam a transmissão
+    allMsgs.forEach((m) => {
+      const hasPhrase = targetPhrase ? doesMessageContainPhrase(m, targetPhrase) : false;
+      const matchesId = (m.key?.id && matchingMessageIds.has(m.key.id)) || (m.id && matchingMessageIds.has(m.id));
+      const reactionParentId = m.message?.reactionMessage?.key?.id;
+      const referencesBroadcastWithPhrase = reactionParentId && matchingMessageIds.has(reactionParentId);
+
+      if ((hasPhrase || matchesId || referencesBroadcastWithPhrase) && isMessageWithinHours(m, maxHours)) {
+        const foundPhones = extractPhonesFromMessage(m, lidToPhone);
+        foundPhones.forEach((p) => {
+          getPhoneSignatures(p).forEach((sig) => matchedSigs.add(sig));
+        });
+      }
+    });
+
     // 9. Processa conversas ativas no WhatsApp (findChats)
     (chats || []).forEach((c) => {
-      const hasPhrase = doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase);
+      const hasPhrase = targetPhrase ? (doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase)) : false;
       const matchesId = (c.lastMessage?.key?.id && matchingMessageIds.has(c.lastMessage.key.id)) || (c.lastMessage?.id && matchingMessageIds.has(c.lastMessage.id));
       const reactionParentId = c.lastMessage?.message?.reactionMessage?.key?.id;
       const referencesBroadcastWithPhrase = reactionParentId && matchingMessageIds.has(reactionParentId);
@@ -794,15 +848,13 @@ export async function scanAllChatsForPhrase(phraseText, maxHours = 1) {
 
 export async function checkContactHasBroadcastPhrase(phone, phraseText, preScannedSigs = null, maxHours = 1) {
   const cleanPhone = extractCleanPhone(phone);
-  const targetPhrase = (phraseText || '').toLowerCase().trim().replace(/^["']|["']$/g, '');
-
-  if (!cleanPhone || !targetPhrase) {
-    return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem frase de teste)', status: 'PENDING' };
+  if (!cleanPhone) {
+    return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem telefone)', status: 'PENDING' };
   }
 
   const sigs = getPhoneSignatures(cleanPhone);
 
-  // 1. Checa se o número foi pré-confirmado com a frase nas últimas X horas
+  // 1. Checa se o número foi pré-confirmado com a frase ou transmissão recente
   if (preScannedSigs && preScannedSigs instanceof Set) {
     const hasMatch = sigs.some((sig) => preScannedSigs.has(sig));
     if (hasMatch) {
@@ -810,17 +862,23 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
         has2Checks: true,
         checks: 2,
         status: 'DELIVERY_ACK',
-        label: `✓✓ 2 Traços (Frase "${phraseText}" entregue na última ${maxHours}h!)`
+        label: phraseText 
+          ? `✓✓ 2 Traços (Frase "${phraseText}" entregue na última ${maxHours}h!)`
+          : `✓✓ 2 Traços (Transmissão recebida na última ${maxHours}h!)`
       };
     } else {
       return {
         has2Checks: false,
         checks: 1,
         status: 'NOT_FOUND',
-        label: `✓ 1 Traço (Frase "${phraseText}" não encontrada na última ${maxHours}h)`
+        label: phraseText
+          ? `✓ 1 Traço (Frase "${phraseText}" não recebida na última ${maxHours}h)`
+          : `✓ 1 Traço (Transmissão não recebida na última ${maxHours}h)`
       };
     }
   }
+
+  return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Pendente)', status: 'PENDING' };
 }
 
 // ── CHECAGEM PRÉVIA DE NÚMEROS NO WHATSAPP ─────────────────────────
@@ -892,79 +950,6 @@ export function generateTransmissionBatches(users, maxPerBatch = 250) {
   }
 
   return batches;
-}
-
-// ── AUDITORIA DE LISTAS DE TRANSMISSÃO (@broadcast) NO WHATSAPP ────
-
-// Extrai telefone limpo de URLs do WhatsApp (ex: https://api.whatsapp.com/send/?phone=61992623060&text&type=phone_number&app_absent=0) ou texto bruto
-export function extractCleanPhone(p) {
-  if (!p) return '';
-  let str = p.toString().trim();
-
-  // Se for uma URL do WhatsApp com query string phone=
-  if (str.includes('phone=')) {
-    const match = str.match(/phone=([0-9+]+)/i);
-    if (match && match[1]) {
-      str = match[1];
-    }
-  } else if (str.includes('wa.me/')) {
-    const match = str.match(/wa\.me\/([0-9+]+)/i);
-    if (match && match[1]) {
-      str = match[1];
-    }
-  } else if (str.includes('http://') || str.includes('https://')) {
-    str = str.split('?')[0];
-  }
-
-  let clean = str.replace(/\D/g, '');
-
-  // Se o número tiver 12 dígitos e NÃO começar com 55 (ex: 619926230600 originado de app_absent=0)
-  if (clean.length === 12 && !clean.startsWith('55') && clean.endsWith('0')) {
-    clean = clean.substring(0, 11);
-  }
-
-  return clean;
-}
-
-// ── GERADOR DE ASSINATURAS DE TELEFONE (DDD + 8/9 DÍGITOS) ─────────
-
-export function getPhoneSignatures(p) {
-  let clean = extractCleanPhone(p);
-  if (!clean) return [];
-  if (clean.startsWith('0')) clean = clean.substring(1);
-  if (clean.startsWith('55') && clean.length >= 12) clean = clean.substring(2);
-
-  // Se o número estiver sem DDD (8 ou 9 dígitos), aplica o DDD padrão 61 (DF)
-  if (clean.length === 8 || clean.length === 9) {
-    clean = '61' + clean;
-  }
-
-  const sigs = new Set();
-  sigs.add(clean);
-  sigs.add('55' + clean);
-
-  if (clean.length === 11) {
-    const ddd = clean.substring(0, 2);
-    const nineDigits = clean.substring(2); // ex: 992623060
-    const eightDigits = clean.substring(3); // ex: 92623060
-    sigs.add('55' + clean);
-    sigs.add(clean);
-    sigs.add('55' + ddd + eightDigits);
-    sigs.add(ddd + eightDigits);
-    sigs.add(nineDigits);
-    sigs.add(eightDigits);
-  } else if (clean.length === 10) {
-    const ddd = clean.substring(0, 2);
-    const eightDigits = clean.substring(2); // ex: 92623060
-    sigs.add('55' + clean);
-    sigs.add(clean);
-    sigs.add('55' + ddd + '9' + eightDigits);
-    sigs.add(ddd + '9' + eightDigits);
-    sigs.add('9' + eightDigits);
-    sigs.add(eightDigits);
-  }
-
-  return Array.from(sigs);
 }
 
 // ── AUDITORIA DE TODAS AS LISTAS DE TRANSMISSÃO E MENSAGENS ────────

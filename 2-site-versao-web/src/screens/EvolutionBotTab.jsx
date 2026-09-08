@@ -532,10 +532,6 @@ export function EvolutionBotTab({ users, reload }) {
     }
 
     const cleanPhrase = (broadcastPhraseText || '').trim();
-    if (!cleanPhrase) {
-      alert('⚠️ Por favor, digite a palavra ou frase única que você enviou na Lista de Transmissão (ex: teste 1234)!');
-      return;
-    }
 
     const targetUsers = getSelectedTargetUsers();
     if (targetUsers.length === 0) {
@@ -553,10 +549,14 @@ export function EvolutionBotTab({ users, reload }) {
     setTestLogs([]);
     setTestProgress({ current: 0, total: targetUsers.length, success: 0, failed: 0 });
 
-    addLog(`📝 Iniciando rastreamento da frase "${cleanPhrase}" enviado nas últimas ${phraseTimeHours}h...`, 'info');
+    if (cleanPhrase) {
+      addLog(`📝 Iniciando rastreamento da frase "${cleanPhrase}" nas últimas ${phraseTimeHours}h...`, 'info');
+    } else {
+      addLog(`📝 Rastreando todas as mensagens de transmissão disparadas no WhatsApp nas últimas ${phraseTimeHours}h...`, 'info');
+    }
 
     try {
-      addLog(`⚡ Escaneando mensagens enviadas nas últimas ${phraseTimeHours}h contendo "${cleanPhrase}"...`, 'info');
+      addLog(`⚡ Escaneando mensagens e listas de transmissão no WhatsApp...`, 'info');
       const preScannedSigs = await scanAllChatsForPhrase(cleanPhrase, phraseTimeHours);
       addLog(`📥 ${preScannedSigs.size} identificadores do WhatsApp confirmaram o recebimento da transmissão.`, 'info');
 
@@ -581,10 +581,10 @@ export function EvolutionBotTab({ users, reload }) {
 
         if (is2Checks) {
           savedCount++;
-          addLog(`✓✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): FRASE "${cleanPhrase}" ENCONTRADA NAS ÚLTIMAS ${phraseTimeHours}H ➔ SALVO! (2 Traços)`, 'success');
+          addLog(`✓✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): TRANSMISSÃO ENTREGUE (2 Traços) ➔ SALVO!`, 'success');
         } else {
           notSavedCount++;
-          addLog(`✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): FRASE NÃO ENCONTRADA NAS ÚLTIMAS ${phraseTimeHours}H ➔ PENDENTE (1 Traço)`, 'error');
+          addLog(`✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): TRANSMISSÃO NÃO RECEBIDA ➔ PENDENTE (1 Traço)`, 'error');
         }
 
         evaluated.push({
@@ -595,7 +595,7 @@ export function EvolutionBotTab({ users, reload }) {
           city: u.city || '',
           checks: is2Checks ? 2 : 1,
           status: is2Checks ? 'DELIVERY_ACK' : 'SERVER_ACK',
-          label: is2Checks ? `✓✓ 2 Traços (Frase "${cleanPhrase}" nas últimas ${phraseTimeHours}h)` : `✓ 1 Traço (Sem frase "${cleanPhrase}" nas últimas ${phraseTimeHours}h)`,
+          label: is2Checks ? `✓✓ 2 Traços (Salvo / Transmissão Recebida)` : `✓ 1 Traço (Não Salvo / Sem Entrega)`,
           isSaved: is2Checks,
         });
 
