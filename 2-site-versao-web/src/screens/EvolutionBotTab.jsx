@@ -2707,11 +2707,11 @@ export function EvolutionBotTab({ users, reload }) {
 
                             <div style={{ marginTop: 2 }}>
                               <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--teal)', textTransform: 'uppercase' }}>
-                                Digite a Palavra ou Frase Enviada na Transmissão:
+                                Palavra ou Frase da Transmissão (Opcional):
                               </label>
                               <input
                                 type="text"
-                                placeholder="ex: teste 1234 ou Olá pessoal, novidades..."
+                                placeholder="Deixe em branco para buscar em todas as listas, ou digite uma palavra..."
                                 value={broadcastPhraseText}
                                 onChange={(e) => setBroadcastPhraseText(e.target.value)}
                                 style={{
@@ -2881,7 +2881,7 @@ export function EvolutionBotTab({ users, reload }) {
                           <button
                             type="button"
                             className="btn btn-teal"
-                            disabled={getSelectedTargetUsers().length === 0 || !broadcastPhraseText.trim()}
+                            disabled={getSelectedTargetUsers().length === 0}
                             style={{
                               width: '100%',
                               padding: '13px 16px',
@@ -2896,7 +2896,9 @@ export function EvolutionBotTab({ users, reload }) {
                             }}
                             onClick={handleAuditByPhraseLive}
                           >
-                            📝 Rastrear Frase "{broadcastPhraseText.trim() || '...'}" ({getSelectedTargetUsers().length} Contatos)
+                            {broadcastPhraseText.trim()
+                              ? `📝 Rastrear Frase "${broadcastPhraseText.trim()}" (${getSelectedTargetUsers().length} Contatos)`
+                              : `⚡ Rastrear Todas as Listas de Transmissão (${getSelectedTargetUsers().length} Contatos)`}
                           </button>
                         )}
                         {verificationMethod === 'auto_broadcast' && (
