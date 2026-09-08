@@ -361,48 +361,47 @@ export function evaluateMessageDelivery(msg) {
 }
 
 // Consulta direta e determinística do status de entrega na conversa individual do contato
-export async function getContactDeliveryStatusDirect(phone) {
+export async function getContactDeliveryStatusDirect(phone, maxHours = 12) {
   const clean = extractCleanPhone(phone);
   if (!clean) return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem número)', status: 'PENDING' };
 
   const sigs = getPhoneSignatures(clean);
-  const jids = sigs.map((s) => `${s}@s.whatsapp.net`);
 
-  for (const jid of jids) {
-    try {
-      const msgs = await fetchWhatsAppMessages({
-        where: {
-          key: {
-            remoteJid: jid
+  try {
+    const chats = await fetchWhatsAppChats().catch(() => []);
+    for (const c of chats) {
+      const rawR = (c.remoteJid || c.id || '').toLowerCase();
+      if (rawR.includes('@g.us')) continue; // ignora grupos
+
+      const altR = c.lastMessage?.key?.remoteJidAlt || c.lastMessage?.key?.participantAlt || '';
+      const jids = [altR, rawR].filter(Boolean);
+
+      for (const j of jids) {
+        const pClean = extractCleanPhone(j);
+        if (pClean && sigs.includes(pClean)) {
+          const isRecent = isMessageWithinHours(c.lastMessage, maxHours) || isMessageWithinHours(c, maxHours);
+          if (isRecent) {
+            const fromMe = c.lastMessage?.key?.fromMe ?? false;
+            const status = (c.lastMessage?.status || '').toUpperCase();
+            const is2Checks = !fromMe || status === 'DELIVERY_ACK' || status === 'READ' || status === 'PLAYED';
+
+            if (is2Checks) {
+              return {
+                has2Checks: true,
+                checks: 2,
+                status: status || 'DELIVERY_ACK',
+                label: !fromMe ? '✓✓ 2 Traços (Mensagem Recebida / Interagiu)' : '✓✓ 2 Traços (Entregue no WhatsApp)'
+              };
+            }
           }
-        },
-        limit: 15
-      });
-
-      if (Array.isArray(msgs) && msgs.length > 0) {
-        // Se houver qualquer mensagem recebida do contato (fromMe: false), confirma 2 traços
-        const hasIncoming = msgs.some((m) => m?.key?.fromMe === false || m?.fromMe === false);
-        if (hasIncoming) {
-          return { has2Checks: true, checks: 2, label: '✓✓ 2 Traços (Mensagem Recebida / Interagiu)', status: 'READ' };
         }
-
-        // Verifica mensagens enviadas
-        for (const m of msgs) {
-          const evalResult = evaluateMessageDelivery(m);
-          if (evalResult.has2Checks) {
-            return evalResult;
-          }
-        }
-
-        // Tem conversa enviada, mas ficou em 1 traço (não entregue)
-        return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Não Entregue / Não Salvo)', status: 'SERVER_ACK' };
       }
-    } catch (e) {
-      // continua tentando
     }
+  } catch (e) {
+    console.warn('Erro ao checar status direto:', e);
   }
 
-  return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Pendente / Sem Mensagem Entregue)', status: 'NOT_FOUND' };
+  return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem entrega individual recente)', status: 'NOT_FOUND' };
 }
 
 // Helper para verificar se uma mensagem contém a frase buscada (inclui busca profunda no JSON)
@@ -798,44 +797,66 @@ export async function searchBroadcastLists(tag = '') {
 }
 
 // 📡 Varredura Geral de TODAS as Transmissões e Recibos de Mensagens do WhatsApp
-export async function fetchAllWhatsAppTransmissionReceipts() {
+export async function fetchAllWhatsAppTransmissionReceipts(maxHours = 12) {
   const { instanceName } = getEvolutionConfig();
   const receiptsMap = new Map(); // signature -> { checks: 1 | 2, status, label, source, timestamp }
   let totalMessagesAnalyzed = 0;
   let contactsWith2ChecksCount = 0;
 
   try {
-    // 1. Consulta mensagens enviadas pela instância (fromMe: true)
-    const msgsPost = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
-      method: 'POST',
-      body: JSON.stringify({
-        where: {
-          key: {
-            fromMe: true
-          }
-        },
-        limit: 500,
-      }),
-    }).catch(() => null);
+    // 1. Busca conversas ativas no WhatsApp (findChats)
+    const chats = await fetchWhatsAppChats().catch(() => []);
+    chats.forEach((c) => {
+      const rawR = (c.remoteJid || c.id || '').toLowerCase();
+      if (rawR.includes('@g.us')) return; // ignora grupos
 
-    const msgsList = msgsPost?.messages?.records || (Array.isArray(msgsPost) ? msgsPost : []);
-    
-    // 2. Consulta mensagens gerais recentes para capturar respostas e recibos
-    const msgsGeneral = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
-      method: 'POST',
-      body: JSON.stringify({
-        limit: 500,
-      }),
-    }).catch(() => null);
+      const altR = c.lastMessage?.key?.remoteJidAlt || c.lastMessage?.key?.participantAlt || '';
+      const targetJids = [altR, rawR].filter(Boolean);
 
-    const msgsGeneralList = msgsGeneral?.messages?.records || (Array.isArray(msgsGeneral) ? msgsGeneral : []);
+      const isRecent = isMessageWithinHours(c.lastMessage, maxHours) || isMessageWithinHours(c, maxHours);
+      if (!isRecent) return;
 
-    // Unifica mensagens únicas por ID
+      targetJids.forEach((j) => {
+        if (j.includes('@g.us') || j.includes('@broadcast')) return;
+        const clean = extractCleanPhone(j);
+        if (clean && clean.length >= 8 && clean.length <= 13) {
+          const fromMe = c.lastMessage?.key?.fromMe ?? false;
+          const status = (c.lastMessage?.status || '').toUpperCase();
+          const is2Checks = !fromMe || status === 'DELIVERY_ACK' || status === 'READ' || status === 'PLAYED';
+
+          getPhoneSignatures(clean).forEach((sig) => {
+            const existing = receiptsMap.get(sig);
+            if (!existing || (!existing.is2Checks && is2Checks)) {
+              receiptsMap.set(sig, {
+                checks: is2Checks ? 2 : 1,
+                is2Checks,
+                status: is2Checks ? (status || 'DELIVERY_ACK') : 'SERVER_ACK',
+                label: is2Checks ? (!fromMe ? '✓✓ 2 Traços (Mensagem Recebida / Interagiu)' : '✓✓ 2 Traços (Entregue no WhatsApp)') : '✓ 1 Traço (Apenas 1 Traço no WhatsApp)',
+                source: 'chat_active',
+                phone: clean
+              });
+            }
+          });
+        }
+      });
+    });
+
+    // 2. Consulta múltiplas páginas de mensagens recentes do banco
+    const allMsgsList = [];
+    for (let p = 1; p <= 4; p++) {
+      const msgsP = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+        method: 'POST',
+        body: JSON.stringify({ limit: 100, page: p }),
+      }).catch(() => null);
+      const recs = msgsP?.messages?.records || (Array.isArray(msgsP) ? msgsP : []);
+      if (Array.isArray(recs) && recs.length > 0) {
+        allMsgsList.push(...recs);
+      }
+    }
+
     const msgMap = new Map();
-    msgsList.forEach((m) => m?.id && msgMap.set(m.id, m));
-    msgsGeneralList.forEach((m) => m?.id && msgMap.set(m.id, m));
+    allMsgsList.forEach((m) => m?.id && msgMap.set(m.id, m));
     const allMsgs = Array.from(msgMap.values());
-
     totalMessagesAnalyzed = allMsgs.length;
 
     // 3. Mapeia os IDs das mensagens enviadas para listas de transmissão (@broadcast)
@@ -848,7 +869,12 @@ export async function fetchAllWhatsAppTransmissionReceipts() {
     });
 
     allMsgs.forEach((msg) => {
-      const rawRemoteJid = msg?.key?.remoteJid || msg?.remoteJid || '';
+      const rawRemoteJid = (msg?.key?.remoteJid || msg?.remoteJid || '').toLowerCase();
+      if (rawRemoteJid.includes('@g.us')) return; // ignora mensagens em grupos
+
+      const isRecent = isMessageWithinHours(msg, maxHours);
+      if (!isRecent) return;
+
       const altRemoteJid = msg?.key?.remoteJidAlt || msg?.remoteJidAlt || '';
       const remoteJid = (rawRemoteJid.includes('@lid') && altRemoteJid) ? altRemoteJid : rawRemoteJid;
       const keyId = msg?.key?.id;
@@ -892,7 +918,7 @@ export async function fetchAllWhatsAppTransmissionReceipts() {
                 checks: isDelivered ? 2 : 1,
                 is2Checks: isDelivered,
                 status: isRead ? 'READ' : isDelivered ? 'DELIVERY_ACK' : 'SERVER_ACK',
-                label: isRead ? '✓✓ 2 Traços Azuis (Lido na Transmissão)' : isDelivered ? '✓✓ 2 Traços (Entregue na Transmissão)' : '✓ 1 Traço (Pendente)',
+                label: isRead ? '✓✓ 2 Traços Azuis (Lido na Transmissão)' : isDelivered ? '✓✓ 2 Traços (Entregue no WhatsApp)' : '✓ 1 Traço (Pendente)',
                 source: isBroadcastLinked ? 'broadcast_message' : 'chat_message',
                 phone: cleanPhone
               });

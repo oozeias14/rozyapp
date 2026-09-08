@@ -443,7 +443,7 @@ export function EvolutionBotTab({ users, reload }) {
 
     try {
       addLog(`🔍 Varrendo recibos e histórico de conversas no WhatsApp conectado...`, 'info');
-      const receiptsData = await fetchAllWhatsAppTransmissionReceipts();
+      const receiptsData = await fetchAllWhatsAppTransmissionReceipts(phraseTimeHours);
 
       addLog(`📥 ${receiptsData.totalMessagesAnalyzed} mensagens e conversas analisadas com sucesso.`, 'info');
       addLog(`📊 Auditando detalhadamente ${targetUsers.length} contatos selecionados...`, 'info');
@@ -466,7 +466,7 @@ export function EvolutionBotTab({ users, reload }) {
 
         // Se ainda não tiver 2 traços confirmados, consulta diretamente a conversa individual do contato para máxima precisão
         if (item.checks !== 2 && (u.whatsapp || u.phone)) {
-          const directCheck = await getContactDeliveryStatusDirect(u.whatsapp || u.phone);
+          const directCheck = await getContactDeliveryStatusDirect(u.whatsapp || u.phone, phraseTimeHours);
           if (directCheck.has2Checks) {
             item = {
               ...item,
