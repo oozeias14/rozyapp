@@ -114,23 +114,36 @@ async function evolutionFetch(endpoint, options = {}) {
     ...(options.headers || {}),
   };
 
-  const res = await fetch(url, { ...options, headers });
-  if (!res.ok) {
-    let errMsg = `Erro ${res.status}: ${res.statusText}`;
-    try {
-      const json = await res.json();
-      errMsg = json?.response?.message || json?.message || json?.error || errMsg;
-      if (Array.isArray(errMsg)) errMsg = errMsg.join(', ');
-    } catch (_) {}
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    if (res.status === 401 || res.status === 403) {
-      errMsg = `Chave de API não autorizada (401 Unauthorized). Verifique a chave no Railway.`;
+  try {
+    const res = await fetch(url, { ...options, headers, signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      let errMsg = `Erro ${res.status}: ${res.statusText}`;
+      try {
+        const json = await res.json();
+        errMsg = json?.response?.message || json?.message || json?.error || errMsg;
+        if (Array.isArray(errMsg)) errMsg = errMsg.join(', ');
+      } catch (_) {}
+
+      if (res.status === 401 || res.status === 403) {
+        errMsg = `Chave de API não autorizada (401 Unauthorized). Verifique a chave no Railway.`;
+      }
+
+      throw new Error(errMsg);
     }
 
-    throw new Error(errMsg);
+    return await res.json();
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error(`Tempo limite de resposta (15s) excedido no servidor da API (${endpoint})`);
+    }
+    throw err;
   }
-
-  return await res.json();
 }
 
 // ── INSTÂNCIAS E CONEXÃO ───────────────────────────────────────────
@@ -451,14 +464,21 @@ export function extractPhonesFromMessage(m) {
   }
 
   addJid(m.key?.remoteJid || m.remoteJid);
+  addJid(m.key?.remoteJidAlt || m.remoteJidAlt);
   addJid(m.key?.participant || m.participant);
+  addJid(m.key?.participantAlt || m.participantAlt);
 
   if (Array.isArray(m.userReceipt)) {
-    m.userReceipt.forEach((ur) => addJid(ur.userJid || ur.jid || ur.user));
+    m.userReceipt.forEach((ur) => {
+      addJid(ur.userJid || ur.jid || ur.user);
+      addJid(ur.userJidAlt || ur.jidAlt);
+    });
   }
 
   if (Array.isArray(m.MessageUpdate)) {
-    m.MessageUpdate.forEach((mu) => addJid(mu.participant || mu.fromMeJid || mu.key?.participant));
+    m.MessageUpdate.forEach((mu) => {
+      addJid(mu.participant || mu.fromMeJid || mu.key?.participant || mu.key?.remoteJidAlt || mu.key?.participantAlt);
+    });
   }
 
   return phones;
@@ -582,45 +602,15 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
         status: 'DELIVERY_ACK',
         label: `✓✓ 2 Traços (Frase "${phraseText}" entregue nas últimas ${maxHours}h!)`
       };
+    } else {
+      return {
+        has2Checks: false,
+        checks: 1,
+        status: 'NOT_FOUND',
+        label: `✓ 1 Traço (Frase "${phraseText}" não encontrada nas últimas ${maxHours}h)`
+      };
     }
   }
-
-  // 2. Checa diretamente nas conversas do contato por mensagens contendo a frase nas últimas X horas
-  for (const sig of sigs) {
-    try {
-      const jid = sig.includes('@') ? sig : `${sig}@s.whatsapp.net`;
-      const msgsJid = await fetchWhatsAppMessages({
-        where: {
-          key: {
-            remoteJid: jid
-          }
-        },
-        limit: 50
-      }).catch(() => null);
-
-      if (Array.isArray(msgsJid) && msgsJid.length > 0) {
-        for (const m of msgsJid) {
-          if (doesMessageContainPhrase(m, targetPhrase) && isMessageWithinHours(m, maxHours)) {
-            return {
-              has2Checks: true,
-              checks: 2,
-              status: 'DELIVERY_ACK',
-              label: `✓✓ 2 Traços (Frase "${phraseText}" entregue nas últimas ${maxHours}h!)`
-            };
-          }
-        }
-      }
-    } catch (e) {
-      // continua tentando outras assinaturas
-    }
-  }
-
-  return {
-    has2Checks: false,
-    checks: 1,
-    status: 'NOT_FOUND',
-    label: `✓ 1 Traço (Frase "${phraseText}" não encontrada nas últimas ${maxHours}h)`
-  };
 }
 
 // ── CHECAGEM PRÉVIA DE NÚMEROS NO WHATSAPP ─────────────────────────
@@ -858,19 +848,22 @@ export async function fetchAllWhatsAppTransmissionReceipts() {
     });
 
     allMsgs.forEach((msg) => {
-      const remoteJid = msg?.key?.remoteJid || msg?.remoteJid || '';
+      const rawRemoteJid = msg?.key?.remoteJid || msg?.remoteJid || '';
+      const altRemoteJid = msg?.key?.remoteJidAlt || msg?.remoteJidAlt || '';
+      const remoteJid = (rawRemoteJid.includes('@lid') && altRemoteJid) ? altRemoteJid : rawRemoteJid;
       const keyId = msg?.key?.id;
       const fromMe = msg?.key?.fromMe ?? true;
       const directStatus = (msg?.status || '').toUpperCase();
       const updates = Array.isArray(msg?.MessageUpdate) ? msg.MessageUpdate : [];
       const userReceipts = Array.isArray(msg?.userReceipt) ? msg.userReceipt : [];
-      const isBroadcastLinked = broadcastKeyIds.has(keyId) || remoteJid.includes('@broadcast');
+      const isBroadcastLinked = broadcastKeyIds.has(keyId) || rawRemoteJid.includes('@broadcast') || altRemoteJid.includes('@broadcast');
+
+      // Extrai todos os telefones válidos envolvidos na mensagem (suporta LID e remoteJidAlt)
+      const extractedPhones = extractPhonesFromMessage(msg);
 
       // A) Se for mensagem recebida (fromMe: false), o contato certamente recebeu/interagiu
       if (!fromMe && remoteJid && !remoteJid.includes('@g.us')) {
-        let raw = remoteJid.includes('@') ? remoteJid.split('@')[0] : remoteJid;
-        const cleanPhone = raw.replace(/\D/g, '');
-        if (cleanPhone) {
+        extractedPhones.forEach((cleanPhone) => {
           getPhoneSignatures(cleanPhone).forEach((sig) => {
             receiptsMap.set(sig, {
               checks: 2,
@@ -881,19 +874,17 @@ export async function fetchAllWhatsAppTransmissionReceipts() {
               phone: cleanPhone
             });
           });
-        }
+        });
       }
 
       // B) Mensagens vinculadas a transmissões ou mensagens diretas enviadas
       if (fromMe && remoteJid && !remoteJid.includes('@g.us') && !remoteJid.includes('@broadcast')) {
-        let raw = remoteJid.includes('@') ? remoteJid.split('@')[0] : remoteJid;
-        const cleanPhone = raw.replace(/\D/g, '');
         const isRead = updates.some(u => (u.status || '').toUpperCase() === 'READ' || (u.status || '').toUpperCase() === 'PLAYED') ||
                        directStatus === 'READ' || directStatus === 'PLAYED';
         const isDelivered = isRead || updates.some(u => (u.status || '').toUpperCase() === 'DELIVERY_ACK') ||
                             directStatus === 'DELIVERY_ACK';
 
-        if (cleanPhone) {
+        extractedPhones.forEach((cleanPhone) => {
           getPhoneSignatures(cleanPhone).forEach((sig) => {
             const existing = receiptsMap.get(sig);
             if (!existing || (!existing.is2Checks && isDelivered)) {
@@ -907,7 +898,7 @@ export async function fetchAllWhatsAppTransmissionReceipts() {
               });
             }
           });
-        }
+        });
       }
 
       // C) Se houver MessageUpdate com participantes (mensagens de broadcast)
