@@ -610,66 +610,73 @@ export async function scanAllChatsForPhrase(phraseText, maxHours = 1) {
   try {
     const { instanceName } = getEvolutionConfig();
 
-    // 1. Busca mensagens recentes do banco de dados (múltiplas páginas para cobrir o histórico recente)
-    const msgsP1 = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
-      method: 'POST',
-      body: JSON.stringify({ limit: 100, page: 1 }),
-    }).catch(() => null);
-
-    const msgsP2 = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
-      method: 'POST',
-      body: JSON.stringify({ limit: 100, page: 2 }),
-    }).catch(() => null);
-
-    const msgsP3 = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
-      method: 'POST',
-      body: JSON.stringify({ limit: 100, page: 3 }),
-    }).catch(() => null);
-
-    const list1 = msgsP1?.messages?.records || (Array.isArray(msgsP1) ? msgsP1 : []);
-    const list2 = msgsP2?.messages?.records || (Array.isArray(msgsP2) ? msgsP2 : []);
-    const list3 = msgsP3?.messages?.records || (Array.isArray(msgsP3) ? msgsP3 : []);
-
-    const msgMap = new Map();
-    list1.forEach((m) => m?.id && msgMap.set(m.id, m));
-    list2.forEach((m) => m?.id && msgMap.set(m.id, m));
-    list3.forEach((m) => m?.id && msgMap.set(m.id, m));
-    const allMsgs = Array.from(msgMap.values());
-
-    // 2. Busca conversas ativas no WhatsApp
+    // 1. Busca conversas ativas no WhatsApp (findChats)
     const chats = await fetchWhatsAppChats().catch(() => []);
 
-    // 3. Constrói dicionário de tradução LID <-> Telefone real
+    // 2. Busca mensagens recentes do banco de dados (múltiplas páginas para cobrir o histórico recente)
+    const allMsgsList = [];
+    for (let p = 1; p <= 4; p++) {
+      const msgsP = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+        method: 'POST',
+        body: JSON.stringify({ limit: 100, page: p }),
+      }).catch(() => null);
+      const recs = msgsP?.messages?.records || (Array.isArray(msgsP) ? msgsP : []);
+      if (Array.isArray(recs) && recs.length > 0) {
+        allMsgsList.push(...recs);
+      }
+    }
+
+    // 3. Busca mensagens específicas dentro de cada lista de transmissão (@broadcast) encontrada
+    const broadcastChats = (chats || []).filter(c => (c.remoteJid || c.id || '').includes('@broadcast'));
+    for (const bc of broadcastChats) {
+      const bjId = bc.remoteJid || bc.id;
+      const bMsgsRes = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+        method: 'POST',
+        body: JSON.stringify({ where: { key: { remoteJid: bjId } }, limit: 50 }),
+      }).catch(() => null);
+      const bRecords = bMsgsRes?.messages?.records || (Array.isArray(bMsgsRes) ? bMsgsRes : []);
+      if (Array.isArray(bRecords) && bRecords.length > 0) {
+        allMsgsList.push(...bRecords);
+      }
+    }
+
+    // 4. Busca recibos de status (findStatusMessage) para capturar confirmações de entrega em tempo real
+    const statusRes = await evolutionFetch(`/chat/findStatusMessage/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }).catch(() => null);
+    const statusRecords = Array.isArray(statusRes) ? statusRes : (statusRes?.records || []);
+
+    const msgMap = new Map();
+    allMsgsList.forEach((m) => m?.id && msgMap.set(m.id, m));
+    const allMsgs = Array.from(msgMap.values());
+
+    // 5. Constrói dicionário de tradução LID <-> Telefone real
     const lidToPhone = buildLidPhoneMapping(chats, allMsgs);
 
-    // 4. Mapeia mensagens de listas de transmissão (@broadcast) que contêm a frase
-    const broadcastMsgIdsWithPhrase = new Set();
+    // 6. Mapeia IDs de mensagens que contêm a frase
+    const matchingMessageIds = new Set();
     allMsgs.forEach((m) => {
-      const rJid = (m.key?.remoteJid || m.remoteJid || '').toLowerCase();
-      if (rJid.includes('@broadcast') || m.broadcast || m.isBroadcast) {
-        if (doesMessageContainPhrase(m, targetPhrase) && isMessageWithinHours(m, maxHours)) {
-          if (m.key?.id) broadcastMsgIdsWithPhrase.add(m.key.id);
-        }
+      if (doesMessageContainPhrase(m, targetPhrase) && isMessageWithinHours(m, maxHours)) {
+        if (m.key?.id) matchingMessageIds.add(m.key.id);
       }
     });
 
     (chats || []).forEach((c) => {
-      const rJid = (c.remoteJid || c.id || '').toLowerCase();
-      if (rJid.includes('@broadcast') || c.isBroadcast) {
-        if ((doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase)) &&
-            (isMessageWithinHours(c.lastMessage, maxHours) || isMessageWithinHours(c, maxHours))) {
-          if (c.lastMessage?.key?.id) broadcastMsgIdsWithPhrase.add(c.lastMessage.key.id);
-        }
+      const isRecent = isMessageWithinHours(c.lastMessage, maxHours) || isMessageWithinHours(c, maxHours);
+      if (isRecent && (doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase))) {
+        if (c.lastMessage?.key?.id) matchingMessageIds.add(c.lastMessage.key.id);
       }
     });
 
-    // 5. Filtra mensagens que contêm a frase E foram enviadas/recebidas dentro da janela de tempo (ex: 1h)
+    // 7. Processa mensagens que contêm a frase ou referenciam o ID da mensagem de transmissão
     allMsgs.forEach((m) => {
       const hasPhrase = doesMessageContainPhrase(m, targetPhrase);
+      const matchesId = m.key?.id && matchingMessageIds.has(m.key.id);
       const reactionParentId = m.message?.reactionMessage?.key?.id;
-      const referencesBroadcastWithPhrase = reactionParentId && broadcastMsgIdsWithPhrase.has(reactionParentId);
+      const referencesBroadcastWithPhrase = reactionParentId && matchingMessageIds.has(reactionParentId);
 
-      if ((hasPhrase || referencesBroadcastWithPhrase) && isMessageWithinHours(m, maxHours)) {
+      if ((hasPhrase || matchesId || referencesBroadcastWithPhrase) && isMessageWithinHours(m, maxHours)) {
         const foundPhones = extractPhonesFromMessage(m, lidToPhone);
         foundPhones.forEach((p) => {
           getPhoneSignatures(p).forEach((sig) => matchedSigs.add(sig));
@@ -677,19 +684,39 @@ export async function scanAllChatsForPhrase(phraseText, maxHours = 1) {
       }
     });
 
-    // 6. Busca conversas ativas no WhatsApp que contenham a frase no histórico recente
+    // 8. Processa recibos de status associados às mensagens que contêm a frase
+    (statusRecords || []).forEach((sr) => {
+      if (sr.keyId && matchingMessageIds.has(sr.keyId)) {
+        const st = (sr.status || '').toUpperCase();
+        if (st === 'DELIVERY_ACK' || st === 'READ' || st === 'PLAYED') {
+          const jids = [sr.remoteJid, sr.participant].filter(Boolean);
+          jids.forEach((j) => {
+            if (j.includes('@g.us') || j.includes('@broadcast')) return;
+            let clean = extractCleanPhone(j);
+            if (lidToPhone.has(clean)) clean = lidToPhone.get(clean);
+            if (clean && clean.length >= 8) {
+              getPhoneSignatures(clean).forEach((sig) => matchedSigs.add(sig));
+            }
+          });
+        }
+      }
+    });
+
+    // 9. Processa conversas ativas no WhatsApp (findChats)
     (chats || []).forEach((c) => {
       const hasPhrase = doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase);
+      const matchesId = c.lastMessage?.key?.id && matchingMessageIds.has(c.lastMessage.key.id);
       const reactionParentId = c.lastMessage?.message?.reactionMessage?.key?.id;
-      const referencesBroadcastWithPhrase = reactionParentId && broadcastMsgIdsWithPhrase.has(reactionParentId);
+      const referencesBroadcastWithPhrase = reactionParentId && matchingMessageIds.has(reactionParentId);
       const isRecent = isMessageWithinHours(c.lastMessage, maxHours) || isMessageWithinHours(c, maxHours);
 
-      if ((hasPhrase || referencesBroadcastWithPhrase) && isRecent) {
+      if ((hasPhrase || matchesId || referencesBroadcastWithPhrase) && isRecent) {
         const rJid = c.remoteJid || c.id || '';
         const rJidAlt = c.lastMessage?.key?.remoteJidAlt || c.lastMessage?.key?.participantAlt || '';
         const rJidKey = c.lastMessage?.key?.remoteJid || '';
 
         [rJid, rJidAlt, rJidKey].forEach((j) => {
+          if (!j || j.includes('@g.us') || j.includes('@broadcast')) return;
           let cleanP = extractCleanPhone(j);
           if (lidToPhone.has(cleanP)) cleanP = lidToPhone.get(cleanP);
           if (cleanP && cleanP.length >= 8) {
@@ -945,15 +972,36 @@ export async function fetchAllWhatsAppTransmissionReceipts(maxHours = 1) {
       }
     }
 
+    // 3. Busca mensagens específicas dentro de cada lista de transmissão (@broadcast) encontrada
+    const broadcastChats = (chats || []).filter(c => (c.remoteJid || c.id || '').includes('@broadcast'));
+    for (const bc of broadcastChats) {
+      const bjId = bc.remoteJid || bc.id;
+      const bMsgsRes = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+        method: 'POST',
+        body: JSON.stringify({ where: { key: { remoteJid: bjId } }, limit: 50 }),
+      }).catch(() => null);
+      const bRecords = bMsgsRes?.messages?.records || (Array.isArray(bMsgsRes) ? bMsgsRes : []);
+      if (Array.isArray(bRecords) && bRecords.length > 0) {
+        allMsgsList.push(...bRecords);
+      }
+    }
+
+    // 4. Busca recibos de status (findStatusMessage) para capturar confirmações de entrega em tempo real
+    const statusRes = await evolutionFetch(`/chat/findStatusMessage/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }).catch(() => null);
+    const statusRecords = Array.isArray(statusRes) ? statusRes : (statusRes?.records || []);
+
     const msgMap = new Map();
     allMsgsList.forEach((m) => m?.id && msgMap.set(m.id, m));
     const allMsgs = Array.from(msgMap.values());
     totalMessagesAnalyzed = allMsgs.length;
 
-    // 3. Constrói dicionário de tradução LID <-> Telefone real
+    // 5. Constrói dicionário de tradução LID <-> Telefone real
     const lidToPhone = buildLidPhoneMapping(chats, allMsgs);
 
-    // 4. Processa conversas ativas no WhatsApp (findChats)
+    // 6. Processa conversas ativas no WhatsApp (findChats)
     chats.forEach((c) => {
       const rawR = (c.remoteJid || c.id || '').toLowerCase();
       if (rawR.includes('@g.us')) return; // ignora grupos

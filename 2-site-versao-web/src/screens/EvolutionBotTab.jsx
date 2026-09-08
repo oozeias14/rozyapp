@@ -2612,10 +2612,10 @@ export function EvolutionBotTab({ users, reload }) {
                     {!isTestingRunning && (
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          2. Como Deseja Verificar os Traços?
+                          2. Como Deseja Sincronizar os Traços?
                         </label>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, marginTop: 6 }}>
-                          {/* Opção 1 (SUPER RECOMENDADO / IDEIA DO USUÁRIO): Rastrear por Frase da Transmissão */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginTop: 6 }}>
+                          {/* Opção 1: Rastrear por Frase da Transmissão (100% Anti-Ban / Sincronizado com Celular) */}
                           <button
                             type="button"
                             className="btn"
@@ -2634,8 +2634,8 @@ export function EvolutionBotTab({ users, reload }) {
                             onClick={() => setVerificationMethod('phrase_track')}
                           >
                             <div style={{ fontSize: 16 }}>📝</div>
-                            <div style={{ fontWeight: 900, marginTop: 2, color: verificationMethod === 'phrase_track' ? 'var(--teal)' : 'inherit' }}>Rastrear Frase</div>
-                            <div style={{ fontSize: 10, opacity: 0.8 }}>Busca texto no WhatsApp</div>
+                            <div style={{ fontWeight: 900, marginTop: 2, color: verificationMethod === 'phrase_track' ? 'var(--teal)' : 'inherit' }}>Rastrear Transmissão</div>
+                            <div style={{ fontSize: 10, opacity: 0.8 }}>Sincroniza do Celular (Anti-Ban)</div>
                           </button>
 
                           {/* Opção 2: Auditoria Geral de Recibos */}
@@ -2656,8 +2656,8 @@ export function EvolutionBotTab({ users, reload }) {
                             onClick={() => setVerificationMethod('auto_broadcast')}
                           >
                             <div style={{ fontSize: 16 }}>📡</div>
-                            <div style={{ fontWeight: 800, marginTop: 2 }}>Recibos do WA</div>
-                            <div style={{ fontSize: 10, opacity: 0.7 }}>Lê recibos gerais</div>
+                            <div style={{ fontWeight: 800, marginTop: 2 }}>Recibos Gerais</div>
+                            <div style={{ fontSize: 10, opacity: 0.7 }}>Lê recibos de entrega do WA</div>
                           </button>
 
                           {/* Opção 3: Conferência Rápida / Manual */}
@@ -2678,30 +2678,8 @@ export function EvolutionBotTab({ users, reload }) {
                             onClick={() => setVerificationMethod('paste')}
                           >
                             <div style={{ fontSize: 16 }}>📋</div>
-                            <div style={{ fontWeight: 800, marginTop: 2 }}>Conferência Rápida</div>
-                            <div style={{ fontSize: 10, opacity: 0.7 }}>Marcar manual</div>
-                          </button>
-
-                          {/* Opção 4: Disparo de Mensagem */}
-                          <button
-                            type="button"
-                            className="btn"
-                            style={{
-                              margin: 0,
-                              padding: '10px 8px',
-                              fontSize: 11.5,
-                              borderRadius: 10,
-                              textAlign: 'center',
-                              background: verificationMethod === 'send_and_verify' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                              color: verificationMethod === 'send_and_verify' ? '#fff' : 'var(--ink2)',
-                              border: '1px solid ' + (verificationMethod === 'send_and_verify' ? 'var(--teal)' : 'var(--line)'),
-                              cursor: 'pointer'
-                            }}
-                            onClick={() => setVerificationMethod('send_and_verify')}
-                          >
-                            <div style={{ fontSize: 16 }}>🚀</div>
-                            <div style={{ fontWeight: 800, marginTop: 2 }}>Disparar & Checar</div>
-                            <div style={{ fontSize: 10, opacity: 0.7 }}>Robô envia teste</div>
+                            <div style={{ fontWeight: 800, marginTop: 2 }}>Conferência Manual</div>
+                            <div style={{ fontSize: 10, opacity: 0.7 }}>Ajustar / Colar dados</div>
                           </button>
                         </div>
 
@@ -2718,16 +2696,17 @@ export function EvolutionBotTab({ users, reload }) {
                             gap: 8
                           }}>
                             <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.5 }}>
-                              <strong style={{ color: 'var(--teal)' }}>💡 Rastreamento por Frase da Transmissão:</strong><br />
+                              <strong style={{ color: 'var(--teal)' }}>🛡️ Sincronização 100% Anti-Ban (Passivo / Sem Envio de Mensagens):</strong><br />
                               <span>
-                                Quando você envia uma Lista de Transmissão no seu celular, o WhatsApp <strong>cria uma conversa individual com quem tem seu número salvo</strong> e insere o texto enviado lá.<br />
-                                O robô vai buscar quem possui essa palavra/frase exata na conversa e marcar como <strong style={{ color: '#25D366' }}>✓✓ 2 Traços (Salvo)</strong>!
+                                1. Envie uma mensagem na sua <strong>Lista de Transmissão no WhatsApp do Celular</strong> (ex: para seus 2000 contatos).<br />
+                                2. Digite a frase ou palavra-chave que você enviou no campo abaixo.<br />
+                                3. O robô faz a sincronia instantânea e descobre quem recebeu (<strong style={{ color: '#25D366' }}>✓✓ 2 Traços = Salvo</strong>) e quem não recebeu (<strong style={{ color: '#FF8A65' }}>✓ 1 Traço = Pendente</strong>).
                               </span>
                             </div>
 
                             <div style={{ marginTop: 2 }}>
                               <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--teal)', textTransform: 'uppercase' }}>
-                                Digite uma Frase ou Palavra-Chave da Transmissão Enviada:
+                                Digite a Palavra ou Frase Enviada na Transmissão:
                               </label>
                               <input
                                 type="text"
@@ -2751,7 +2730,6 @@ export function EvolutionBotTab({ users, reload }) {
                           </div>
                         )}
 
-                        {/* Conteúdo do Método Selecionado */}
                         {verificationMethod === 'auto_broadcast' && (
                           <div style={{
                             marginTop: 10,
@@ -2770,7 +2748,7 @@ export function EvolutionBotTab({ users, reload }) {
                               <strong style={{ color: 'var(--teal)' }}>🎯 Auditoria Geral de Transmissões:</strong><br />
                               <span>
                                 1. O robô varre <strong>todas as mensagens e listas de transmissão disparadas no seu WhatsApp</strong>.<br />
-                                2. Lê os recibos oficiais de entrega (✓✓ 2 Traços) em todas as conversas do aparelho com suporte automático a 8 e 9 dígitos.<br />
+                                2. Lê os recibos oficiais de entrega (✓✓ 2 Traços) em todas as conversas do aparelho com suporte automático a 8 e 9 dígitos e mapeamento LID.<br />
                                 3. Cruza instantaneamente com os contatos do <strong>{testTargetType === 'batch' ? `Lote ${selectedTestBatch}` : 'grupo selecionado'}</strong> e exibe o status de cada membro.
                               </span>
                             </div>
@@ -2787,44 +2765,6 @@ export function EvolutionBotTab({ users, reload }) {
                               placeholder="Cole aqui o texto copiado de quem recebeu a transmissão ou clique em 'Abrir Lista' para marcar diretamente..."
                               value={pastedMessageData}
                               onChange={(e) => setPastedMessageData(e.target.value)}
-                              style={{
-                                width: '100%',
-                                padding: '8px 10px',
-                                fontSize: 12,
-                                borderRadius: 8,
-                                background: 'rgba(0,0,0,0.3)',
-                                border: '1px solid var(--line)',
-                                color: '#fff',
-                                boxSizing: 'border-box'
-                              }}
-                            />
-                          </div>
-                        )}
-
-                        {verificationMethod === 'check_status' && (
-                          <div style={{
-                            marginTop: 10,
-                            padding: '10px 12px',
-                            background: 'rgba(0, 229, 155, 0.06)',
-                            border: '1px solid rgba(0, 229, 155, 0.25)',
-                            borderRadius: 8,
-                            fontSize: 11.5,
-                            color: 'var(--ink2)',
-                            lineHeight: 1.4
-                          }}>
-                            ℹ️ <strong>Sincronização Direta:</strong> O sistema consultará a lista de contatos do WhatsApp conectado pelo QR Code e cruzará com os números dos cadastros.
-                          </div>
-                        )}
-
-                        {verificationMethod === 'send_and_verify' && (
-                          <div style={{ marginTop: 10 }}>
-                            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink2)', display: 'block', marginBottom: 4 }}>
-                              Texto da Mensagem de Teste (Tags: {'{primeiro_nome}'}, {'{nome}'}, {'{cidade}'}):
-                            </label>
-                            <textarea
-                              rows={3}
-                              value={testMessageText}
-                              onChange={(e) => setTestMessageText(e.target.value)}
                               style={{
                                 width: '100%',
                                 padding: '8px 10px',
