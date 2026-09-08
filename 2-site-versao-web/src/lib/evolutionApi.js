@@ -361,7 +361,7 @@ export function evaluateMessageDelivery(msg) {
 }
 
 // Consulta direta e determinística do status de entrega na conversa individual do contato
-export async function getContactDeliveryStatusDirect(phone, maxHours = 12) {
+export async function getContactDeliveryStatusDirect(phone, maxHours = 1) {
   const clean = extractCleanPhone(phone);
   if (!clean) return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem número)', status: 'PENDING' };
 
@@ -483,8 +483,8 @@ export function extractPhonesFromMessage(m) {
   return phones;
 }
 
-// Helper para verificar se a mensagem foi enviada/recebida dentro da janela de horas especificada (ex: 12h)
-export function isMessageWithinHours(msg, maxHours = 12) {
+// Helper para verificar se a mensagem foi enviada/recebida dentro da janela de horas especificada (ex: 1h)
+export function isMessageWithinHours(msg, maxHours = 1) {
   if (!msg) return false;
   
   let ts = msg.messageTimestamp || msg.createdAt || msg.updatedAt;
@@ -512,12 +512,12 @@ export function isMessageWithinHours(msg, maxHours = 12) {
   const nowSec = Math.floor(Date.now() / 1000);
   const diffHours = (nowSec - ts) / 3600;
 
-  return diffHours >= -0.5 && diffHours <= (maxHours || 12);
+  return diffHours >= -0.5 && diffHours <= (maxHours || 1);
 }
 
 // ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO ────
 
-export async function scanAllChatsForPhrase(phraseText, maxHours = 12) {
+export async function scanAllChatsForPhrase(phraseText, maxHours = 1) {
   const targetPhrase = (phraseText || '').toLowerCase().trim().replace(/^["']|["']$/g, '');
   const matchedSigs = new Set();
   if (!targetPhrase) return matchedSigs;
@@ -544,7 +544,7 @@ export async function scanAllChatsForPhrase(phraseText, maxHours = 12) {
     list2.forEach((m) => m?.id && msgMap.set(m.id, m));
     const allMsgs = Array.from(msgMap.values());
 
-    // Filtra mensagens que contêm a frase E foram enviadas/recebidas dentro da janela de tempo (ex: 12h)
+    // Filtra mensagens que contêm a frase E foram enviadas/recebidas dentro da janela de tempo (ex: 1h)
     allMsgs.forEach((m) => {
       if (doesMessageContainPhrase(m, targetPhrase) && isMessageWithinHours(m, maxHours)) {
         const foundPhones = extractPhonesFromMessage(m);
@@ -581,7 +581,7 @@ export async function scanAllChatsForPhrase(phraseText, maxHours = 12) {
   return matchedSigs;
 }
 
-export async function checkContactHasBroadcastPhrase(phone, phraseText, preScannedSigs = null, maxHours = 12) {
+export async function checkContactHasBroadcastPhrase(phone, phraseText, preScannedSigs = null, maxHours = 1) {
   const cleanPhone = extractCleanPhone(phone);
   const targetPhrase = (phraseText || '').toLowerCase().trim().replace(/^["']|["']$/g, '');
 
@@ -599,14 +599,14 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
         has2Checks: true,
         checks: 2,
         status: 'DELIVERY_ACK',
-        label: `✓✓ 2 Traços (Frase "${phraseText}" entregue nas últimas ${maxHours}h!)`
+        label: `✓✓ 2 Traços (Frase "${phraseText}" entregue na última ${maxHours}h!)`
       };
     } else {
       return {
         has2Checks: false,
         checks: 1,
         status: 'NOT_FOUND',
-        label: `✓ 1 Traço (Frase "${phraseText}" não encontrada nas últimas ${maxHours}h)`
+        label: `✓ 1 Traço (Frase "${phraseText}" não encontrada na última ${maxHours}h)`
       };
     }
   }
@@ -797,7 +797,7 @@ export async function searchBroadcastLists(tag = '') {
 }
 
 // 📡 Varredura Geral de TODAS as Transmissões e Recibos de Mensagens do WhatsApp
-export async function fetchAllWhatsAppTransmissionReceipts(maxHours = 12) {
+export async function fetchAllWhatsAppTransmissionReceipts(maxHours = 1) {
   const { instanceName } = getEvolutionConfig();
   const receiptsMap = new Map(); // signature -> { checks: 1 | 2, status, label, source, timestamp }
   let totalMessagesAnalyzed = 0;
