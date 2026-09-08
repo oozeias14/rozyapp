@@ -3093,30 +3093,7 @@ export function EvolutionBotTab({ users, reload }) {
               <span>☁️</span> Agenda
             </button>
 
-            <button
-              type="button"
-              className="btn"
-              style={{
-                fontSize: 12.5,
-                fontWeight: 700,
-                padding: '9px 14px',
-                margin: 0,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                borderRadius: 10,
-                background: 'rgba(255, 255, 255, 0.05)',
-                color: '#fff',
-                border: '1px solid var(--line)',
-                cursor: (syncingContacts || !status.connected) ? 'not-allowed' : 'pointer',
-                opacity: (syncingContacts || !status.connected) ? 0.5 : 1
-              }}
-              onClick={handleSyncWhatsAppContacts}
-              disabled={syncingContacts || !status.connected}
-              title={!status.connected ? 'Conecte o WhatsApp pelo QR Code acima primeiro' : 'Sincroniza os contatos que estão salvos na agenda do WhatsApp conectado'}
-            >
-              <span>🔄</span> {syncingContacts ? 'Sincronizando...' : 'Sincronizar Agenda do Aparelho'}
-            </button>
+
 
             <button
               type="button"
