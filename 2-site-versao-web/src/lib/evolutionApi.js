@@ -494,13 +494,26 @@ export function extractActualMessageText(m) {
   return textParts.filter(Boolean).join(' ');
 }
 
+// Helper para normalizar texto removendo acentos e pontuações para buscas estritas e tolerantes a acentuação
+export function normalizeText(str) {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 // Helper para verificar se uma mensagem contém a frase buscada
 export function doesMessageContainPhrase(m, targetPhrase) {
   if (!m || !targetPhrase) return false;
-  const cleanTarget = targetPhrase.toLowerCase().trim().replace(/^["']|["']$/g, '');
+  const cleanTarget = normalizeText(targetPhrase).replace(/^["']|["']$/g, '');
   if (!cleanTarget) return false;
 
-  const text = extractActualMessageText(m);
+  const rawText = extractActualMessageText(m);
+  if (!rawText) return false;
+
+  const text = normalizeText(rawText);
   if (!text) return false;
 
   // 1. Match exato no texto da mensagem
