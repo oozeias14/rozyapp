@@ -69,9 +69,9 @@ export function EvolutionBotTab({ users, reload }) {
   const [customSelectedUserIds, setCustomSelectedUserIds] = useState([]);
   const [customContactSearch, setCustomContactSearch] = useState('');
   const [selectedTestBatch, setSelectedTestBatch] = useState('T1');
-  const [verificationMethod, setVerificationMethod] = useState('phrase_track'); // 'phrase_track' | 'auto_broadcast' | 'send_and_verify' | 'paste'
-  const [broadcastPhraseText, setBroadcastPhraseText] = useState('teste 1234');
-  const [phraseTimeHours, setPhraseTimeHours] = useState(1);
+  const [verificationMethod, setVerificationMethod] = useState('phrase_track'); // 'phrase_track' | 'auto_broadcast' | 'paste'
+  const [broadcastPhraseText, setBroadcastPhraseText] = useState('Furia 2');
+  const [phraseTimeHours, setPhraseTimeHours] = useState(2);
   const [detectedBroadcastLists, setDetectedBroadcastLists] = useState([]);
   const [selectedBroadcastJid, setSelectedBroadcastJid] = useState('');
   const [foundBroadcastMessage, setFoundBroadcastMessage] = useState(null);
@@ -558,6 +558,7 @@ export function EvolutionBotTab({ users, reload }) {
     try {
       addLog(`⚡ Escaneando mensagens enviadas nas últimas ${phraseTimeHours}h contendo "${cleanPhrase}"...`, 'info');
       const preScannedSigs = await scanAllChatsForPhrase(cleanPhrase, phraseTimeHours);
+      addLog(`📥 ${preScannedSigs.size} identificadores do WhatsApp confirmaram o recebimento da transmissão.`, 'info');
 
       addLog(`📊 Auditando ${targetUsers.length} contatos selecionados...`, 'info');
 

@@ -504,7 +504,7 @@ export function normalizeText(str) {
     .trim();
 }
 
-// Helper para verificar se uma mensagem contém a frase buscada
+// Helper para verificar se uma mensagem contém a frase buscada (com suporte inteligente a espaçamento, pontuação e palavras)
 export function doesMessageContainPhrase(m, targetPhrase) {
   if (!m || !targetPhrase) return false;
   const cleanTarget = normalizeText(targetPhrase).replace(/^["']|["']$/g, '');
@@ -516,12 +516,17 @@ export function doesMessageContainPhrase(m, targetPhrase) {
   const text = normalizeText(rawText);
   if (!text) return false;
 
-  // 1. Match exato no texto da mensagem
+  // 1. Match direto
   if (text.includes(cleanTarget)) return true;
 
-  // 2. Match por todas as palavras chaves significativas
-  const words = cleanTarget.split(/\s+/).filter(w => w.length >= 2);
-  if (words.length > 1 && words.every(w => text.includes(w))) {
+  // 2. Match compacto (ignora espaços e pontuações: "furia 2" coincide com "furia2")
+  const compactedText = text.replace(/[\s\-_.,!?:;]+/g, '');
+  const compactedTarget = cleanTarget.replace(/[\s\-_.,!?:;]+/g, '');
+  if (compactedTarget.length >= 2 && compactedText.includes(compactedTarget)) return true;
+
+  // 3. Match por todas as palavras da frase buscada
+  const words = cleanTarget.split(/[\s\-_.,!?:;]+/).filter((w) => w.length >= 1);
+  if (words.length > 0 && words.every((w) => text.includes(w) || compactedText.includes(w))) {
     return true;
   }
 
@@ -568,8 +573,8 @@ export function extractPhonesFromMessage(m, lidToPhone = new Map()) {
   return phones;
 }
 
-// Helper para verificar se a mensagem foi enviada/recebida dentro da janela de horas especificada (ex: 1h)
-export function isMessageWithinHours(msg, maxHours = 1) {
+// Helper para verificar se a mensagem foi enviada/recebida dentro da janela de horas especificada (padrão 2h)
+export function isMessageWithinHours(msg, maxHours = 2) {
   if (!msg) return false;
   
   let ts = msg.messageTimestamp || msg.createdAt || msg.updatedAt;
@@ -597,7 +602,7 @@ export function isMessageWithinHours(msg, maxHours = 1) {
   const nowSec = Math.floor(Date.now() / 1000);
   const diffHours = (nowSec - ts) / 3600;
 
-  return diffHours >= -0.5 && diffHours <= (maxHours || 1);
+  return diffHours >= -1.0 && diffHours <= (maxHours || 2);
 }
 
 // ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO ────
