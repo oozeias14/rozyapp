@@ -450,43 +450,66 @@ export async function getContactDeliveryStatusDirect(phone, maxHours = 1) {
   return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem entrega individual recente)', status: 'NOT_FOUND' };
 }
 
-// Helper para verificar se uma mensagem contém a frase buscada (inclui busca profunda no JSON)
+// Helper para extrair apenas o texto legível e relevante de uma mensagem (evita falsos positivos em chaves técnicas de JSON)
+export function extractActualMessageText(m) {
+  if (!m) return '';
+  const textParts = [];
+
+  function add(t) {
+    if (typeof t === 'string' && t.trim()) {
+      textParts.push(t.trim().toLowerCase());
+    }
+  }
+
+  // Conversa direta e texto estendido
+  add(m.message?.conversation);
+  add(m.message?.extendedTextMessage?.text);
+  add(m.message?.ephemeralMessage?.message?.conversation);
+  add(m.message?.ephemeralMessage?.message?.extendedTextMessage?.text);
+
+  // Mídias com legenda
+  add(m.message?.imageMessage?.caption);
+  add(m.message?.videoMessage?.caption);
+  add(m.message?.documentMessage?.caption);
+  add(m.message?.documentMessage?.fileName);
+  add(m.message?.documentMessage?.title);
+
+  // Botões e reações
+  add(m.message?.templateButtonReplyMessage?.selectedDisplayText);
+  add(m.message?.buttonsResponseMessage?.selectedDisplayText);
+  add(m.message?.listResponseMessage?.title);
+  add(m.message?.reactionMessage?.text);
+
+  // Campos diretos de texto
+  if (typeof m.body === 'string') add(m.body);
+  if (typeof m.text === 'string') add(m.text);
+  if (typeof m.content === 'string') add(m.content);
+
+  // Se for chat, extrai de lastMessage
+  if (m.lastMessage) {
+    const subText = extractActualMessageText(m.lastMessage);
+    if (subText) textParts.push(subText);
+  }
+
+  return textParts.filter(Boolean).join(' ');
+}
+
+// Helper para verificar se uma mensagem contém a frase buscada
 export function doesMessageContainPhrase(m, targetPhrase) {
   if (!m || !targetPhrase) return false;
   const cleanTarget = targetPhrase.toLowerCase().trim().replace(/^["']|["']$/g, '');
   if (!cleanTarget) return false;
 
-  const directText = (
-    m.message?.conversation ||
-    m.message?.extendedTextMessage?.text ||
-    m.message?.ephemeralMessage?.message?.conversation ||
-    m.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
-    m.message?.imageMessage?.caption ||
-    m.message?.videoMessage?.caption ||
-    m.body ||
-    m.text ||
-    m.content ||
-    ''
-  ).toLowerCase();
+  const text = extractActualMessageText(m);
+  if (!text) return false;
 
-  // 1. Match exato no texto direto
-  if (directText.includes(cleanTarget)) return true;
+  // 1. Match exato no texto da mensagem
+  if (text.includes(cleanTarget)) return true;
 
   // 2. Match por todas as palavras chaves significativas
   const words = cleanTarget.split(/\s+/).filter(w => w.length >= 2);
-  if (words.length > 1 && words.every(w => directText.includes(w))) {
+  if (words.length > 1 && words.every(w => text.includes(w))) {
     return true;
-  }
-
-  // 3. Busca profunda no JSON completo da mensagem
-  try {
-    const jsonStr = JSON.stringify(m).toLowerCase();
-    if (jsonStr.includes(cleanTarget)) return true;
-    if (words.length > 1 && words.every(w => jsonStr.includes(w))) {
-      return true;
-    }
-  } catch (e) {
-    // ignore JSON stringify errors
   }
 
   return false;
@@ -499,7 +522,7 @@ export function extractPhonesFromMessage(m, lidToPhone = new Map()) {
 
   function addJid(jid) {
     if (!jid || typeof jid !== 'string') return;
-    if (jid.includes('@g.us')) return; // ignora grupos
+    if (jid.includes('@g.us') || jid.includes('@broadcast')) return; // ignora grupos e broadcasts
     let raw = jid.includes('@') ? jid.split('@')[0] : jid;
     if (raw.includes(':')) raw = raw.split(':')[0];
     let clean = extractCleanPhone(raw);
@@ -515,14 +538,6 @@ export function extractPhonesFromMessage(m, lidToPhone = new Map()) {
   addJid(m.key?.remoteJidAlt || m.remoteJidAlt);
   addJid(m.key?.participant || m.participant);
   addJid(m.key?.participantAlt || m.participantAlt);
-
-  if (m.message?.reactionMessage?.key) {
-    const rk = m.message.reactionMessage.key;
-    addJid(rk.remoteJid);
-    addJid(rk.remoteJidAlt);
-    addJid(rk.participant);
-    addJid(rk.participantAlt);
-  }
 
   if (Array.isArray(m.userReceipt)) {
     m.userReceipt.forEach((ur) => {
@@ -546,7 +561,7 @@ export function isMessageWithinHours(msg, maxHours = 1) {
   
   let ts = msg.messageTimestamp || msg.createdAt || msg.updatedAt;
   if (!ts && msg.lastMessage) ts = msg.lastMessage.messageTimestamp || msg.lastMessage.createdAt || msg.lastMessage.updatedAt;
-  if (!ts) return true; // se não houver timestamp disponível, permite por fallback
+  if (!ts) return false; // Se não houver timestamp disponível, não considera recente
 
   if (typeof ts === 'object' && ts !== null && ts.low) {
     ts = ts.low;
@@ -638,10 +653,10 @@ export async function scanAllChatsForPhrase(phraseText, maxHours = 1) {
     // 5. Filtra mensagens que contêm a frase E foram enviadas/recebidas dentro da janela de tempo (ex: 1h)
     allMsgs.forEach((m) => {
       const hasPhrase = doesMessageContainPhrase(m, targetPhrase);
-      const referencesBroadcast = m.message?.reactionMessage?.key?.id && broadcastMsgIdsWithPhrase.has(m.message.reactionMessage.key.id);
-      const isBroadcastReaction = m.message?.reactionMessage?.key?.remoteJid?.includes('@broadcast');
+      const reactionParentId = m.message?.reactionMessage?.key?.id;
+      const referencesBroadcastWithPhrase = reactionParentId && broadcastMsgIdsWithPhrase.has(reactionParentId);
 
-      if ((hasPhrase || referencesBroadcast || isBroadcastReaction) && isMessageWithinHours(m, maxHours)) {
+      if ((hasPhrase || referencesBroadcastWithPhrase) && isMessageWithinHours(m, maxHours)) {
         const foundPhones = extractPhonesFromMessage(m, lidToPhone);
         foundPhones.forEach((p) => {
           getPhoneSignatures(p).forEach((sig) => matchedSigs.add(sig));
@@ -652,10 +667,11 @@ export async function scanAllChatsForPhrase(phraseText, maxHours = 1) {
     // 6. Busca conversas ativas no WhatsApp que contenham a frase no histórico recente
     (chats || []).forEach((c) => {
       const hasPhrase = doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase);
-      const referencesBroadcast = c.lastMessage?.message?.reactionMessage?.key?.id && broadcastMsgIdsWithPhrase.has(c.lastMessage.message.reactionMessage.key.id);
+      const reactionParentId = c.lastMessage?.message?.reactionMessage?.key?.id;
+      const referencesBroadcastWithPhrase = reactionParentId && broadcastMsgIdsWithPhrase.has(reactionParentId);
       const isRecent = isMessageWithinHours(c.lastMessage, maxHours) || isMessageWithinHours(c, maxHours);
 
-      if ((hasPhrase || referencesBroadcast) && isRecent) {
+      if ((hasPhrase || referencesBroadcastWithPhrase) && isRecent) {
         const rJid = c.remoteJid || c.id || '';
         const rJidAlt = c.lastMessage?.key?.remoteJidAlt || c.lastMessage?.key?.participantAlt || '';
         const rJidKey = c.lastMessage?.key?.remoteJid || '';
