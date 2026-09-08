@@ -464,16 +464,49 @@ export function extractPhonesFromMessage(m) {
   return phones;
 }
 
+// Helper para verificar se a mensagem foi enviada/recebida dentro da janela de horas especificada (ex: 12h)
+export function isMessageWithinHours(msg, maxHours = 12) {
+  if (!msg) return false;
+  
+  let ts = msg.messageTimestamp || msg.createdAt || msg.updatedAt;
+  if (!ts && msg.lastMessage) ts = msg.lastMessage.messageTimestamp || msg.lastMessage.createdAt || msg.lastMessage.updatedAt;
+  if (!ts) return true; // se não houver timestamp disponível, permite por fallback
+
+  if (typeof ts === 'object' && ts !== null && ts.low) {
+    ts = ts.low;
+  }
+  if (typeof ts === 'string') {
+    if (ts.includes('-') || ts.includes('T')) {
+      const dt = new Date(ts);
+      if (!isNaN(dt.getTime())) {
+        ts = Math.floor(dt.getTime() / 1000);
+      }
+    } else {
+      ts = parseInt(ts, 10);
+    }
+  }
+
+  if (ts > 10000000000) {
+    ts = Math.floor(ts / 1000);
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const diffHours = (nowSec - ts) / 3600;
+
+  return diffHours >= -0.5 && diffHours <= (maxHours || 12);
+}
+
 // ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO ────
 
-export async function scanAllChatsForPhrase(phraseText) {
+export async function scanAllChatsForPhrase(phraseText, maxHours = 12) {
   const targetPhrase = (phraseText || '').toLowerCase().trim().replace(/^["']|["']$/g, '');
   const matchedSigs = new Set();
+  if (!targetPhrase) return matchedSigs;
 
   try {
     const { instanceName } = getEvolutionConfig();
 
-    // 1. Busca mensagens recentes do banco de dados (múltiplas páginas para cobrir o histórico)
+    // 1. Busca mensagens recentes do banco de dados (múltiplas páginas para cobrir o histórico recente)
     const msgsP1 = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
       method: 'POST',
       body: JSON.stringify({ limit: 500, page: 1 }),
@@ -492,9 +525,9 @@ export async function scanAllChatsForPhrase(phraseText) {
     list2.forEach((m) => m?.id && msgMap.set(m.id, m));
     const allMsgs = Array.from(msgMap.values());
 
-    // Se houver frase de busca, filtra mensagens contendo a frase
+    // Filtra mensagens que contêm a frase E foram enviadas/recebidas dentro da janela de tempo (ex: 12h)
     allMsgs.forEach((m) => {
-      if (!targetPhrase || doesMessageContainPhrase(m, targetPhrase)) {
+      if (doesMessageContainPhrase(m, targetPhrase) && isMessageWithinHours(m, maxHours)) {
         const foundPhones = extractPhonesFromMessage(m);
         foundPhones.forEach((p) => {
           getPhoneSignatures(p).forEach((sig) => matchedSigs.add(sig));
@@ -502,31 +535,23 @@ export async function scanAllChatsForPhrase(phraseText) {
       }
     });
 
-    // 2. Busca todas as conversas ativas no WhatsApp (inclui verificação de remoteJid, remoteJidAlt e LIDs)
+    // 2. Busca conversas ativas no WhatsApp que contenham a frase no histórico recente
     const chats = await fetchWhatsAppChats().catch(() => []);
     (chats || []).forEach((c) => {
-      const isMatch = !targetPhrase || doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase);
-      
-      const rJid = c.remoteJid || c.id || '';
-      const rJidAlt = c.lastMessage?.key?.remoteJidAlt || c.lastMessage?.key?.participantAlt || '';
-      const rJidKey = c.lastMessage?.key?.remoteJid || '';
+      const hasPhrase = doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase);
+      const isRecent = isMessageWithinHours(c.lastMessage, maxHours) || isMessageWithinHours(c, maxHours);
 
-      [rJid, rJidAlt, rJidKey].forEach((j) => {
-        const cleanP = extractCleanPhone(j);
-        if (cleanP && cleanP.length >= 8) {
-          getPhoneSignatures(cleanP).forEach((sig) => {
-            if (isMatch) matchedSigs.add(sig);
-          });
-        }
-      });
-    });
+      if (hasPhrase && isRecent) {
+        const rJid = c.remoteJid || c.id || '';
+        const rJidAlt = c.lastMessage?.key?.remoteJidAlt || c.lastMessage?.key?.participantAlt || '';
+        const rJidKey = c.lastMessage?.key?.remoteJid || '';
 
-    // 3. Sincroniza agenda de contatos oficiais salvos do WhatsApp conectado
-    const contacts = await fetchWhatsAppContacts().catch(() => []);
-    (contacts || []).forEach((ct) => {
-      const cleanP = extractCleanPhone(ct.remoteJid || ct.id || ct.number);
-      if (cleanP && cleanP.length >= 8) {
-        getPhoneSignatures(cleanP).forEach((sig) => matchedSigs.add(sig));
+        [rJid, rJidAlt, rJidKey].forEach((j) => {
+          const cleanP = extractCleanPhone(j);
+          if (cleanP && cleanP.length >= 8) {
+            getPhoneSignatures(cleanP).forEach((sig) => matchedSigs.add(sig));
+          }
+        });
       }
     });
 
@@ -537,17 +562,17 @@ export async function scanAllChatsForPhrase(phraseText) {
   return matchedSigs;
 }
 
-export async function checkContactHasBroadcastPhrase(phone, phraseText, preScannedSigs = null) {
+export async function checkContactHasBroadcastPhrase(phone, phraseText, preScannedSigs = null, maxHours = 12) {
   const cleanPhone = extractCleanPhone(phone);
   const targetPhrase = (phraseText || '').toLowerCase().trim().replace(/^["']|["']$/g, '');
 
-  if (!cleanPhone) {
-    return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem número)', status: 'PENDING' };
+  if (!cleanPhone || !targetPhrase) {
+    return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem frase de teste)', status: 'PENDING' };
   }
 
   const sigs = getPhoneSignatures(cleanPhone);
 
-  // 1. Checa no escaneamento prévio amplo e rápido (conversas, transmissões e contatos)
+  // 1. Checa se o número foi pré-confirmado com a frase nas últimas X horas
   if (preScannedSigs && preScannedSigs instanceof Set) {
     const hasMatch = sigs.some((sig) => preScannedSigs.has(sig));
     if (hasMatch) {
@@ -555,15 +580,14 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
         has2Checks: true,
         checks: 2,
         status: 'DELIVERY_ACK',
-        label: `✓✓ 2 Traços (Contato confirmado no WhatsApp!)`
+        label: `✓✓ 2 Traços (Frase "${phraseText}" entregue nas últimas ${maxHours}h!)`
       };
     }
   }
 
-  // 2. Checa diretamente nas conversas do contato usando busca por assinaturas numéricas (com e sem 9º dígito)
+  // 2. Checa diretamente nas conversas do contato por mensagens contendo a frase nas últimas X horas
   for (const sig of sigs) {
     try {
-      // Tenta A: key.remoteJid exact
       const jid = sig.includes('@') ? sig : `${sig}@s.whatsapp.net`;
       const msgsJid = await fetchWhatsAppMessages({
         where: {
@@ -575,16 +599,13 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
       }).catch(() => null);
 
       if (Array.isArray(msgsJid) && msgsJid.length > 0) {
-        if (!targetPhrase) {
-          return { has2Checks: true, checks: 2, status: 'DELIVERY_ACK', label: '✓✓ 2 Traços (Mensagem entregue)' };
-        }
         for (const m of msgsJid) {
-          if (doesMessageContainPhrase(m, targetPhrase)) {
+          if (doesMessageContainPhrase(m, targetPhrase) && isMessageWithinHours(m, maxHours)) {
             return {
               has2Checks: true,
               checks: 2,
               status: 'DELIVERY_ACK',
-              label: `✓✓ 2 Traços (Frase "${phraseText}" encontrada no chat!)`
+              label: `✓✓ 2 Traços (Frase "${phraseText}" entregue nas últimas ${maxHours}h!)`
             };
           }
         }
@@ -594,17 +615,11 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
     }
   }
 
-  // 3. Fallback: Checa status direto de entrega no chat do contato
-  const directCheck = await getContactDeliveryStatusDirect(cleanPhone);
-  if (directCheck && directCheck.has2Checks) {
-    return directCheck;
-  }
-
   return {
     has2Checks: false,
     checks: 1,
     status: 'NOT_FOUND',
-    label: `✓ 1 Traço (Pendente / Sem confirmação no WhatsApp)`
+    label: `✓ 1 Traço (Frase "${phraseText}" não encontrada nas últimas ${maxHours}h)`
   };
 }
 

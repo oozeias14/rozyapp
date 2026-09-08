@@ -552,13 +552,13 @@ export function EvolutionBotTab({ users, reload }) {
     setTestLogs([]);
     setTestProgress({ current: 0, total: targetUsers.length, success: 0, failed: 0 });
 
-    addLog(`📝 Iniciando rastreamento por frase "${cleanPhrase}" nas conversas do WhatsApp...`, 'info');
+    addLog(`📝 Iniciando rastreamento da frase "${cleanPhrase}" enviado nas últimas ${phraseTimeHours}h...`, 'info');
 
     try {
-      addLog(`⚡ Escaneando histórico recente para localizar conversas contendo "${cleanPhrase}"...`, 'info');
-      const preScannedSigs = await scanAllChatsForPhrase(cleanPhrase);
+      addLog(`⚡ Escaneando mensagens enviadas nas últimas ${phraseTimeHours}h contendo "${cleanPhrase}"...`, 'info');
+      const preScannedSigs = await scanAllChatsForPhrase(cleanPhrase, phraseTimeHours);
 
-      addLog(`📊 Auditando ${targetUsers.length} contatos selecionados para verificar a presença da frase na conversa...`, 'info');
+      addLog(`📊 Auditando ${targetUsers.length} contatos selecionados...`, 'info');
 
       let savedCount = 0;
       let notSavedCount = 0;
@@ -574,15 +574,15 @@ export function EvolutionBotTab({ users, reload }) {
         const rawPhone = u.whatsapp || u.phone || '';
         const fullName = (u.name || 'Sem nome').trim();
 
-        const phraseCheck = await checkContactHasBroadcastPhrase(rawPhone, cleanPhrase, preScannedSigs);
+        const phraseCheck = await checkContactHasBroadcastPhrase(rawPhone, cleanPhrase, preScannedSigs, phraseTimeHours);
         const is2Checks = phraseCheck.has2Checks;
 
         if (is2Checks) {
           savedCount++;
-          addLog(`✓✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): FRASE "${cleanPhrase}" ENCONTRADA ➔ SALVO! (2 Traços)`, 'success');
+          addLog(`✓✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): FRASE "${cleanPhrase}" ENCONTRADA NAS ÚLTIMAS ${phraseTimeHours}H ➔ SALVO! (2 Traços)`, 'success');
         } else {
           notSavedCount++;
-          addLog(`✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): FRASE NÃO ENCONTRADA ➔ PENDENTE (1 Traço)`, 'error');
+          addLog(`✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): FRASE NÃO ENCONTRADA NAS ÚLTIMAS ${phraseTimeHours}H ➔ PENDENTE (1 Traço)`, 'error');
         }
 
         evaluated.push({
@@ -593,7 +593,7 @@ export function EvolutionBotTab({ users, reload }) {
           city: u.city || '',
           checks: is2Checks ? 2 : 1,
           status: is2Checks ? 'DELIVERY_ACK' : 'SERVER_ACK',
-          label: is2Checks ? `✓✓ 2 Traços (Frase "${cleanPhrase}" no chat)` : `✓ 1 Traço (Sem frase "${cleanPhrase}")`,
+          label: is2Checks ? `✓✓ 2 Traços (Frase "${cleanPhrase}" nas últimas ${phraseTimeHours}h)` : `✓ 1 Traço (Sem frase "${cleanPhrase}" nas últimas ${phraseTimeHours}h)`,
           isSaved: is2Checks,
         });
 
@@ -608,7 +608,7 @@ export function EvolutionBotTab({ users, reload }) {
       }
 
       setTestResults(evaluated);
-      addLog(`🏁 Rastreamento por frase finalizado! Frase encontrada (Salvos): ${savedCount} | Não encontrada (Pendentes): ${notSavedCount}`, 'info');
+      addLog(`🏁 Rastreamento por frase finalizado! Frase encontrada nas últimas ${phraseTimeHours}h (Salvos): ${savedCount} | Não encontrada (Pendentes): ${notSavedCount}`, 'info');
 
       // Auto-atualização dos salvos encontrados na auditoria (2 traços confirmados)
       const confirmedSavedPhones = evaluated
