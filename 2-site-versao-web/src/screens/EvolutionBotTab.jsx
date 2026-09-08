@@ -70,8 +70,8 @@ export function EvolutionBotTab({ users, reload }) {
   const [customContactSearch, setCustomContactSearch] = useState('');
   const [selectedTestBatch, setSelectedTestBatch] = useState('T1');
   const [verificationMethod, setVerificationMethod] = useState('phrase_track'); // 'phrase_track' | 'auto_broadcast' | 'paste'
-  const [broadcastPhraseText, setBroadcastPhraseText] = useState('Furia 2');
-  const [phraseTimeHours, setPhraseTimeHours] = useState(2);
+  const [broadcastPhraseText, setBroadcastPhraseText] = useState('');
+  const [phraseTimeHours, setPhraseTimeHours] = useState(1);
   const [detectedBroadcastLists, setDetectedBroadcastLists] = useState([]);
   const [selectedBroadcastJid, setSelectedBroadcastJid] = useState('');
   const [foundBroadcastMessage, setFoundBroadcastMessage] = useState(null);

@@ -331,21 +331,28 @@ export async function fetchWhatsAppMessages(params = {}) {
 }
 
 // Helper para mapear LIDs (@lid) para números de telefone reais (@s.whatsapp.net)
-export function buildLidPhoneMapping(chats = [], messages = []) {
+export function buildLidPhoneMapping(chats = [], messages = [], contacts = []) {
   const lidToPhone = new Map();
 
   function register(lidStr, phoneStr) {
     if (!lidStr || !phoneStr) return;
     const cleanLid = extractCleanPhone(lidStr);
     const cleanPhone = extractCleanPhone(phoneStr);
-    if (cleanLid && cleanPhone && cleanLid !== cleanPhone) {
+    if (cleanLid && cleanPhone && cleanLid !== cleanPhone && cleanPhone.length >= 8) {
       lidToPhone.set(cleanLid, cleanPhone);
     }
   }
 
+  (contacts || []).forEach(ct => {
+    const id = ct.id || ct.remoteJid || '';
+    const alt = ct.remoteJidAlt || ct.phoneNumber || '';
+    if (id.includes('@lid') && alt) register(id, alt);
+    if (alt.includes('@lid') && id) register(alt, id);
+  });
+
   (chats || []).forEach(c => {
     const rawR = c.remoteJid || c.id || '';
-    const altR = c.lastMessage?.key?.remoteJidAlt || c.lastMessage?.key?.participantAlt || '';
+    const altR = c.remoteJidAlt || c.lastMessage?.key?.remoteJidAlt || c.lastMessage?.key?.participantAlt || '';
     if (rawR.includes('@lid') && altR) register(rawR, altR);
     if (altR.includes('@lid') && rawR) register(altR, rawR);
   });
@@ -607,7 +614,7 @@ export function isMessageWithinHours(msg, maxHours = 2) {
 
 // ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO ────
 
-export async function scanAllChatsForPhrase(phraseText, maxHours = 2) {
+export async function scanAllChatsForPhrase(phraseText, maxHours = 1) {
   const targetPhrase = (phraseText || '').toLowerCase().trim().replace(/^["']|["']$/g, '');
   const matchedSigs = new Set();
   if (!targetPhrase) return matchedSigs;
@@ -615,11 +622,26 @@ export async function scanAllChatsForPhrase(phraseText, maxHours = 2) {
   try {
     const { instanceName } = getEvolutionConfig();
 
-    // 1. Busca conversas ativas no WhatsApp (findChats)
-    const chats = await fetchWhatsAppChats().catch(() => []);
+    // 1. Busca contatos salvos e conversas ativas no WhatsApp
+    const [contacts, chats] = await Promise.all([
+      fetchWhatsAppContacts().catch(() => []),
+      fetchWhatsAppChats().catch(() => [])
+    ]);
 
-    // 2. Busca mensagens recentes do banco de dados (múltiplas páginas para cobrir o histórico recente)
+    // 2. Busca mensagens do WhatsApp (mensagens de transmissão explícitas + histórico recente)
     const allMsgsList = [];
+    
+    // 2a. Busca direta por mensagens de transmissão no banco de dados
+    const bMsgsRes = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({ where: { broadcast: true }, limit: 100 }),
+    }).catch(() => null);
+    const bRecords = bMsgsRes?.messages?.records || (Array.isArray(bMsgsRes) ? bMsgsRes : []);
+    if (Array.isArray(bRecords) && bRecords.length > 0) {
+      allMsgsList.push(...bRecords);
+    }
+
+    // 2b. Busca páginas recentes de mensagens gerais
     for (let p = 1; p <= 4; p++) {
       const msgsP = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
         method: 'POST',
@@ -631,24 +653,32 @@ export async function scanAllChatsForPhrase(phraseText, maxHours = 2) {
       }
     }
 
-    // 3. Busca mensagens específicas dentro de cada lista de transmissão (@broadcast) encontrada
-    const broadcastChats = (chats || []).filter(c => (c.remoteJid || c.id || '').includes('@broadcast'));
-    for (const bc of broadcastChats) {
-      const bjId = bc.remoteJid || bc.id;
-      const bMsgsRes = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+    // 3. Descobre dinamicamente todos os JIDs de listas de transmissão (@broadcast)
+    const broadcastJids = new Set(['1788673682@broadcast']);
+    (chats || []).forEach(c => {
+      const rj = c.remoteJid || c.id || '';
+      if (rj.includes('@broadcast')) broadcastJids.add(rj);
+    });
+    allMsgsList.forEach(m => {
+      const rj = m.key?.remoteJid || m.remoteJid || '';
+      if (rj.includes('@broadcast')) broadcastJids.add(rj);
+    });
+
+    // 3b. Busca mensagens específicas dentro de cada lista de transmissão (@broadcast) encontrada
+    for (const bjId of broadcastJids) {
+      const bSpecificRes = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
         method: 'POST',
         body: JSON.stringify({ where: { key: { remoteJid: bjId } }, limit: 50 }),
       }).catch(() => null);
-      const bRecords = bMsgsRes?.messages?.records || (Array.isArray(bMsgsRes) ? bMsgsRes : []);
-      if (Array.isArray(bRecords) && bRecords.length > 0) {
-        allMsgsList.push(...bRecords);
+      const bSpecRecs = bSpecificRes?.messages?.records || (Array.isArray(bSpecificRes) ? bSpecificRes : []);
+      if (Array.isArray(bSpecRecs) && bSpecRecs.length > 0) {
+        allMsgsList.push(...bSpecRecs);
       }
     }
 
-    // 4. Busca recibos de entrega em tempo real para cada lista de transmissão (@broadcast)
+    // 4. Busca recibos de entrega em tempo real (statusMessage) para cada lista de transmissão (@broadcast)
     const statusRecords = [];
-    for (const bc of broadcastChats) {
-      const bjId = bc.remoteJid || bc.id;
+    for (const bjId of broadcastJids) {
       const sRes = await evolutionFetch(`/chat/findStatusMessage/${instanceName}`, {
         method: 'POST',
         body: JSON.stringify({ where: { remoteJid: bjId } }),
@@ -659,14 +689,30 @@ export async function scanAllChatsForPhrase(phraseText, maxHours = 2) {
       }
     }
 
+    // 4b. Busca também recibos gerais da tabela statusMessage
+    const sResGeneral = await evolutionFetch(`/chat/findStatusMessage/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({ limit: 100 }),
+    }).catch(() => null);
+    const sGenList = Array.isArray(sResGeneral) ? sResGeneral : (sResGeneral?.records || []);
+    if (Array.isArray(sGenList) && sGenList.length > 0) {
+      statusRecords.push(...sGenList);
+    }
+
+    // Deduplica mensagens
     const msgMap = new Map();
-    allMsgsList.forEach((m) => m?.id && msgMap.set(m.id, m));
+    allMsgsList.forEach((m) => {
+      const kId = m?.key?.id || m?.id;
+      if (kId && !msgMap.has(kId)) {
+        msgMap.set(kId, m);
+      }
+    });
     const allMsgs = Array.from(msgMap.values());
 
-    // 5. Constrói dicionário de tradução LID <-> Telefone real
-    const lidToPhone = buildLidPhoneMapping(chats, allMsgs);
+    // 5. Constrói dicionário completo de tradução LID <-> Telefone real
+    const lidToPhone = buildLidPhoneMapping(chats, allMsgs, contacts);
 
-    // 6. Mapeia IDs de mensagens que contêm a frase
+    // 6. Mapeia IDs de mensagens que contêm a frase enviada dentro da janela de tempo
     const matchingMessageIds = new Set();
     allMsgs.forEach((m) => {
       if (doesMessageContainPhrase(m, targetPhrase) && isMessageWithinHours(m, maxHours)) {
