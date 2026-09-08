@@ -71,6 +71,7 @@ export function EvolutionBotTab({ users, reload }) {
   const [selectedTestBatch, setSelectedTestBatch] = useState('T1');
   const [verificationMethod, setVerificationMethod] = useState('phrase_track'); // 'phrase_track' | 'auto_broadcast' | 'send_and_verify' | 'paste'
   const [broadcastPhraseText, setBroadcastPhraseText] = useState('teste 1234');
+  const [phraseTimeHours, setPhraseTimeHours] = useState(12);
   const [detectedBroadcastLists, setDetectedBroadcastLists] = useState([]);
   const [selectedBroadcastJid, setSelectedBroadcastJid] = useState('');
   const [foundBroadcastMessage, setFoundBroadcastMessage] = useState(null);
@@ -2724,28 +2725,57 @@ export function EvolutionBotTab({ users, reload }) {
                               </span>
                             </div>
 
-                            <div style={{ marginTop: 2 }}>
-                              <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--teal)', textTransform: 'uppercase' }}>
-                                Digite uma Frase ou Palavra-Chave da Transmissão Enviada:
-                              </label>
-                              <input
-                                type="text"
-                                placeholder="ex: teste 1234 ou Olá pessoal, novidades..."
-                                value={broadcastPhraseText}
-                                onChange={(e) => setBroadcastPhraseText(e.target.value)}
-                                style={{
-                                  width: '100%',
-                                  padding: '9px 12px',
-                                  fontSize: 13,
-                                  fontWeight: 700,
-                                  borderRadius: 8,
-                                  background: 'rgba(0,0,0,0.5)',
-                                  border: '1.5px solid var(--teal)',
-                                  color: '#fff',
-                                  marginTop: 4,
-                                  boxSizing: 'border-box'
-                                }}
-                              />
+                            <div style={{ marginTop: 2, display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
+                              <div>
+                                <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--teal)', textTransform: 'uppercase' }}>
+                                  Palavra ou Frase de Teste:
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="ex: teste 1234..."
+                                  value={broadcastPhraseText}
+                                  onChange={(e) => setBroadcastPhraseText(e.target.value)}
+                                  style={{
+                                    width: '100%',
+                                    padding: '9px 12px',
+                                    fontSize: 13,
+                                    fontWeight: 700,
+                                    borderRadius: 8,
+                                    background: 'rgba(0,0,0,0.5)',
+                                    border: '1.5px solid var(--teal)',
+                                    color: '#fff',
+                                    marginTop: 4,
+                                    boxSizing: 'border-box'
+                                  }}
+                                />
+                              </div>
+
+                              <div>
+                                <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--teal)', textTransform: 'uppercase' }}>
+                                  Janela de Tempo:
+                                </label>
+                                <select
+                                  value={phraseTimeHours}
+                                  onChange={(e) => setPhraseTimeHours(Number(e.target.value))}
+                                  style={{
+                                    width: '100%',
+                                    padding: '9px 10px',
+                                    fontSize: 12.5,
+                                    fontWeight: 800,
+                                    borderRadius: 8,
+                                    background: 'rgba(0,0,0,0.5)',
+                                    border: '1.5px solid var(--teal)',
+                                    color: '#fff',
+                                    marginTop: 4,
+                                    boxSizing: 'border-box'
+                                  }}
+                                >
+                                  <option value={6} style={{ background: '#0F172A' }}>Últimas 6h</option>
+                                  <option value={12} style={{ background: '#0F172A' }}>Últimas 12h (Padrão)</option>
+                                  <option value={24} style={{ background: '#0F172A' }}>Últimas 24h</option>
+                                  <option value={48} style={{ background: '#0F172A' }}>Últimas 48h</option>
+                                </select>
+                              </div>
                             </div>
                           </div>
                         )}
