@@ -2,7 +2,7 @@
 
 const STORAGE_KEY = 'wa_system_access_tracking';
 const VERSION_KEY = 'wa_system_access_version';
-const CURRENT_VERSION = 'v4_tiebreak_fixed';
+const CURRENT_VERSION = 'v6_admin_programmer_first';
 
 /**
  * Lê o mapa de acessos do localStorage
@@ -101,29 +101,57 @@ export function simulateAccessForUser(profileId, pointsToAdd = 1, secondsToAdd =
 
 /**
  * Gera sementes de acessos consistentes e estritamente determinísticas por ID.
- * Garante que usuários com a mesma pontuação (ex: 17 pts) possuam tempos de uso distintos,
- * permitindo o desempate exato pelo tempo de uso conforme solicitado.
+ * O Administrador (programador que desenvolve e mais acessa o sistema) recebe
+ * pontuação de topo (1º lugar absoluto) e tempo de uso acumulado proporcional ao desenvolvimento.
  */
-function getDeterministicSeed(user) {
-  const idNum = Number(user.id) || 1;
-  const isStaff = user.role === 'admin' || user.role === 'admin2' || user.role === 'coord';
-  
-  // Base de acessos (1 acesso = 1 ponto)
-  // Administradores e coordenadores com pontuação de liderança alta
-  const basePoints = isStaff 
-    ? 28 + (idNum % 25) 
-    : 3 + (idNum % 15);
+export function getDeterministicSeed(user, forceAdmin = false) {
+  const idNum = Number(user?.id) || 1;
+  const isAdmin = forceAdmin || user?.role === 'admin';
+  const isAdmin2 = user?.role === 'admin2';
+  const isCoord = user?.role === 'coord';
 
-  // Tempo de uso com precisão de minutos e segundos únicos por ID.
-  // Fatores coprimos (13 e 37) garantem tempos estritamente diferentes entre todos os IDs.
-  const baseMinutes = isStaff
-    ? 150 + ((idNum * 23) % 280)
-    : 15 + ((idNum * 13) % 210);
+  if (isAdmin) {
+    // Administrador Principal (Programador / Desenvolvedor do Sistema) -> 1º Lugar
+    const points = 186 + (idNum % 10);
+    const seconds = (38 * 3600) + (24 * 60) + ((idNum * 19) % 60); // 38 horas de uso
+    return {
+      access_points: points,
+      total_usage_seconds: seconds,
+      last_access_at: Date.now(),
+      sessions_count: points
+    };
+  }
 
+  if (isAdmin2) {
+    // Admin 2
+    const points = 92 + (idNum % 10);
+    const seconds = (16 * 3600) + (18 * 60) + ((idNum * 23) % 60);
+    return {
+      access_points: points,
+      total_usage_seconds: seconds,
+      last_access_at: Date.now() - (2 * 3600 * 1000),
+      sessions_count: points
+    };
+  }
+
+  if (isCoord) {
+    // Coordenadores
+    const points = 24 + (idNum % 12);
+    const seconds = (4 * 3600) + ((idNum * 19) % 3600);
+    return {
+      access_points: points,
+      total_usage_seconds: seconds,
+      last_access_at: Date.now() - ((idNum % 24) * 3600 * 1000),
+      sessions_count: points
+    };
+  }
+
+  // Usuários regulares (membros)
+  const basePoints = 3 + (idNum % 15); // Pode ter 17 pontos
+  const baseMinutes = 15 + ((idNum * 13) % 180);
   const extraSeconds = (idNum * 37) % 60;
   const totalSeconds = (baseMinutes * 60) + extraSeconds;
 
-  // Data de último acesso determinística e estável (não volátil)
   const baseline = 1757400000000;
   const offsetHours = (idNum * 7) % 72;
   const fixedLastAccess = baseline - (offsetHours * 3600 * 1000) - (extraSeconds * 1000);
@@ -137,35 +165,50 @@ function getDeterministicSeed(user) {
 }
 
 /**
- * Migra e normaliza os dados armazenados para garantir que empates de pontuação
- * tenham tempos de uso calibrados e únicos para desempate estável.
+ * Migra e normaliza os dados armazenados para garantir que o administrador
+ * esteja presente no ranking de acesso como líder (1º lugar) e os empates sejam desempatados por tempo.
  */
-function ensureNormalizedAccessData(stored, users) {
+function ensureNormalizedAccessData(stored, users, currentProfile) {
   try {
     const currentVersion = localStorage.getItem(VERSION_KEY);
     if (currentVersion === CURRENT_VERSION) {
       return stored;
     }
 
+    const all = [...users];
+    if (currentProfile && currentProfile.id && !all.some(u => String(u.id) === String(currentProfile.id))) {
+      all.unshift(currentProfile);
+    }
+
     const updated = { ...stored };
-    users.forEach((u) => {
-      const seed = getDeterministicSeed(u);
+    all.forEach((u) => {
+      const isCurrentAdmin = currentProfile && String(u.id) === String(currentProfile.id) && (currentProfile.role === 'admin' || currentProfile.role === 'admin2');
+      const isAdmin = isCurrentAdmin || u.role === 'admin';
+      const seed = getDeterministicSeed(u, isAdmin);
       const existing = updated[u.id];
 
       if (!existing) {
         updated[u.id] = seed;
       } else {
-        // Mantém pontos já registrados (ou os do seed) e calibra tempo de uso único para desempate
-        const liveExtraSeconds = (existing.total_usage_seconds || 0) % 60;
-        const totalSecs = Math.max(existing.total_usage_seconds || 0, seed.total_usage_seconds);
-
-        updated[u.id] = {
-          ...existing,
-          access_points: existing.access_points || seed.access_points,
-          total_usage_seconds: totalSecs + (liveExtraSeconds ? 0 : seed.total_usage_seconds % 60),
-          last_access_at: existing.last_access_at || seed.last_access_at,
-          sessions_count: existing.sessions_count || seed.sessions_count,
-        };
+        if (isAdmin) {
+          // Garante que o administrador tenha pontuação e tempo de uso de líder (1º lugar)
+          updated[u.id] = {
+            ...existing,
+            access_points: Math.max(existing.access_points || 0, seed.access_points),
+            total_usage_seconds: Math.max(existing.total_usage_seconds || 0, seed.total_usage_seconds),
+            last_access_at: Date.now(),
+            sessions_count: Math.max(existing.sessions_count || 0, seed.sessions_count),
+          };
+        } else {
+          const totalSecs = Math.max(existing.total_usage_seconds || 0, seed.total_usage_seconds);
+          updated[u.id] = {
+            ...existing,
+            access_points: existing.access_points || seed.access_points,
+            total_usage_seconds: totalSecs,
+            last_access_at: existing.last_access_at || seed.last_access_at,
+            sessions_count: existing.sessions_count || seed.sessions_count,
+          };
+        }
       }
     });
 
@@ -180,23 +223,37 @@ function ensureNormalizedAccessData(stored, users) {
 
 /**
  * Retorna lista ordenada de todos os usuários com dados consolidados de acesso.
- * Inclui administradores (admin e admin2).
+ * Garante que o Administrador (especialmente o logado) esteja sempre presente.
  * 
- * CRITÉRIOS DE ORDENAÇÃO E DESEMPATE (estritamente aplicados):
- * 1º: Pontos de Acesso (decrescente)
- * 2º: Tempo de Uso em segundos (decrescente) -> Critério de desempate
+ * CRITÉRIOS DE ORDENAÇÃO E DESEMPATE:
+ * 1º: Pontos de Acesso (decrescente) -> Administrador em 1º Lugar com maior número de acessos
+ * 2º: Tempo de Uso em segundos (decrescente) -> Critério estrito de desempate
  * 3º: Data do Último Acesso (mais recente primeiro)
- * 4º: ID do cadastro (crescente -> garante posição 100% estável e fixa sem alternar entre renders)
+ * 4º: ID do cadastro (ordem estável fixa definitiva)
  */
-export function getAccessRankingList(users = []) {
+export function getAccessRankingList(users = [], currentProfile = null) {
   let stored = getStoredAccessData();
-  stored = ensureNormalizedAccessData(stored, users);
+  stored = ensureNormalizedAccessData(stored, users, currentProfile);
+
+  const allUsers = [...users];
+  if (currentProfile && currentProfile.id && !allUsers.some(u => String(u.id) === String(currentProfile.id))) {
+    allUsers.unshift(currentProfile);
+  }
 
   let needSave = false;
-  const list = users.map((u) => {
+  const list = allUsers.map((u) => {
     let access = stored[u.id];
+    const isCurrentAdmin = currentProfile && String(u.id) === String(currentProfile.id) && (currentProfile.role === 'admin' || currentProfile.role === 'admin2');
+    const isAdmin = isCurrentAdmin || u.role === 'admin';
+
     if (!access) {
-      access = getDeterministicSeed(u);
+      access = getDeterministicSeed(u, isAdmin);
+      stored[u.id] = access;
+      needSave = true;
+    } else if (isAdmin && access.access_points < 150) {
+      const seed = getDeterministicSeed(u, true);
+      access.access_points = Math.max(access.access_points, seed.access_points);
+      access.total_usage_seconds = Math.max(access.total_usage_seconds, seed.total_usage_seconds);
       stored[u.id] = access;
       needSave = true;
     }
@@ -230,7 +287,7 @@ export function getAccessRankingList(users = []) {
     if (timeB !== timeA) {
       return timeB - timeA;
     }
-    // 4º Quesito Estável Final: ID de cadastro (ordem de chegada imutável)
+    // 4º Quesito Estável Final: ID de cadastro
     return (Number(a.profile.id) || 0) - (Number(b.profile.id) || 0);
   });
 
@@ -238,20 +295,22 @@ export function getAccessRankingList(users = []) {
 }
 
 /**
- * Formata segundos de uso de forma humana (ex: "2h 45m", "32m 10s")
+ * Formata segundos de uso de forma detalhada e humana:
+ * Exibe horas, minutos e segundos (ex: "38h 24m 12s", "15m 30s") para que o tempo de tela
+ * e o desempate fiquem 100% visíveis em tempo real.
  */
 export function formatUsageTime(totalSeconds) {
-  if (!totalSeconds || totalSeconds <= 0) return '0m';
+  if (!totalSeconds || totalSeconds <= 0) return '0s';
   const sec = Math.round(totalSeconds);
   const hours = Math.floor(sec / 3600);
   const minutes = Math.floor((sec % 3600) / 60);
   const seconds = sec % 60;
 
   if (hours > 0) {
-    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+    return `${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`;
   }
   if (minutes > 0) {
-    return `${minutes}m ${seconds}s`;
+    return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
   }
   return `${seconds}s`;
 }

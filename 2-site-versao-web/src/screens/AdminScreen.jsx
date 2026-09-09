@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import PersonModal from '../components/PersonModal';
 import { EvolutionBotTab } from './EvolutionBotTab';
-import { getAccessRankingList, formatUsageTime, formatLastAccess, recordUserAccess } from '../lib/accessTracker';
+import { getAccessRankingList, formatUsageTime, formatLastAccess, recordUserAccess, addUsageTime } from '../lib/accessTracker';
 import { supabase, MAX_PHOTO_BYTES, compressImageWeb, CITIES } from '../lib/supabase';
 import {
   fetchAllProfiles, updateProfile, deleteProfile, promoteToCoordinator, demoteToUser,
@@ -132,7 +132,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         {loading && <div style={{ fontSize: 12, color: 'var(--teal)', textAlign: 'center', margin: '8px 0' }}>⏳ Carregando dados...</div>}
         {tab === 'users' && <UsersTab users={users} onSelect={(u) => setSelected(u)} reload={load} />}
         {tab === 'ranking' && <RankingTab users={users} meetings={meetings} onSelect={(u) => setModalPerson(u)} />}
-        {tab === 'access_ranking' && <AccessRankingTab users={users} onSelect={(u) => setModalPerson(u)} />}
+        {tab === 'access_ranking' && <AccessRankingTab users={users} currentProfile={profile} onSelect={(u) => setModalPerson(u)} />}
         {tab === 'messages' && <MessagesTab messages={messages} profile={profile} reload={load} />}
         {tab === 'evolution' && isAdmin && <EvolutionBotTab users={users} reload={load} />}
         {tab === 'owner' && isAdmin && owner && <OwnerTab owner={owner} reload={load} />}
@@ -502,13 +502,25 @@ function RankingTab({ users, meetings, onSelect }) {
 }
 
 /* ===== RANKING DE ACESSO (CLONADO E CUSTOMIZADO) ===== */
-function AccessRankingTab({ users, onSelect }) {
+function AccessRankingTab({ users, currentProfile, onSelect }) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [tick, setTick] = useState(0);
   const ITEMS_PER_PAGE = 10;
 
-  // Obtém lista ordenada por pontos de acesso e tempo de uso (INCLUI ADMINISTRADORES!)
-  const accessList = getAccessRankingList(users);
+  // Atualiza tempo de uso em tempo real a cada segundo
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (currentProfile && currentProfile.id) {
+        addUsageTime(currentProfile.id, 1);
+      }
+      setTick((t) => t + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [currentProfile]);
+
+  // Obtem lista com o administrador no topo e dados atualizados
+  const accessList = getAccessRankingList(users, currentProfile);
 
   const totalUsers = users.length;
   const totalPoints = accessList.reduce((acc, cur) => acc + (cur.accessPoints || 0), 0);
@@ -662,6 +674,11 @@ function AccessRankingTab({ users, onSelect }) {
                 <div style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
                   <span className={`role-badge ${roleClass(p.role)}`} style={{ fontSize: 9, padding: '1px 5px' }}>{roleLabel(p.role)}</span>
+                  {currentProfile && String(p.id) === String(currentProfile.id) && (
+                    <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 4, background: 'rgba(0, 212, 180, 0.15)', color: 'var(--teal)', fontWeight: 800, border: '1px solid rgba(0, 212, 180, 0.3)' }}>
+                      Você
+                    </span>
+                  )}
                 </div>
                 <div className="muted" style={{ fontSize: 11, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 8px', marginTop: 4 }}>
                   <span>⚡ Pontos: <strong style={{ color: 'var(--teal)', fontSize: 13 }}>{item.accessPoints} pts</strong></span>
