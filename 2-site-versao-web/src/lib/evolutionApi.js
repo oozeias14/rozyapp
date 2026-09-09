@@ -784,17 +784,18 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
       }
     });
 
-    // 7. Processa recibos de status (statusMessage) associados às transmissões ou conversas
+    // 7. Processa recibos de status (statusMessage) associados às transmissões
     statusRecords.forEach((sr) => {
       const isDeliveredStatus = sr.status === 'DELIVERY_ACK' || sr.status === 'READ' || sr.status === 'PLAYED';
       if (!isDeliveredStatus) return;
 
       const matchesKey = sr.keyId && matchingMessageIds.has(sr.keyId);
       const matchesMsg = sr.messageId && matchingMessageIds.has(sr.messageId);
+      const isBroadcastSr = (sr.remoteJid || '').includes('@broadcast');
 
-      // Se houver frase específica, checa se bate com o ID da mensagem; se sem frase, aceita todas as entregas confirmadas
-      if (matchesKey || matchesMsg || !targetPhrase) {
-        const jids = [sr.participant, sr.remoteJid, sr.fromMeJid, sr.participantAlt, sr.remoteJidAlt].filter(Boolean);
+      // Aceita recibos vinculados a mensagens de transmissão encontradas ou da lista de transmissão
+      if (matchesKey || matchesMsg || (isBroadcastSr && (!targetPhrase || matchingMessageIds.size > 0))) {
+        const jids = [sr.participant, sr.participantAlt].filter(Boolean);
         jids.forEach((j) => {
           if (j.includes('@g.us') || j.includes('@broadcast')) return;
           let clean = extractCleanPhone(j);
@@ -806,35 +807,39 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
       }
     });
 
-    // 8. Processa mensagens diretas que contêm a frase ou qualquer mensagem recente (se sem frase)
+    // 8. Processa mensagens diretas 1:1 (IGNORA mensagens de grupos @g.us) dentro da janela de 15 min
     allMsgs.forEach((m) => {
+      const rJid = m.key?.remoteJid || m.remoteJid || '';
+      if (rJid.includes('@g.us') || rJid.includes('@broadcast')) return; // IGNORA GRUPOS E BROADCAST
+
       const hasPhrase = targetPhrase ? doesMessageContainPhrase(m, targetPhrase) : true;
       const matchesId = (m.key?.id && matchingMessageIds.has(m.key.id)) || (m.id && matchingMessageIds.has(m.id));
-      const reactionParentId = m.message?.reactionMessage?.key?.id;
-      const referencesBroadcastWithPhrase = reactionParentId && matchingMessageIds.has(reactionParentId);
 
-      if ((hasPhrase || matchesId || referencesBroadcastWithPhrase) && isMessageWithinHours(m, maxHours)) {
-        const foundPhones = extractPhonesFromMessage(m, lidToPhone);
-        foundPhones.forEach((p) => {
-          getPhoneSignatures(p).forEach((sig) => matchedSigs.add(sig));
+      if ((hasPhrase || matchesId) && isMessageWithinHours(m, maxHours)) {
+        const jids = [m.key?.remoteJid, m.key?.remoteJidAlt, m.remoteJid, m.remoteJidAlt].filter(Boolean);
+        jids.forEach((j) => {
+          if (j.includes('@g.us') || j.includes('@broadcast')) return;
+          let clean = extractCleanPhone(j);
+          if (lidToPhone.has(clean)) clean = lidToPhone.get(clean);
+          if (clean && clean.length >= 8) {
+            getPhoneSignatures(clean).forEach((sig) => matchedSigs.add(sig));
+          }
         });
       }
     });
 
-    // 9. Processa conversas ativas no WhatsApp (findChats)
+    // 9. Processa conversas diretas 1:1 ativas no WhatsApp (IGNORA GRUPOS @g.us) estritamente dentro da janela de 15 min
     (chats || []).forEach((c) => {
+      const rJid = c.remoteJid || c.id || '';
+      if (rJid.includes('@g.us') || rJid.includes('@broadcast')) return; // IGNORA GRUPOS E BROADCAST
+
       const hasPhrase = targetPhrase ? (doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase)) : true;
       const matchesId = (c.lastMessage?.key?.id && matchingMessageIds.has(c.lastMessage.key.id)) || (c.lastMessage?.id && matchingMessageIds.has(c.lastMessage.id));
-      const reactionParentId = c.lastMessage?.message?.reactionMessage?.key?.id;
-      const referencesBroadcastWithPhrase = reactionParentId && matchingMessageIds.has(reactionParentId);
       const isRecent = isMessageWithinHours(c.lastMessage, maxHours) || isMessageWithinHours(c, maxHours);
 
-      if ((hasPhrase || matchesId || referencesBroadcastWithPhrase) && (isRecent || !targetPhrase)) {
-        const rJid = c.remoteJid || c.id || '';
-        const rJidAlt = c.lastMessage?.key?.remoteJidAlt || c.lastMessage?.key?.participantAlt || '';
-        const rJidKey = c.lastMessage?.key?.remoteJid || '';
-
-        [rJid, rJidAlt, rJidKey].forEach((j) => {
+      if ((hasPhrase || matchesId) && isRecent) {
+        const jids = [rJid, c.remoteJidAlt, c.lastMessage?.key?.remoteJidAlt].filter(Boolean);
+        jids.forEach((j) => {
           if (!j || j.includes('@g.us') || j.includes('@broadcast')) return;
           let cleanP = extractCleanPhone(j);
           if (lidToPhone.has(cleanP)) cleanP = lidToPhone.get(cleanP);
