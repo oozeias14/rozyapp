@@ -657,9 +657,10 @@ export function isMessageWithinHours(msg, maxHours = 0.25) {
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
-  const diffHours = (nowSec - ts) / 3600;
+  const diffSec = nowSec - ts;
+  const maxSec = (maxHours || 0.25) * 3600; // 0.25h = 15 minutos = 900 segundos
 
-  return diffHours >= -0.1 && diffHours <= (maxHours || 0.25);
+  return diffSec >= -60 && diffSec <= maxSec;
 }
 
 // ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO ────
@@ -761,7 +762,7 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
     // 5. Constrói dicionário completo de tradução LID <-> Telefone real
     const lidToPhone = buildLidPhoneMapping(chats, allMsgs, contacts);
 
-    // 6. Mapeia IDs de mensagens que contêm a frase enviada dentro da janela de tempo (ou todas as transmissões recentes se sem frase)
+    // 6. Mapeia IDs de mensagens que foram enviadas ESTRITAMENTE dentro dos últimos 15 minutos
     const matchingMessageIds = new Set();
     allMsgs.forEach((m) => {
       const isBroadcast = (m.key?.remoteJid || m.remoteJid || '').includes('@broadcast') || m.broadcast;
@@ -784,17 +785,16 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
       }
     });
 
-    // 7. Processa recibos de status (statusMessage) associados às transmissões
+    // 7. Processa recibos de status (statusMessage) ESTRITAMENTE vinculados às mensagens enviadas nos últimos 15 minutos
     statusRecords.forEach((sr) => {
       const isDeliveredStatus = sr.status === 'DELIVERY_ACK' || sr.status === 'READ' || sr.status === 'PLAYED';
       if (!isDeliveredStatus) return;
 
       const matchesKey = sr.keyId && matchingMessageIds.has(sr.keyId);
       const matchesMsg = sr.messageId && matchingMessageIds.has(sr.messageId);
-      const isBroadcastSr = (sr.remoteJid || '').includes('@broadcast');
 
-      // Aceita recibos vinculados a mensagens de transmissão encontradas ou da lista de transmissão
-      if (matchesKey || matchesMsg || (isBroadcastSr && (!targetPhrase || matchingMessageIds.size > 0))) {
+      // Exige estritamente que o recibo pertença a uma mensagem enviada dentro da janela dos 15 minutos
+      if (matchesKey || matchesMsg) {
         const jids = [sr.participant, sr.participantAlt].filter(Boolean);
         jids.forEach((j) => {
           if (j.includes('@g.us') || j.includes('@broadcast')) return;
