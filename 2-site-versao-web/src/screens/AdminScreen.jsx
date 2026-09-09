@@ -589,8 +589,8 @@ function AccessRankingTab({ users, currentProfile, onSelect }) {
 
         <div style={{ background: 'var(--panel)', padding: '12px 14px', borderRadius: 12, border: '1px solid rgba(0, 212, 180, 0.3)' }}>
           <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 600 }}>⚡ Total Acessos</div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--teal)', marginTop: 4 }}>{totalPoints} pts</div>
-          <div style={{ fontSize: 10, color: 'var(--ink3)', marginTop: 2 }}>1 acesso = 1 ponto</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--teal)', marginTop: 4 }}>{totalPoints} acessos</div>
+          <div style={{ fontSize: 10, color: 'var(--ink3)', marginTop: 2 }}>no sistema</div>
         </div>
 
         <div style={{ background: 'var(--panel)', padding: '12px 14px', borderRadius: 12, border: '1px solid rgba(123, 108, 244, 0.3)' }}>
@@ -598,13 +598,6 @@ function AccessRankingTab({ users, currentProfile, onSelect }) {
           <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--violet)', marginTop: 4 }}>{formatUsageTime(totalUsageSeconds)}</div>
           <div style={{ fontSize: 10, color: 'var(--ink3)', marginTop: 2 }}>tempo de uso</div>
         </div>
-      </div>
-
-      <div style={{ background: 'rgba(0, 212, 180, 0.06)', border: '1px solid rgba(0, 212, 180, 0.2)', padding: '8px 12px', borderRadius: 10, marginBottom: 12, fontSize: 11.5, color: 'var(--ink2)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 15 }}>⚡</span>
-        <span>
-          Cada acesso ao sistema soma <strong>1 ponto</strong> (administradores também participam). Em caso de empate na pontuação, o <strong>tempo de uso</strong> é utilizado como critério de desempate fixo!
-        </span>
       </div>
 
       <input 
@@ -681,7 +674,7 @@ function AccessRankingTab({ users, currentProfile, onSelect }) {
                   )}
                 </div>
                 <div className="muted" style={{ fontSize: 11, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 8px', marginTop: 4 }}>
-                  <span>⚡ Pontos: <strong style={{ color: 'var(--teal)', fontSize: 13 }}>{item.accessPoints} pts</strong></span>
+                  <span>⚡ <strong style={{ color: 'var(--teal)', fontSize: 13 }}>{item.accessPoints} {item.accessPoints === 1 ? 'acesso' : 'acessos'}</strong></span>
                   <span>·</span>
                   <span>⏱️ Tempo de Uso: <strong style={{ color: 'var(--violet)', fontSize: 12 }}>{formatUsageTime(item.totalUsageSeconds)}</strong></span>
                   <span>·</span>
