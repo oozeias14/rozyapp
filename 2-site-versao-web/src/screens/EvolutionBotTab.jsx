@@ -71,7 +71,7 @@ export function EvolutionBotTab({ users, reload }) {
   const [selectedTestBatch, setSelectedTestBatch] = useState('T1');
   const [verificationMethod, setVerificationMethod] = useState('phrase_track'); // 'phrase_track' | 'auto_broadcast' | 'paste'
   const [broadcastPhraseText, setBroadcastPhraseText] = useState('');
-  const [phraseTimeHours, setPhraseTimeHours] = useState(0.5); // Janela estrita de 30 minutos
+  const [phraseTimeHours, setPhraseTimeHours] = useState(0.25); // Janela estrita de 15 minutos a partir do clique
   const [detectedBroadcastLists, setDetectedBroadcastLists] = useState([]);
   const [selectedBroadcastJid, setSelectedBroadcastJid] = useState('');
   const [foundBroadcastMessage, setFoundBroadcastMessage] = useState(null);
@@ -549,12 +549,12 @@ export function EvolutionBotTab({ users, reload }) {
     setTestLogs([]);
     setTestProgress({ current: 0, total: targetUsers.length, success: 0, failed: 0 });
 
-    const timeDesc = phraseTimeHours <= 0.5 ? '30 minutos' : `${phraseTimeHours}h`;
+    const timeDesc = phraseTimeHours <= 0.25 ? '15 minutos' : phraseTimeHours <= 0.5 ? '30 minutos' : `${phraseTimeHours}h`;
 
     if (cleanPhrase) {
       addLog(`📝 Iniciando rastreamento da frase "${cleanPhrase}" nos últimos ${timeDesc}...`, 'info');
     } else {
-      addLog(`📝 Rastreando mensagens e transmissões no WhatsApp nos últimos ${timeDesc}...`, 'info');
+      addLog(`📝 Cruzando contatos do sistema com o WhatsApp nos últimos ${timeDesc}...`, 'info');
     }
 
     try {
@@ -2699,11 +2699,11 @@ export function EvolutionBotTab({ users, reload }) {
                             gap: 8
                           }}>
                             <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.5 }}>
-                              <strong style={{ color: 'var(--teal)' }}>🛡️ Sincronização 100% Anti-Ban (Passivo / Sem Envio de Mensagens):</strong><br />
+                              <strong style={{ color: 'var(--teal)' }}>🛡️ Sincronização 100% Anti-Ban (Passivo / Cruzamento em Tempo Real):</strong><br />
                               <span>
-                                1. Envie uma mensagem na sua <strong>Lista de Transmissão no WhatsApp do Celular</strong> (ex: para seus 2000 contatos).<br />
-                                2. Digite a frase ou palavra-chave que você enviou no campo abaixo.<br />
-                                3. O robô faz a sincronia instantânea e descobre quem recebeu (<strong style={{ color: '#25D366' }}>✓✓ 2 Traços = Salvo</strong>) e quem não recebeu (<strong style={{ color: '#FF8A65' }}>✓ 1 Traço = Pendente</strong>).
+                                1. Envie uma mensagem na sua <strong>Lista de Transmissão no WhatsApp do Celular</strong>.<br />
+                                2. O robô cruza em tempo real os contatos do app com o WhatsApp conectado e analisa <strong>os últimos 15 minutos a partir do momento que você clicar no botão</strong>.<br />
+                                3. Identifica automaticamente: <strong style={{ color: '#25D366' }}>✓✓ 2 Traços = Recebeu / Salvo</strong> e <strong style={{ color: '#FF8A65' }}>✓ 1 Traço = Pendente / Não Salvo</strong>.
                               </span>
                             </div>
 
@@ -2899,8 +2899,8 @@ export function EvolutionBotTab({ users, reload }) {
                             onClick={handleAuditByPhraseLive}
                           >
                             {broadcastPhraseText.trim()
-                              ? `📝 Rastrear Frase "${broadcastPhraseText.trim()}" (${getSelectedTargetUsers().length} Contatos)`
-                              : `⚡ Rastrear Todas as Listas de Transmissão (${getSelectedTargetUsers().length} Contatos)`}
+                              ? `📝 Rastrear Frase "${broadcastPhraseText.trim()}" (Últimos 15 min · ${getSelectedTargetUsers().length} Contatos)`
+                              : `⚡ Rastrear Transmissão dos Últimos 15 Min (${getSelectedTargetUsers().length} Contatos)`}
                           </button>
                         )}
                         {verificationMethod === 'auto_broadcast' && (

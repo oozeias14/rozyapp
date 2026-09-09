@@ -630,8 +630,8 @@ export function extractPhonesFromMessage(m, lidToPhone = new Map()) {
   return phones;
 }
 
-// Helper para verificar se a mensagem foi enviada/recebida dentro da janela especificada (padrão 30 min / 0.5h)
-export function isMessageWithinHours(msg, maxHours = 0.5) {
+// Helper para verificar se a mensagem foi enviada/recebida dentro da janela especificada (padrão 15 min / 0.25h)
+export function isMessageWithinHours(msg, maxHours = 0.25) {
   if (!msg) return false;
   
   let ts = msg.messageTimestamp || msg.createdAt || msg.updatedAt;
@@ -659,12 +659,12 @@ export function isMessageWithinHours(msg, maxHours = 0.5) {
   const nowSec = Math.floor(Date.now() / 1000);
   const diffHours = (nowSec - ts) / 3600;
 
-  return diffHours >= -1.0 && diffHours <= (maxHours || 0.5);
+  return diffHours >= -0.1 && diffHours <= (maxHours || 0.25);
 }
 
 // ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO ────
 
-export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.5) {
+export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
   const targetPhrase = (phraseText || '').toLowerCase().trim().replace(/^["']|["']$/g, '');
   const matchedSigs = new Set();
 
@@ -846,14 +846,14 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.5) {
   return matchedSigs;
 }
 
-export async function checkContactHasBroadcastPhrase(phone, phraseText = '', preScannedSigs = null, maxHours = 0.5) {
+export async function checkContactHasBroadcastPhrase(phone, phraseText = '', preScannedSigs = null, maxHours = 0.25) {
   const cleanPhone = extractCleanPhone(phone);
   if (!cleanPhone) {
     return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem telefone)', status: 'PENDING' };
   }
 
   const sigs = getPhoneSignatures(cleanPhone);
-  const timeDesc = maxHours <= 0.5 ? '30 min' : `${maxHours}h`;
+  const timeDesc = maxHours <= 0.25 ? '15 min' : maxHours <= 0.5 ? '30 min' : `${maxHours}h`;
 
   // 1. Checa se o número foi pré-confirmado com a frase ou transmissão recente
   if (preScannedSigs && preScannedSigs instanceof Set) {
