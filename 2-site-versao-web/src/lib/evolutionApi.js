@@ -370,6 +370,9 @@ export function buildLidPhoneMapping(chats = [], messages = [], contacts = []) {
       const rk = m.message.reactionMessage.key;
       if (rk.participant && rAlt) register(rk.participant, rAlt);
       if (rk.participant && rk.remoteJidAlt) register(rk.participant, rk.remoteJidAlt);
+      if (rJid && rk.participant && !rJid.includes('@g.us') && !rJid.includes('@broadcast')) {
+        register(rk.participant, rJid);
+      }
     }
   });
 
@@ -658,7 +661,10 @@ export function isMessageWithinHours(msg, maxHours = 0.25) {
 
   const nowSec = Math.floor(Date.now() / 1000);
   const diffSec = nowSec - ts;
-  const maxSec = (maxHours || 0.25) * 3600; // 0.25h = 15 minutos = 900 segundos
+  // Limite estrito de 15 minutos (900s) com tolerância máxima de 1000s (~16.6 min) para absorver o tempo
+  // de clique do usuário, mas NUNCA aceitar mensagens antigas (ex: 19+ minutos)
+  const baseSec = (maxHours || 0.25) * 3600;
+  const maxSec = baseSec <= 900 ? 1000 : baseSec;
 
   return diffSec >= -60 && diffSec <= maxSec;
 }
@@ -678,21 +684,11 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
       fetchWhatsAppChats().catch(() => [])
     ]);
 
-    // 2. Busca mensagens do WhatsApp (mensagens de transmissão explícitas + histórico recente)
+    // 2. Busca mensagens do WhatsApp (gerais, reações e transmissões)
     const allMsgsList = [];
     
-    // 2a. Busca direta por mensagens de transmissão no banco de dados
-    const bMsgsRes = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
-      method: 'POST',
-      body: JSON.stringify({ where: { broadcast: true }, limit: 100 }),
-    }).catch(() => null);
-    const bRecords = bMsgsRes?.messages?.records || (Array.isArray(bMsgsRes) ? bMsgsRes : []);
-    if (Array.isArray(bRecords) && bRecords.length > 0) {
-      allMsgsList.push(...bRecords);
-    }
-
-    // 2b. Busca páginas recentes de mensagens gerais
-    for (let p = 1; p <= 4; p++) {
+    // 2a. Busca mensagens recentes gerais (páginas 1 e 2)
+    for (let p = 1; p <= 2; p++) {
       const msgsP = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
         method: 'POST',
         body: JSON.stringify({ limit: 100, page: p }),
@@ -703,18 +699,28 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
       }
     }
 
+    // 2b. Busca reações a mensagens (captura reações a listas de transmissão, como Rozy Costa)
+    const rxRes = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({ where: { messageType: 'reactionMessage' }, limit: 100 }),
+    }).catch(() => null);
+    const rxRecs = rxRes?.messages?.records || (Array.isArray(rxRes) ? rxRes : []);
+    if (Array.isArray(rxRecs) && rxRecs.length > 0) {
+      allMsgsList.push(...rxRecs);
+    }
+
     // 3. Descobre dinamicamente todos os JIDs de listas de transmissão (@broadcast)
     const broadcastJids = new Set(['1788673682@broadcast']);
     (chats || []).forEach(c => {
       const rj = c.remoteJid || c.id || '';
-      if (rj.includes('@broadcast')) broadcastJids.add(rj);
+      if (rj.includes('@broadcast') && !rj.includes('status@broadcast')) broadcastJids.add(rj);
     });
     allMsgsList.forEach(m => {
       const rj = m.key?.remoteJid || m.remoteJid || '';
-      if (rj.includes('@broadcast')) broadcastJids.add(rj);
+      if (rj.includes('@broadcast') && !rj.includes('status@broadcast')) broadcastJids.add(rj);
     });
 
-    // 3b. Busca mensagens específicas dentro de cada lista de transmissão (@broadcast) encontrada
+    // 3b. Busca mensagens específicas dentro de cada lista de transmissão (@broadcast)
     for (const bjId of broadcastJids) {
       const bSpecificRes = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
         method: 'POST',
@@ -759,55 +765,92 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
     });
     const allMsgs = Array.from(msgMap.values());
 
+    // Identifica o próprio número / LID do robô conectado para nunca marcar o próprio bot
+    const ownerPhones = new Set(['556193106490', '176033647087799', '6193106490']);
+    try {
+      const instData = await fetchInstanceStatus();
+      const oJid = instData?.data?.instance?.ownerJid;
+      if (oJid) {
+        const cleanO = extractCleanPhone(oJid);
+        if (cleanO) ownerPhones.add(cleanO);
+      }
+    } catch (e) {}
+
     // 5. Constrói dicionário completo de tradução LID <-> Telefone real
     const lidToPhone = buildLidPhoneMapping(chats, allMsgs, contacts);
 
-    // 6. Mapeia IDs de mensagens que foram enviadas ESTRITAMENTE dentro dos últimos 15 minutos
+    // 6. Detecta se houve atividade em listas de transmissão (@broadcast) dentro da janela
+    const activeBroadcastJids = new Set();
     const matchingMessageIds = new Set();
+
     allMsgs.forEach((m) => {
-      const isBroadcast = (m.key?.remoteJid || m.remoteJid || '').includes('@broadcast') || m.broadcast;
-      const matches = targetPhrase ? doesMessageContainPhrase(m, targetPhrase) : isBroadcast;
-      if (matches && isMessageWithinHours(m, maxHours)) {
+      const rJid = m.key?.remoteJid || m.remoteJid || '';
+      const isBroadcast = (rJid.includes('@broadcast') && !rJid.includes('status@broadcast')) || m.broadcast;
+      const matches = targetPhrase ? doesMessageContainPhrase(m, targetPhrase) : true;
+      if (isBroadcast && matches && isMessageWithinHours(m, maxHours)) {
+        activeBroadcastJids.add(rJid);
         if (m.key?.id) matchingMessageIds.add(m.key.id);
         if (m.id) matchingMessageIds.add(m.id);
       }
     });
 
     (chats || []).forEach((c) => {
+      const rJid = c.remoteJid || c.id || '';
+      const isBroadcast = rJid.includes('@broadcast') && !rJid.includes('status@broadcast');
       const isRecent = isMessageWithinHours(c.lastMessage, maxHours) || isMessageWithinHours(c, maxHours);
-      const isBroadcast = (c.remoteJid || c.id || '').includes('@broadcast');
       const matches = targetPhrase 
         ? (doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase))
-        : isBroadcast;
-      if (isRecent && matches) {
+        : true;
+      if (isBroadcast && isRecent && matches) {
+        activeBroadcastJids.add(rJid);
         if (c.lastMessage?.key?.id) matchingMessageIds.add(c.lastMessage.key.id);
         if (c.lastMessage?.id) matchingMessageIds.add(c.lastMessage.id);
       }
     });
 
-    // 7. Processa recibos de status (statusMessage) ESTRITAMENTE vinculados às mensagens enviadas nos últimos 15 minutos
-    statusRecords.forEach((sr) => {
-      const isDeliveredStatus = sr.status === 'DELIVERY_ACK' || sr.status === 'READ' || sr.status === 'PLAYED';
-      if (!isDeliveredStatus) return;
+    // 7. Processa contatos confirmados das listas de transmissão ativas nos últimos 15 minutos
+    if (activeBroadcastJids.size > 0) {
+      // 7a. Recibos de status associados às listas de transmissão ativas
+      statusRecords.forEach((sr) => {
+        const isDelivered = sr.status === 'DELIVERY_ACK' || sr.status === 'READ' || sr.status === 'PLAYED';
+        if (!isDelivered) return;
 
-      const matchesKey = sr.keyId && matchingMessageIds.has(sr.keyId);
-      const matchesMsg = sr.messageId && matchingMessageIds.has(sr.messageId);
+        const belongsToActiveBcast = activeBroadcastJids.has(sr.remoteJid);
+        const matchesKey = (sr.keyId && matchingMessageIds.has(sr.keyId)) || (sr.messageId && matchingMessageIds.has(sr.messageId));
 
-      // Exige estritamente que o recibo pertença a uma mensagem enviada dentro da janela dos 15 minutos
-      if (matchesKey || matchesMsg) {
-        const jids = [sr.participant, sr.participantAlt].filter(Boolean);
-        jids.forEach((j) => {
-          if (j.includes('@g.us') || j.includes('@broadcast')) return;
-          let clean = extractCleanPhone(j);
-          if (lidToPhone.has(clean)) clean = lidToPhone.get(clean);
-          if (clean && clean.length >= 8) {
-            getPhoneSignatures(clean).forEach((sig) => matchedSigs.add(sig));
-          }
-        });
-      }
-    });
+        if (belongsToActiveBcast || matchesKey) {
+          const jids = [sr.participant, sr.participantAlt].filter(Boolean);
+          jids.forEach((j) => {
+            if (j.includes('@g.us') || j.includes('@broadcast')) return;
+            let clean = extractCleanPhone(j);
+            if (ownerPhones.has(clean)) return;
+            if (lidToPhone.has(clean)) clean = lidToPhone.get(clean);
+            if (clean && clean.length >= 8 && !ownerPhones.has(clean)) {
+              getPhoneSignatures(clean).forEach((sig) => matchedSigs.add(sig));
+            }
+          });
+        }
+      });
 
-    // 8. Processa mensagens diretas 1:1 (IGNORA mensagens de grupos @g.us) dentro da janela de 15 min
+      // 7b. Reações e mensagens comprovando participação na lista de transmissão ativa
+      allMsgs.forEach((m) => {
+        const rKey = m.message?.reactionMessage?.key;
+        if (rKey && activeBroadcastJids.has(rKey.remoteJid)) {
+          const jids = [rKey.participant, m.key?.remoteJid, m.key?.remoteJidAlt].filter(Boolean);
+          jids.forEach((j) => {
+            if (j.includes('@g.us') || j.includes('@broadcast')) return;
+            let clean = extractCleanPhone(j);
+            if (ownerPhones.has(clean)) return;
+            if (lidToPhone.has(clean)) clean = lidToPhone.get(clean);
+            if (clean && clean.length >= 8 && !ownerPhones.has(clean)) {
+              getPhoneSignatures(clean).forEach((sig) => matchedSigs.add(sig));
+            }
+          });
+        }
+      });
+    }
+
+    // 8. Processa mensagens diretas 1:1 (IGNORA mensagens de grupos @g.us e @broadcast) dentro da janela de 15 min
     allMsgs.forEach((m) => {
       const rJid = m.key?.remoteJid || m.remoteJid || '';
       if (rJid.includes('@g.us') || rJid.includes('@broadcast')) return; // IGNORA GRUPOS E BROADCAST
@@ -820,8 +863,9 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
         jids.forEach((j) => {
           if (j.includes('@g.us') || j.includes('@broadcast')) return;
           let clean = extractCleanPhone(j);
+          if (ownerPhones.has(clean)) return;
           if (lidToPhone.has(clean)) clean = lidToPhone.get(clean);
-          if (clean && clean.length >= 8) {
+          if (clean && clean.length >= 8 && !ownerPhones.has(clean)) {
             getPhoneSignatures(clean).forEach((sig) => matchedSigs.add(sig));
           }
         });
@@ -842,8 +886,9 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
         jids.forEach((j) => {
           if (!j || j.includes('@g.us') || j.includes('@broadcast')) return;
           let cleanP = extractCleanPhone(j);
+          if (ownerPhones.has(cleanP)) return;
           if (lidToPhone.has(cleanP)) cleanP = lidToPhone.get(cleanP);
-          if (cleanP && cleanP.length >= 8) {
+          if (cleanP && cleanP.length >= 8 && !ownerPhones.has(cleanP)) {
             getPhoneSignatures(cleanP).forEach((sig) => matchedSigs.add(sig));
           }
         });
