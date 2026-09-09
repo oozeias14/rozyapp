@@ -83,7 +83,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
 
   const tabs = [
     ['users', '👥 Cadastros'],
-    ['ranking', '🏆 Ranking'],
+    ['ranking', '🏆 Ranking de Cadastro'],
     ['access_ranking', '⚡ Ranking de Acesso'],
     ...(isAdmin ? [['messages', '📣 Mensagens']] : []),
     ...(isAdmin ? [['evolution', '🤖 Robô WhatsApp']] : []),
@@ -358,7 +358,7 @@ function RankingTab({ users, meetings, onSelect }) {
 
   return (
     <div>
-      <div className="card-title">Ranking Geral MMN ({rankingData.length})</div>
+      <div className="card-title">Ranking de Cadastro ({rankingData.length})</div>
 
       <input 
         placeholder="Buscar no ranking por nome, e-mail ou ID..." 
