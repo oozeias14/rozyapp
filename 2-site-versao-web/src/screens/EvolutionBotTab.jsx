@@ -41,6 +41,7 @@ export function EvolutionBotTab({ users, reload }) {
   const [generatingPairing, setGeneratingPairing] = useState(false);
   const [resettingInstance, setResettingInstance] = useState(false);
   const [status, setStatus] = useState({ connected: false, state: 'checking' });
+  const [botStep, setBotStep] = useState(1); // 1: Conectar | 2: Salvar Agendas | 3: Transmissão & Checagem | 4: Ajustes API
   const [qrCodeData, setQrCodeData] = useState(null);
   const [loading, setLoading] = useState(false);
   const batchSize = 100;
@@ -59,7 +60,7 @@ export function EvolutionBotTab({ users, reload }) {
   const [resettingAnalysis, setResettingAnalysis] = useState(false);
   const [contactFilterModal, setContactFilterModal] = useState(null); // 'with_number' | 'without_number' | null
   const [showGoogleSyncModal, setShowGoogleSyncModal] = useState(false);
-  const [showLegacyBatches, setShowLegacyBatches] = useState(true); // Exibe ETAPA 1 (Lotes de Transmissão) por padrão
+  const [showLegacyBatches, setShowLegacyBatches] = useState(false); // Colapsado por padrão para destacar a opção recomendada de 1 toque
   const [modalSearch, setModalSearch] = useState('');
   const [modalPage, setModalPage] = useState(1);
 
@@ -208,9 +209,9 @@ export function EvolutionBotTab({ users, reload }) {
     init();
   }, []);
 
-  // Polling automático enquanto o modal de conexão estiver aberto
+  // Polling automático enquanto estiver desconectado para detectar leitura do QR Code
   useEffect(() => {
-    if (!showConnectModal) return;
+    if (status.connected) return;
     const interval = setInterval(async () => {
       const res = await fetchInstanceStatus();
       if (res?.connected) {
@@ -218,11 +219,10 @@ export function EvolutionBotTab({ users, reload }) {
         setShowConnectModal(false);
         setQrCodeData(null);
         setPairingCodeResult(null);
-        alert('🎉 WhatsApp conectado com sucesso!');
       }
     }, 4000);
     return () => clearInterval(interval);
-  }, [showConnectModal]);
+  }, [status.connected]);
 
   async function checkStatus(cfg = config) {
     if (!cfg.serverUrl || !cfg.apiKey) {
@@ -1221,14 +1221,20 @@ export function EvolutionBotTab({ users, reload }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Header do Robô */}
-      <div style={{ background: 'linear-gradient(135deg, rgba(61, 217, 179, 0.15), rgba(15, 23, 42, 0.8))', padding: '16px 18px', borderRadius: 16, border: '1px solid rgba(61, 217, 179, 0.3)' }}>
+      <div style={{ 
+        background: 'linear-gradient(135deg, rgba(61, 217, 179, 0.12), rgba(15, 23, 42, 0.85))', 
+        padding: '14px 18px', 
+        borderRadius: 16, 
+        border: '1px solid rgba(61, 217, 179, 0.25)',
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)'
+      }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 32 }}>🤖</div>
+            <div style={{ fontSize: 28 }}>🤖</div>
             <div>
               <div style={{ fontSize: 16, fontWeight: 900, color: '#fff' }}>Robô de Transmissão (Evolution API)</div>
               <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
-                Conectado ao Railway para automação de listas T1, T2 e verificação de contatos
+                Automação de listas de transmissão e checagem de entrega no WhatsApp
               </div>
             </div>
           </div>
@@ -1238,9 +1244,10 @@ export function EvolutionBotTab({ users, reload }) {
               type="button" 
               className="btn btn-ghost" 
               style={{ fontSize: 12, padding: '6px 12px', margin: 0 }}
-              onClick={() => setShowConfigModal(true)}
+              onClick={() => setBotStep(4)}
+              title="Ajustar URL do servidor Railway e Chave de API"
             >
-              ⚙️ Configurar API
+              ⚙️ Ajustes API
             </button>
 
             <button 
@@ -1255,42 +1262,176 @@ export function EvolutionBotTab({ users, reload }) {
                 border: '1px solid ' + (status.connected ? '#25D366' : '#F06B4C')
               }}
               onClick={checkStatus}
+              title="Clique para testar conexão com o WhatsApp"
             >
               {loading ? '⏳ Checando...' : status.connected ? '🟢 Conectado' : '🔴 Desconectado'}
             </button>
           </div>
         </div>
+      </div>
 
-        {/* Informações de Conexão */}
-        <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-          <div style={{ fontSize: 12, color: 'var(--ink2)' }}>
-            Instância: <strong style={{ color: 'var(--teal)' }}>{config.instanceName}</strong> · 
-            Servidor: <strong style={{ color: '#fff' }}>{config.serverUrl || 'Não configurado'}</strong>
+      {/* Barra de Progresso por Etapas (Estilo MassSignup / Cadastro de Folha) */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 18px',
+        background: 'rgba(13, 17, 28, 0.95)',
+        borderRadius: 16,
+        border: '1px solid var(--line)',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.35)',
+        gap: 6,
+        flexWrap: 'wrap'
+      }}>
+        {/* Passo 1: Conectar */}
+        <div 
+          onClick={() => setBotStep(1)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            cursor: 'pointer',
+            opacity: botStep === 1 ? 1 : 0.75,
+            transition: 'all 0.2s'
+          }}
+        >
+          <div style={{
+            width: 28,
+            height: 28,
+            borderRadius: '50%',
+            background: botStep === 1 
+              ? 'linear-gradient(135deg, #3DD9B3, #25D366)' 
+              : status.connected 
+                ? 'var(--teal)' 
+                : 'var(--panel2)',
+            color: botStep === 1 || status.connected ? '#051A14' : 'var(--ink3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 12,
+            fontWeight: 900,
+            boxShadow: botStep === 1 ? '0 0 12px rgba(61, 217, 179, 0.45)' : 'none'
+          }}>
+            {status.connected ? '✓' : '1'}
           </div>
+          <span style={{ fontSize: 12, fontWeight: botStep === 1 ? 800 : 600, color: botStep === 1 ? '#fff' : 'var(--ink2)' }}>
+            1. Conectar
+          </span>
+        </div>
 
-          <div style={{ display: 'flex', gap: 8 }}>
-            {!status.connected ? (
-              <button 
-                type="button" 
-                className="btn btn-teal" 
-                style={{ fontSize: 12, padding: '7px 14px', margin: 0 }}
-                onClick={handleOpenConnectModal}
-                disabled={loading || !config.serverUrl}
-              >
-                📲 Conectar WhatsApp (QR Code ou Código)
-              </button>
-            ) : (
-              <button 
-                type="button" 
-                className="btn btn-ghost" 
-                style={{ fontSize: 12, padding: '7px 14px', margin: 0, color: '#FF8A65', borderColor: 'rgba(240, 107, 76, 0.4)' }}
-                onClick={handleDisconnect}
-                disabled={loading}
-              >
-                🔌 Desconectar
-              </button>
-            )}
+        {/* Linha 1-2 */}
+        <div style={{ flex: 1, minWidth: 14, height: 2, background: botStep > 1 || status.connected ? 'var(--teal)' : 'var(--line)', margin: '0 4px', transition: 'background 0.3s' }} />
+
+        {/* Passo 2: Salvar Agendas */}
+        <div 
+          onClick={() => setBotStep(2)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            cursor: 'pointer',
+            opacity: botStep === 2 ? 1 : 0.75,
+            transition: 'all 0.2s'
+          }}
+        >
+          <div style={{
+            width: 28,
+            height: 28,
+            borderRadius: '50%',
+            background: botStep === 2 
+              ? 'linear-gradient(135deg, #3DD9B3, #25D366)' 
+              : botStep > 2 
+                ? 'var(--teal)' 
+                : 'var(--panel2)',
+            color: botStep === 2 || botStep > 2 ? '#051A14' : 'var(--ink3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 12,
+            fontWeight: 900,
+            boxShadow: botStep === 2 ? '0 0 12px rgba(61, 217, 179, 0.45)' : 'none'
+          }}>
+            {botStep > 2 ? '✓' : '2'}
           </div>
+          <span style={{ fontSize: 12, fontWeight: botStep === 2 ? 800 : 600, color: botStep === 2 ? '#fff' : 'var(--ink2)' }}>
+            2. Salvar Agenda
+          </span>
+        </div>
+
+        {/* Linha 2-3 */}
+        <div style={{ flex: 1, minWidth: 14, height: 2, background: botStep > 2 ? 'var(--teal)' : 'var(--line)', margin: '0 4px', transition: 'background 0.3s' }} />
+
+        {/* Passo 3: Transmissão & Checagem */}
+        <div 
+          onClick={() => setBotStep(3)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            cursor: 'pointer',
+            opacity: botStep === 3 ? 1 : 0.75,
+            transition: 'all 0.2s'
+          }}
+        >
+          <div style={{
+            width: 28,
+            height: 28,
+            borderRadius: '50%',
+            background: botStep === 3 
+              ? 'linear-gradient(135deg, #3DD9B3, #25D366)' 
+              : botStep > 3 
+                ? 'var(--teal)' 
+                : 'var(--panel2)',
+            color: botStep === 3 || botStep > 3 ? '#051A14' : 'var(--ink3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 12,
+            fontWeight: 900,
+            boxShadow: botStep === 3 ? '0 0 12px rgba(61, 217, 179, 0.45)' : 'none'
+          }}>
+            {botStep > 3 ? '✓' : '3'}
+          </div>
+          <span style={{ fontSize: 12, fontWeight: botStep === 3 ? 800 : 600, color: botStep === 3 ? '#fff' : 'var(--ink2)' }}>
+            3. Transmissão & Checagem
+          </span>
+        </div>
+
+        {/* Linha 3-4 */}
+        <div style={{ flex: 1, minWidth: 14, height: 2, background: botStep === 4 ? 'var(--teal)' : 'var(--line)', margin: '0 4px', transition: 'background 0.3s' }} />
+
+        {/* Passo 4: Ajustes API */}
+        <div 
+          onClick={() => setBotStep(4)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            cursor: 'pointer',
+            opacity: botStep === 4 ? 1 : 0.75,
+            transition: 'all 0.2s'
+          }}
+        >
+          <div style={{
+            width: 28,
+            height: 28,
+            borderRadius: '50%',
+            background: botStep === 4 
+              ? 'linear-gradient(135deg, #FFA000, #FFD54F)' 
+              : 'var(--panel2)',
+            color: botStep === 4 ? '#051A14' : 'var(--ink3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 12,
+            fontWeight: 900,
+            boxShadow: botStep === 4 ? '0 0 12px rgba(255, 160, 0, 0.45)' : 'none'
+          }}>
+            4
+          </div>
+          <span style={{ fontSize: 12, fontWeight: botStep === 4 ? 800 : 600, color: botStep === 4 ? '#fff' : 'var(--ink2)' }}>
+            4. Ajustes API
+          </span>
         </div>
       </div>
 
@@ -3012,583 +3153,1297 @@ export function EvolutionBotTab({ users, reload }) {
           </div>
         )}
 
-      {/* Dashboard Moderno de Estatísticas da Transmissão */}
-      <div style={{
-        background: 'linear-gradient(180deg, var(--panel2) 0%, rgba(15, 23, 42, 0.95) 100%)',
-        padding: '20px 22px',
-        borderRadius: 20,
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.24)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16
-      }}>
-        {/* Cabeçalho com Título e Ações Rápidas */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      {/* ========================================================= */}
+      {/* 🟢 ETAPA 1: CONECTAR WHATSAPP (QR CODE OU PAREAMENTO)     */}
+      {/* ========================================================= */}
+      {botStep === 1 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{
+            padding: '24px 20px',
+            background: status.connected 
+              ? 'linear-gradient(135deg, rgba(37, 211, 102, 0.12), rgba(15, 23, 42, 0.85))'
+              : 'linear-gradient(135deg, rgba(61, 217, 179, 0.12), rgba(15, 23, 42, 0.85))',
+            border: `1.5px solid ${status.connected ? 'rgba(37, 211, 102, 0.4)' : 'rgba(61, 217, 179, 0.35)'}`,
+            borderRadius: 20,
+            boxShadow: '0 10px 32px rgba(0, 0, 0, 0.35)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            textAlign: 'center',
+            gap: 16
+          }}>
+            {/* Ícone Redondo com Brilho */}
             <div style={{
-              width: 44,
-              height: 44,
-              borderRadius: 12,
-              background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.2), rgba(123, 108, 244, 0.2))',
-              border: '1px solid rgba(0, 229, 155, 0.3)',
+              width: 62,
+              height: 62,
+              borderRadius: '50%',
+              background: status.connected 
+                ? 'linear-gradient(135deg, rgba(37, 211, 102, 0.25), rgba(0, 229, 155, 0.15))'
+                : 'linear-gradient(135deg, rgba(61, 217, 179, 0.25), rgba(37, 211, 102, 0.15))',
+              border: `2px solid ${status.connected ? '#25D366' : 'var(--teal)'}`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: 22,
-              flexShrink: 0
+              fontSize: 30,
+              margin: '0 auto',
+              boxShadow: status.connected ? '0 0 20px rgba(37, 211, 102, 0.3)' : '0 0 20px rgba(61, 217, 179, 0.25)'
             }}>
-              📊
+              {status.connected ? '🟢' : '📱'}
             </div>
+
             <div>
-              <div style={{ fontSize: 16, fontWeight: 900, color: '#fff', letterSpacing: '-0.2px' }}>
-                Painel de Alcance da Transmissão
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
-                Monitore os contatos aptos a receber mensagens oficiais no WhatsApp do Dr. Cândido
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="btn btn-teal"
-              style={{
-                fontSize: 12.5,
-                fontWeight: 800,
-                padding: '9px 16px',
-                margin: 0,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                borderRadius: 10,
-                background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
-                color: '#081018',
-                border: 'none',
-                boxShadow: '0 4px 14px rgba(0, 229, 155, 0.35)',
-                cursor: 'pointer'
-              }}
-              onClick={() => setShowBroadcastTestModal(true)}
-            >
-              <span style={{ fontWeight: 900 }}>✓✓</span> Verificador de Transmissão (1 vs 2 Traços)
-            </button>
-
-            <button
-              type="button"
-              className="btn"
-              style={{
-                fontSize: 12.5,
-                fontWeight: 700,
-                padding: '9px 14px',
-                margin: 0,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                borderRadius: 10,
-                background: 'rgba(255, 255, 255, 0.05)',
+              <h2 style={{
+                fontSize: 18,
+                fontWeight: 900,
+                letterSpacing: '0.5px',
                 color: '#fff',
-                border: '1px solid var(--line)'
-              }}
-              onClick={() => setShowGoogleSyncModal(true)}
-            >
-              <span>☁️</span> Agenda
-            </button>
+                textTransform: 'uppercase',
+                margin: '0 0 6px 0'
+              }}>
+                {status.connected ? 'WHATSAPP CONECTADO E PRONTO!' : 'ETAPA 1: CONECTAR WHATSAPP'}
+              </h2>
+              <div style={{ fontSize: 13, color: 'var(--ink2)', lineHeight: 1.5, maxWidth: 440, margin: '0 auto' }}>
+                {status.connected 
+                  ? `Sessão ativa na instância ${config.instanceName}. O robô está apto a cruzar listas e auditar mensagens entregues nos últimos 15 minutos.`
+                  : 'Conecte o WhatsApp do Dr. Cândido Teles para sincronizar agendas e checar entregas da lista de transmissão.'}
+              </div>
+            </div>
 
-
-
-            <button
-              type="button"
-              className="btn"
-              style={{
-                fontSize: 12.5,
-                fontWeight: 700,
-                padding: '9px 12px',
-                margin: 0,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                borderRadius: 10,
-                background: 'rgba(240, 107, 76, 0.1)',
-                color: '#FF8A65',
-                border: '1px solid rgba(240, 107, 76, 0.3)',
-                cursor: resettingAnalysis ? 'not-allowed' : 'pointer',
-                opacity: resettingAnalysis ? 0.6 : 1,
-                transition: 'all 0.2s ease'
-              }}
-              onClick={handleResetAnalyzedData}
-              disabled={resettingAnalysis || syncingContacts || isTestingRunning}
-              title="Limpar todos os dados analisados e resetar contatos para Pendentes"
-            >
-              <span>🧹</span> {resettingAnalysis ? 'Limpando...' : 'Limpar'}
-            </button>
-          </div>
-        </div>
-
-        {/* Grid de Métricas Principais */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
-          {/* Card: Total */}
-          <div style={{
-            background: 'rgba(255, 255, 255, 0.02)',
-            padding: '14px 16px',
-            borderRadius: 14,
-            border: '1px solid rgba(255, 255, 255, 0.06)',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'space-between'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 11, color: 'var(--ink3)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Total Membros
-              </span>
-              <span style={{ fontSize: 13 }}>👥</span>
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 900, color: '#fff', marginTop: 6 }}>
-              {validUsers.length.toLocaleString('pt-BR')}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 4 }}>
-              Base ativa cadastrada
-            </div>
-          </div>
-
-          {/* Card: Salvos */}
-          <div 
-            style={{
-              background: 'linear-gradient(145deg, rgba(37, 211, 102, 0.1), rgba(37, 211, 102, 0.03))',
-              padding: '14px 16px',
-              borderRadius: 14,
-              border: '1px solid rgba(37, 211, 102, 0.25)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              cursor: 'pointer',
-              transition: 'transform 0.15s ease, border-color 0.15s ease'
-            }}
-            onClick={() => { setContactFilterModal('with_number'); setModalSearch(''); setModalPage(1); }}
-            title="Clique para ver a lista de contatos confirmados"
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 11, color: '#25D366', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Salvos na Agenda
-              </span>
-              <span style={{ fontSize: 10, background: 'rgba(37, 211, 102, 0.2)', color: '#25D366', padding: '2px 6px', borderRadius: 6, fontWeight: 800 }}>
-                Prontos
-              </span>
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 900, color: '#25D366', marginTop: 6 }}>
-              {withNumberUsers.length.toLocaleString('pt-BR')}
-            </div>
-            <div style={{ fontSize: 11, color: 'rgba(37, 211, 102, 0.8)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span>✓</span> Aptos para transmissão
-            </div>
-          </div>
-
-          {/* Card: Pendentes */}
-          <div 
-            style={{
-              background: 'linear-gradient(145deg, rgba(240, 107, 76, 0.1), rgba(240, 107, 76, 0.03))',
-              padding: '14px 16px',
-              borderRadius: 14,
-              border: '1px solid rgba(240, 107, 76, 0.25)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              cursor: 'pointer',
-              transition: 'transform 0.15s ease, border-color 0.15s ease'
-            }}
-            onClick={() => { setContactFilterModal('without_number'); setModalSearch(''); setModalPage(1); }}
-            title="Clique para ver a lista de contatos pendentes"
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 11, color: '#FF8A65', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Pendentes
-              </span>
-              <span style={{ fontSize: 10, background: 'rgba(240, 107, 76, 0.2)', color: '#FF8A65', padding: '2px 6px', borderRadius: 6, fontWeight: 800 }}>
-                Aguardando
-              </span>
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 900, color: '#FF8A65', marginTop: 6 }}>
-              {withoutNumberUsers.length.toLocaleString('pt-BR')}
-            </div>
-            <div style={{ fontSize: 11, color: 'rgba(240, 107, 76, 0.8)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span>⏱</span> Sem o número salvo
-            </div>
-          </div>
-
-          {/* Card: Cobertura com Barra de Progresso */}
-          <div style={{
-            background: 'rgba(123, 108, 244, 0.06)',
-            padding: '14px 16px',
-            borderRadius: 14,
-            border: '1px solid rgba(123, 108, 244, 0.2)',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'space-between'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Taxa de Alcance
-              </span>
-              <span style={{ fontSize: 13 }}>📈</span>
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 900, color: 'var(--teal)', marginTop: 6 }}>
-              {coveragePercent}%
-            </div>
-            <div style={{ marginTop: 6, width: '100%', height: 5, background: 'rgba(255, 255, 255, 0.08)', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{ width: `${Math.min(parseFloat(coveragePercent) || 0, 100)}%`, height: '100%', background: 'linear-gradient(90deg, #25D366, var(--teal))', borderRadius: 3, transition: 'width 0.4s ease' }} />
-            </div>
-          </div>
-        </div>
-
-        {/* Cartões Interativos de Ação e Filtragem */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
-          {/* Ação 1: Contatos Confirmados */}
-          <div
-            style={{
-              background: 'linear-gradient(135deg, rgba(37, 211, 102, 0.12) 0%, rgba(15, 23, 42, 0.6) 100%)',
-              border: '1px solid rgba(37, 211, 102, 0.35)',
-              borderRadius: 14,
-              padding: '16px 18px',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              gap: 12,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              boxShadow: '0 4px 16px rgba(37, 211, 102, 0.05)'
-            }}
-            onClick={() => { setContactFilterModal('with_number'); setModalSearch(''); setModalPage(1); }}
-          >
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{
-                    fontSize: 14,
-                    width: 26,
-                    height: 26,
-                    borderRadius: 8,
-                    background: 'rgba(37, 211, 102, 0.2)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#25D366'
-                  }}>
-                    ✓
-                  </span>
-                  <span style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>
-                    Contatos Prontos para Transmissão
+            {/* SE JÁ ESTIVER CONECTADO */}
+            {status.connected ? (
+              <div style={{
+                background: 'rgba(37, 211, 102, 0.08)',
+                border: '1px solid rgba(37, 211, 102, 0.3)',
+                borderRadius: 14,
+                padding: '16px 20px',
+                width: '100%',
+                maxWidth: 480,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 10 }}>
+                  <span style={{ fontSize: 12, color: 'var(--ink2)' }}>Instância Conectada:</span>
+                  <span style={{ fontSize: 12.5, fontWeight: 800, color: '#25D366' }}>{config.instanceName}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 10 }}>
+                  <span style={{ fontSize: 12, color: 'var(--ink2)' }}>Servidor Railway:</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{config.serverUrl || 'Railway Oficial'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                  <span style={{ fontSize: 12, color: 'var(--ink2)' }}>Status da Conexão:</span>
+                  <span style={{ fontSize: 11.5, background: 'rgba(37, 211, 102, 0.2)', color: '#25D366', padding: '3px 8px', borderRadius: 6, fontWeight: 800 }}>
+                    ✓ Operacional (Pronto)
                   </span>
                 </div>
-                <span style={{
-                  fontSize: 12,
-                  fontWeight: 900,
-                  color: '#25D366',
-                  background: 'rgba(37, 211, 102, 0.15)',
-                  padding: '3px 9px',
-                  borderRadius: 20,
-                  border: '1px solid rgba(37, 211, 102, 0.3)'
-                }}>
-                  {withNumberUsers.length} contatos
-                </span>
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5 }}>
-                Membros com número do Dr. Cândido salvo na agenda. A entrega no WhatsApp é 100% garantida e segura.
-              </div>
-            </div>
 
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-end',
-              fontSize: 12.5,
-              fontWeight: 800,
-              color: '#25D366',
-              gap: 6
-            }}>
-              <span>Visualizar Lista Completa</span>
-              <span>→</span>
-            </div>
-          </div>
-
-          {/* Ação 2: Contatos Pendentes */}
-          <div
-            style={{
-              background: 'linear-gradient(135deg, rgba(240, 107, 76, 0.12) 0%, rgba(15, 23, 42, 0.6) 100%)',
-              border: '1px solid rgba(240, 107, 76, 0.35)',
-              borderRadius: 14,
-              padding: '16px 18px',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              gap: 12,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              boxShadow: '0 4px 16px rgba(240, 107, 76, 0.05)'
-            }}
-            onClick={() => { setContactFilterModal('without_number'); setModalSearch(''); setModalPage(1); }}
-          >
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{
-                    fontSize: 14,
-                    width: 26,
-                    height: 26,
-                    borderRadius: 8,
-                    background: 'rgba(240, 107, 76, 0.2)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#FF8A65'
-                  }}>
-                    ⏱
-                  </span>
-                  <span style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>
-                    Contatos Pendentes de Adição
-                  </span>
+                <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+                  <button
+                    type="button"
+                    className="btn btn-teal"
+                    style={{
+                      flex: 1,
+                      padding: '14px 18px',
+                      fontSize: 14,
+                      fontWeight: 900,
+                      margin: 0,
+                      borderRadius: 12,
+                      boxShadow: '0 6px 20px rgba(0, 229, 155, 0.3)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => setBotStep(2)}
+                  >
+                    <span>Avançar para Etapa 2: Salvar Agendas</span>
+                    <span>→</span>
+                  </button>
                 </div>
-                <span style={{
-                  fontSize: 12,
-                  fontWeight: 900,
-                  color: '#FF8A65',
-                  background: 'rgba(240, 107, 76, 0.15)',
-                  padding: '3px 9px',
-                  borderRadius: 20,
-                  border: '1px solid rgba(240, 107, 76, 0.3)'
-                }}>
-                  {withoutNumberUsers.length} contatos
-                </span>
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5 }}>
-                Membros que ainda não salvaram o contato. Sincronize a agenda Google para habilitá-los na transmissão.
-              </div>
-            </div>
 
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-end',
-              fontSize: 12.5,
-              fontWeight: 800,
-              color: '#FF8A65',
-              gap: 6
-            }}>
-              <span>Visualizar Lista de Pendentes</span>
-              <span>→</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Botão sutil para alternar opções manuais de lote vCard (oculto por padrão) */}
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: 6, marginBottom: 6 }}>
-        <button
-          type="button"
-          className="btn"
-          style={{
-            background: 'transparent',
-            border: '1px dashed var(--line)',
-            color: 'var(--ink3)',
-            fontSize: 12,
-            padding: '7px 16px',
-            borderRadius: 10,
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6
-          }}
-          onClick={() => setShowLegacyBatches(!showLegacyBatches)}
-        >
-          {showLegacyBatches ? '▲ Ocultar Opções Manuais de Lotes vCard (.vcf)' : '⚙️ Exibir Lotes Manuais vCard (.vcf) [Opcional]'}
-        </button>
-      </div>
-
-      {showLegacyBatches && (
-        <>
-          {/* Guia de Transmissão Oficial */}
-          <div style={{ 
-            background: 'linear-gradient(135deg, rgba(37, 211, 102, 0.08), rgba(15, 23, 42, 0.6))', 
-            padding: '14px 16px', 
-            borderRadius: 14, 
-            border: '1px solid rgba(37, 211, 102, 0.25)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 18 }}>🛡️</span>
-              <span style={{ fontWeight: 800, fontSize: 13, color: '#fff' }}>
-                Guia da Lista de Transmissão Oficial (Risco ZERO de Bloqueio)
-              </span>
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.6 }}>
-              1. Clique em <strong style={{ color: '#fff' }}>📥 Baixar vCard</strong> no lote desejado (ex: <em>Lote T1</em>) e importe no celular do Dr. Cândido.<br />
-              2. No WhatsApp, vá em <strong style={{ color: '#fff' }}>Nova Transmissão</strong>, pesquise por <strong style={{ color: 'var(--teal)' }}>T1</strong> e selecione todos os contatos.<br />
-              3. Envie sua mensagem: o próprio WhatsApp entrega <strong>apenas para quem tem o número do Dr. Cândido salvo na agenda</strong>, garantindo total segurança e entrega sem denúncias de spam.
-            </div>
-          </div>
-
-          {/* Visualização dos Lotes T1, T2, T3... */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 900, color: '#fff' }}>
-                  📋 ETAPA 1: Listas de Transmissão Oficiais ({batches.length} Lotes de 100 contatos)
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
-                  Total: {users.length} membros cadastrados · Baixe o vCard (.vcf) e crie a lista de transmissão no celular
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginTop: 4 }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ padding: '6px 12px', fontSize: 11.5, margin: 0 }}
+                    onClick={checkStatus}
+                  >
+                    🔄 Checar Status
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ padding: '6px 12px', fontSize: 11.5, margin: 0, color: '#FF8A65', borderColor: 'rgba(240, 107, 76, 0.3)' }}
+                    onClick={handleDisconnect}
+                  >
+                    🔌 Desconectar WhatsApp
+                  </button>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button 
-                  type="button"
-                  className="btn btn-teal"
-                  style={{ fontSize: 12, padding: '7px 14px', margin: 0 }}
-                  onClick={handleExportAllBatches}
-                  title="Baixar arquivo único .vcf com todos os contatos já prefixados (T1, T2, T3...)"
-                >
-                  📥 Baixar Todos (.vcf)
-                </button>
-              </div>
-            </div>
+            ) : (
+              /* SE DESCONECTADO: LEITOR QR CODE OU CÓDIGO DE PAREAMENTO */
+              <div style={{ width: '100%', maxWidth: 440, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, background: 'rgba(255,255,255,0.04)', padding: 4, borderRadius: 12 }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{
+                      margin: 0,
+                      padding: '9px 12px',
+                      fontSize: 12.5,
+                      fontWeight: 800,
+                      borderRadius: 9,
+                      background: connectTab === 'qr' ? 'var(--teal)' : 'transparent',
+                      color: connectTab === 'qr' ? '#081018' : 'var(--ink2)',
+                      border: 'none',
+                      boxShadow: connectTab === 'qr' ? '0 2px 8px rgba(0,229,155,0.25)' : 'none'
+                    }}
+                    onClick={() => { setConnectTab('qr'); if (!qrCodeData) handleFetchQrCode(); }}
+                  >
+                    📷 Ler QR Code
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{
+                      margin: 0,
+                      padding: '9px 12px',
+                      fontSize: 12.5,
+                      fontWeight: 800,
+                      borderRadius: 9,
+                      background: connectTab === 'pairing' ? 'var(--teal)' : 'transparent',
+                      color: connectTab === 'pairing' ? '#081018' : 'var(--ink2)',
+                      border: 'none',
+                      boxShadow: connectTab === 'pairing' ? '0 2px 8px rgba(0,229,155,0.25)' : 'none'
+                    }}
+                    onClick={() => setConnectTab('pairing')}
+                  >
+                    🔢 Código (8 Dígitos)
+                  </button>
+                </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
-              {pagedBatches.map((b) => (
-                <div 
-                  key={b.id}
-                  style={{
-                    background: 'var(--panel2)',
-                    borderRadius: 14,
-                    padding: '14px 16px',
-                    border: '1px solid var(--line)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 10
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ 
-                        fontSize: 12, 
-                        fontWeight: 900, 
-                        background: 'var(--teal-dim)', 
-                        color: 'var(--teal)', 
-                        padding: '2px 8px', 
-                        borderRadius: 6,
-                        border: '1px solid var(--teal)'
+                {connectTab === 'qr' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                    {qrLoading ? (
+                      <div style={{ padding: '36px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                        <div style={{ fontSize: 28 }}>⏳</div>
+                        <div style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 700 }}>Gerando QR Code no Railway...</div>
+                      </div>
+                    ) : qrCodeData ? (
+                      <>
+                        <div style={{
+                          background: '#ffffff',
+                          padding: 14,
+                          borderRadius: 16,
+                          boxShadow: '0 8px 30px rgba(0, 0, 0, 0.5)',
+                          display: 'inline-block'
+                        }}>
+                          <img 
+                            src={qrCodeData.startsWith('data:') ? qrCodeData : `data:image/png;base64,${qrCodeData}`} 
+                            alt="QR Code WhatsApp" 
+                            style={{ width: 230, height: 230, display: 'block', borderRadius: 8 }}
+                          />
+                        </div>
+
+                        <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5, textAlign: 'center', maxWidth: 360 }}>
+                          1. No WhatsApp do celular, abra <strong style={{ color: '#fff' }}>Aparelhos Conectados</strong><br />
+                          2. Toque em <strong style={{ color: 'var(--teal)' }}>Conectar um Aparelho</strong> e aponte a câmera para o QR Code acima!
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+                          <button
+                            type="button"
+                            className="btn btn-teal"
+                            style={{ padding: '8px 16px', fontSize: 12, margin: 0 }}
+                            onClick={() => handleFetchQrCode(true)}
+                          >
+                            🔄 Atualizar QR Code
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{ padding: '8px 16px', fontSize: 12, margin: 0, color: '#FF8A65' }}
+                            onClick={handleResetAndReconnect}
+                            disabled={resettingInstance}
+                          >
+                            {resettingInstance ? '⏳ Limpando...' : '⚠️ Limpar Sessão'}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                        <button
+                          type="button"
+                          className="btn btn-teal"
+                          style={{
+                            margin: 0,
+                            padding: '16px 28px',
+                            fontSize: 15,
+                            fontWeight: 900,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            borderRadius: 14,
+                            boxShadow: '0 8px 24px rgba(61, 217, 179, 0.4)',
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => handleFetchQrCode()}
+                        >
+                          <span>📷</span> Gerar QR Code do WhatsApp
+                        </button>
+
+                        {qrError && (
+                          <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(240, 107, 76, 0.15)', border: '1px solid rgba(240, 107, 76, 0.3)', color: '#FF8A65', fontSize: 12 }}>
+                            {qrError}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {connectTab === 'pairing' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <form onSubmit={handleGeneratePairingCode} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ textAlign: 'left' }}>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase' }}>
+                          Número do WhatsApp com DDD
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Ex: 61999999999"
+                          value={pairingPhone}
+                          onChange={(e) => setPairingPhone(e.target.value)}
+                          style={{ width: '100%', marginTop: 4, padding: '10px 12px', fontSize: 14 }}
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        className="btn btn-teal"
+                        disabled={generatingPairing}
+                        style={{ width: '100%', padding: '11px', fontSize: 13, fontWeight: 800, margin: 0 }}
+                      >
+                        {generatingPairing ? '⏳ Gerando Código...' : '🔢 Gerar Código de 8 Dígitos'}
+                      </button>
+                    </form>
+
+                    {pairingCodeResult && (
+                      <div style={{
+                        background: 'rgba(0, 229, 155, 0.1)',
+                        border: '1.5px dashed var(--teal)',
+                        borderRadius: 14,
+                        padding: 16,
+                        textAlign: 'center',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8
                       }}>
-                        {b.id}
-                      </span>
-                      <span style={{ fontWeight: 800, fontSize: 14, color: '#fff' }}>
-                        {b.name}
-                      </span>
-                    </div>
-                    <span style={{ fontSize: 12, color: 'var(--ink2)', fontWeight: 700 }}>
-                      👥 {b.count} contatos
-                    </span>
+                        <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 800 }}>SEU CÓDIGO DE PAREAMENTO</div>
+                        <div style={{ fontSize: 26, fontWeight: 900, letterSpacing: '4px', color: '#fff', background: 'rgba(0,0,0,0.4)', padding: '8px 12px', borderRadius: 8 }}>
+                          {pairingCodeResult}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: 'var(--ink2)', lineHeight: 1.4 }}>
+                          1. No celular: <strong>Aparelhos Conectados</strong> ➔ <strong>Conectar Aparelho</strong>.<br />
+                          2. Toque em <strong>"Conectar com número de telefone"</strong> e digite o código acima!
+                        </div>
+                      </div>
+                    )}
                   </div>
+                )}
 
-                  <div style={{ fontSize: 11.5, color: 'var(--ink3)' }}>
-                    Contatos do número #{b.startNumber} ao #{b.endNumber}
-                  </div>
-
-                  <div style={{ marginTop: 4, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    <button 
-                      type="button"
-                      className="btn btn-teal"
-                      style={{ fontSize: 11.5, padding: '8px 10px', margin: 0, borderRadius: 10 }}
-                      onClick={() => handleExportBatchVcf(b)}
-                      title="Baixar lista em arquivo .vcf para importar nos contatos do celular"
-                    >
-                      📥 Baixar ({b.id})
-                    </button>
-
-                    <button 
-                      type="button"
-                      className="btn"
-                      style={{
-                        fontSize: 11.5,
-                        fontWeight: 800,
-                        padding: '8px 10px',
-                        margin: 0,
-                        borderRadius: 10,
-                        background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.2), rgba(0, 180, 216, 0.2))',
-                        color: '#fff',
-                        border: '1px solid var(--teal)'
-                      }}
-                      onClick={() => {
-                        setSelectedTestBatch(b.id);
-                        setTestTargetType('batch');
-                        setTestResults([]);
-                        setShowBroadcastTestModal(true);
-                      }}
-                      title="Verificar se os contatos deste lote têm o número salvo (1 traço vs 2 traços)"
-                    >
-                      ✓✓ Verificar Lote
-                    </button>
-                  </div>
+                <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 10, textAlign: 'center' }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#FF8A65',
+                      fontSize: 11.5,
+                      padding: 0,
+                      margin: 0,
+                      cursor: 'pointer',
+                      textDecoration: 'underline'
+                    }}
+                    onClick={handleResetAndReconnect}
+                    disabled={resettingInstance}
+                  >
+                    {resettingInstance ? '⏳ Reiniciando...' : '⚠️ Sessão travada ou erro de QR? Clique para Limpar Sessão'}
+                  </button>
                 </div>
-              ))}
-            </div>
-
-            {/* Paginação idêntica à aba Cadastros */}
-            {totalBatchPages > 1 && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
-                <button 
-                  className="btn" 
-                  style={{ 
-                    width: 'auto',
-                    flexShrink: 0,
-                    margin: 0,
-                    padding: '8px 16px', 
-                    fontSize: 13, 
-                    fontWeight: 600,
-                    borderRadius: 10, 
-                    background: 'rgba(255, 255, 255, 0.04)', 
-                    color: batchPage === 1 ? 'var(--ink3)' : '#fff',
-                    border: '1px solid ' + (batchPage === 1 ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
-                    cursor: batchPage === 1 ? 'not-allowed' : 'pointer',
-                    opacity: batchPage === 1 ? 0.4 : 1,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6
-                  }}
-                  disabled={batchPage === 1}
-                  onClick={() => setBatchPage(p => Math.max(p - 1, 1))}
-                >
-                  <span>←</span> Anterior
-                </button>
-                <span style={{ fontSize: 13, color: 'var(--ink2)', fontWeight: 600, whiteSpace: 'nowrap', minWidth: '100px', textAlign: 'center' }}>
-                  Página {batchPage} de {totalBatchPages}
-                </span>
-                <button 
-                  className="btn" 
-                  style={{ 
-                    width: 'auto',
-                    flexShrink: 0,
-                    margin: 0,
-                    padding: '8px 16px', 
-                    fontSize: 13, 
-                    fontWeight: 600,
-                    borderRadius: 10, 
-                    background: 'rgba(255, 255, 255, 0.04)', 
-                    color: batchPage === totalBatchPages ? 'var(--ink3)' : '#fff',
-                    border: '1px solid ' + (batchPage === totalBatchPages ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
-                    cursor: batchPage === totalBatchPages ? 'not-allowed' : 'pointer',
-                    opacity: batchPage === totalBatchPages ? 0.4 : 1,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6
-                  }}
-                  disabled={batchPage === totalBatchPages}
-                  onClick={() => setBatchPage(p => Math.min(p + 1, totalBatchPages))}
-                >
-                  Próxima <span>→</span>
-                </button>
               </div>
             )}
           </div>
-        </>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* 🟢 ETAPA 2: SALVAR AGENDAS NO CELULAR (.VCF / 1 TOQUE)     */}
+      {/* ========================================================= */}
+      {botStep === 2 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{
+            padding: '22px 20px',
+            background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.12), rgba(15, 23, 42, 0.85))',
+            border: '1.5px solid rgba(0, 229, 155, 0.35)',
+            borderRadius: 20,
+            boxShadow: '0 10px 32px rgba(0, 0, 0, 0.35)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 16
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 14,
+                  background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.25), rgba(37, 211, 102, 0.15))',
+                  border: '1px solid var(--teal)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 24,
+                  flexShrink: 0
+                }}>
+                  📥
+                </div>
+                <div>
+                  <h2 style={{ fontSize: 17, fontWeight: 900, color: '#fff', margin: 0, textTransform: 'uppercase' }}>
+                    ETAPA 2: SALVAR AGENDAS NO CELULAR
+                  </h2>
+                  <div style={{ fontSize: 12.5, color: 'var(--ink2)', marginTop: 3 }}>
+                    Salve os contatos no celular do Dr. Cândido para garantir que a lista de transmissão entregue as mensagens.
+                  </div>
+                </div>
+              </div>
+
+              {/* Resumo Rápido */}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11.5, background: 'rgba(255,255,255,0.06)', padding: '4px 10px', borderRadius: 8, color: '#fff' }}>
+                  Total: <strong>{validUsers.length}</strong>
+                </span>
+                <span style={{ fontSize: 11.5, background: 'rgba(37, 211, 102, 0.15)', padding: '4px 10px', borderRadius: 8, color: '#25D366' }}>
+                  Salvos: <strong>{withNumberUsers.length}</strong>
+                </span>
+                <span style={{ fontSize: 11.5, background: 'rgba(240, 107, 76, 0.15)', padding: '4px 10px', borderRadius: 8, color: '#FF8A65' }}>
+                  Pendentes: <strong>{withoutNumberUsers.length}</strong>
+                </span>
+              </div>
+            </div>
+
+            {/* OPÇÃO 1: SALVAR TODOS NO CELULAR (PADRÃO RECOMENDADO - 1 TOQUE) */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.15), rgba(15, 23, 42, 0.7))',
+              border: '1.5px solid var(--teal)',
+              borderRadius: 16,
+              padding: '20px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              boxShadow: '0 6px 24px rgba(0, 229, 155, 0.15)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 20 }}>📲</span>
+                  <span style={{ fontSize: 15, fontWeight: 900, color: '#fff' }}>
+                    Opção 1: Salvar Direto no Celular (Recomendado)
+                  </span>
+                </div>
+                <span style={{
+                  fontSize: 10.5,
+                  fontWeight: 900,
+                  background: 'var(--teal)',
+                  color: '#081018',
+                  padding: '3px 10px',
+                  borderRadius: 20,
+                  letterSpacing: '0.5px'
+                }}>
+                  1 TOQUE · PADRÃO
+                </span>
+              </div>
+
+              <div style={{ fontSize: 12.5, color: 'var(--ink2)', lineHeight: 1.5 }}>
+                Gera o arquivo oficial de agenda (.vcf) com todos os <strong>{validUsers.length} contatos</strong> unificados e já organizados com os prefixos dos lotes (T1, T2, T3...).<br />
+                Ao clicar abaixo no seu celular, ele abre <strong>direto o app de Contatos do iPhone ou Android</strong> perguntando se deseja salvar todos de uma só vez!
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-teal"
+                style={{
+                  width: '100%',
+                  padding: '14px 20px',
+                  fontSize: 14,
+                  fontWeight: 900,
+                  margin: '4px 0 0 0',
+                  borderRadius: 12,
+                  boxShadow: '0 6px 20px rgba(0, 229, 155, 0.35)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 10,
+                  cursor: 'pointer'
+                }}
+                onClick={handleExportAllBatches}
+              >
+                <span>📥</span> Salvar Todos no Celular (.vcf - 1 Toque)
+              </button>
+            </div>
+
+            {/* OPÇÃO 2: LOTES MANUAIS DE 100 EM 100 */}
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid var(--line)',
+              borderRadius: 16,
+              padding: '16px 18px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 18 }}>📑</span>
+                  <div>
+                    <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>
+                      Opção 2: Baixar em Lotes Manuais (100 em 100)
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--ink3)' }}>
+                      Total de {batches.length} lotes de até 100 contatos para criação individual de listas
+                    </div>
+                  </div>
+                </div>
+
+                {/* Botãozinho Pequeno no Canto para Alternar Lotes de 100 */}
+                <button
+                  type="button"
+                  className="btn"
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: 11.5,
+                    fontWeight: 800,
+                    margin: 0,
+                    borderRadius: 8,
+                    background: showLegacyBatches ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                    color: showLegacyBatches ? 'var(--teal)' : 'var(--ink2)',
+                    border: '1px solid ' + (showLegacyBatches ? 'var(--teal)' : 'var(--line)'),
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => setShowLegacyBatches(!showLegacyBatches)}
+                >
+                  {showLegacyBatches ? '▲ Ocultar Lotes' : '⚙️ Baixar de 100 em 100'}
+                </button>
+              </div>
+
+              {showLegacyBatches && (
+                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
+                    {pagedBatches.map((b) => (
+                      <div 
+                        key={b.id}
+                        style={{
+                          background: 'var(--panel2)',
+                          borderRadius: 12,
+                          padding: '12px 14px',
+                          border: '1px solid var(--line)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 8
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ 
+                              fontSize: 11.5, 
+                              fontWeight: 900, 
+                              background: 'var(--teal-dim)', 
+                              color: 'var(--teal)', 
+                              padding: '2px 7px', 
+                              borderRadius: 6,
+                              border: '1px solid var(--teal)'
+                            }}>
+                              {b.id}
+                            </span>
+                            <span style={{ fontWeight: 800, fontSize: 13, color: '#fff' }}>
+                              {b.name}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: 11.5, color: 'var(--ink2)', fontWeight: 700 }}>
+                            👥 {b.count} contatos
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                          <button 
+                            type="button"
+                            className="btn btn-teal"
+                            style={{ flex: 1, fontSize: 11, padding: '7px 10px', margin: 0, borderRadius: 8 }}
+                            onClick={() => handleExportBatchVcf(b)}
+                          >
+                            📥 Baixar ({b.id})
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {totalBatchPages > 1 && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginTop: 8 }}>
+                      <button 
+                        className="btn" 
+                        style={{ 
+                          padding: '6px 12px', 
+                          fontSize: 11.5, 
+                          margin: 0,
+                          borderRadius: 8, 
+                          background: 'rgba(255, 255, 255, 0.04)', 
+                          color: batchPage === 1 ? 'var(--ink3)' : '#fff',
+                          border: '1px solid var(--line)',
+                          cursor: batchPage === 1 ? 'not-allowed' : 'pointer',
+                          opacity: batchPage === 1 ? 0.4 : 1
+                        }}
+                        disabled={batchPage === 1}
+                        onClick={() => setBatchPage(p => Math.max(p - 1, 1))}
+                      >
+                        ← Anterior
+                      </button>
+                      <span style={{ fontSize: 12, color: 'var(--ink2)', fontWeight: 600 }}>
+                        Página {batchPage} de {totalBatchPages}
+                      </span>
+                      <button 
+                        className="btn" 
+                        style={{ 
+                          padding: '6px 12px', 
+                          fontSize: 11.5, 
+                          margin: 0,
+                          borderRadius: 8, 
+                          background: 'rgba(255, 255, 255, 0.04)', 
+                          color: batchPage === totalBatchPages ? 'var(--ink3)' : '#fff',
+                          border: '1px solid var(--line)',
+                          cursor: batchPage === totalBatchPages ? 'not-allowed' : 'pointer',
+                          opacity: batchPage === totalBatchPages ? 0.4 : 1
+                        }}
+                        disabled={batchPage === totalBatchPages}
+                        onClick={() => setBatchPage(p => Math.min(p + 1, totalBatchPages))}
+                      >
+                        Próxima →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* OPÇÃO 3: GOOGLE CONTATOS (NUVEM) */}
+            <div style={{
+              background: 'rgba(255, 255, 255, 0.02)',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+              borderRadius: 14,
+              padding: '14px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 10
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 18 }}>☁️</span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>Sincronização Nuvem Google Contatos</div>
+                  <div style={{ fontSize: 11, color: 'var(--ink3)' }}>Importação em massa via planilha CSV (computador)</div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ fontSize: 11.5, padding: '6px 12px', margin: 0 }}
+                  onClick={handleExportGoogleContactsCsv}
+                >
+                  📥 Baixar CSV
+                </button>
+                <a
+                  href="https://contacts.google.com/?hl=pt-BR"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-ghost"
+                  style={{ fontSize: 11.5, padding: '6px 12px', margin: 0, textDecoration: 'none' }}
+                >
+                  🌐 Abrir contacts.google.com ➔
+                </a>
+              </div>
+            </div>
+
+            {/* Rodapé de Navegação da Etapa 2 */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 8, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ padding: '9px 16px', fontSize: 12.5, margin: 0 }}
+                onClick={() => setBotStep(1)}
+              >
+                ← Voltar: 1. Conexão
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-teal"
+                style={{ padding: '9px 18px', fontSize: 12.5, fontWeight: 900, margin: 0 }}
+                onClick={() => setBotStep(3)}
+              >
+                Avançar para Etapa 3 (Transmissão) →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* 🟢 ETAPA 3: TRANSMISSÃO & VERIFICAÇÃO (1 VS 2 TRAÇOS)     */}
+      {/* ========================================================= */}
+      {botStep === 3 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Dashboard Moderno de Estatísticas da Transmissão */}
+          <div style={{
+            background: 'linear-gradient(180deg, var(--panel2) 0%, rgba(15, 23, 42, 0.95) 100%)',
+            padding: '20px 22px',
+            borderRadius: 20,
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.24)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 16
+          }}>
+            {/* Cabeçalho com Título e Ações Rápidas */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 12,
+                  background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.2), rgba(123, 108, 244, 0.2))',
+                  border: '1px solid rgba(0, 229, 155, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 22,
+                  flexShrink: 0
+                }}>
+                  📊
+                </div>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: '#fff', letterSpacing: '-0.2px' }}>
+                    ETAPA 3: TRANSMISSÃO & VERIFICAÇÃO (1 VS 2 TRAÇOS)
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
+                    Monitore o alcance das listas de transmissão e audite a entrega em tempo real
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-teal"
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: 800,
+                    padding: '9px 16px',
+                    margin: 0,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    borderRadius: 10,
+                    background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
+                    color: '#081018',
+                    border: 'none',
+                    boxShadow: '0 4px 14px rgba(0, 229, 155, 0.35)',
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => setShowBroadcastTestModal(true)}
+                >
+                  <span style={{ fontWeight: 900 }}>✓✓</span> Abrir Verificador (1 vs 2 Traços)
+                </button>
+
+                <button
+                  type="button"
+                  className="btn"
+                  style={{
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    padding: '9px 12px',
+                    margin: 0,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    borderRadius: 10,
+                    background: 'rgba(240, 107, 76, 0.1)',
+                    color: '#FF8A65',
+                    border: '1px solid rgba(240, 107, 76, 0.3)',
+                    cursor: resettingAnalysis ? 'not-allowed' : 'pointer',
+                    opacity: resettingAnalysis ? 0.6 : 1
+                  }}
+                  onClick={handleResetAnalyzedData}
+                  disabled={resettingAnalysis || syncingContacts || isTestingRunning}
+                  title="Limpar todos os dados analisados e resetar contatos para Pendentes"
+                >
+                  <span>🧹</span> {resettingAnalysis ? 'Limpando...' : 'Limpar'}
+                </button>
+              </div>
+            </div>
+
+            {/* Grid de Métricas Principais */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+              {/* Card: Total */}
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                padding: '14px 16px',
+                borderRadius: 14,
+                border: '1px solid rgba(255, 255, 255, 0.06)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 11, color: 'var(--ink3)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Total Membros
+                  </span>
+                  <span style={{ fontSize: 13 }}>👥</span>
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 900, color: '#fff', marginTop: 6 }}>
+                  {validUsers.length.toLocaleString('pt-BR')}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 4 }}>
+                  Base ativa cadastrada
+                </div>
+              </div>
+
+              {/* Card: Salvos */}
+              <div 
+                style={{
+                  background: 'linear-gradient(145deg, rgba(37, 211, 102, 0.1), rgba(37, 211, 102, 0.03))',
+                  padding: '14px 16px',
+                  borderRadius: 14,
+                  border: '1px solid rgba(37, 211, 102, 0.25)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer'
+                }}
+                onClick={() => { setContactFilterModal('with_number'); setModalSearch(''); setModalPage(1); }}
+                title="Clique para ver a lista de contatos confirmados"
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 11, color: '#25D366', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Salvos na Agenda
+                  </span>
+                  <span style={{ fontSize: 10, background: 'rgba(37, 211, 102, 0.2)', color: '#25D366', padding: '2px 6px', borderRadius: 6, fontWeight: 800 }}>
+                    Prontos (✓✓)
+                  </span>
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 900, color: '#25D366', marginTop: 6 }}>
+                  {withNumberUsers.length.toLocaleString('pt-BR')}
+                </div>
+                <div style={{ fontSize: 11, color: 'rgba(37, 211, 102, 0.8)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span>✓</span> Aptos para transmissão
+                </div>
+              </div>
+
+              {/* Card: Pendentes */}
+              <div 
+                style={{
+                  background: 'linear-gradient(145deg, rgba(240, 107, 76, 0.1), rgba(240, 107, 76, 0.03))',
+                  padding: '14px 16px',
+                  borderRadius: 14,
+                  border: '1px solid rgba(240, 107, 76, 0.25)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer'
+                }}
+                onClick={() => { setContactFilterModal('without_number'); setModalSearch(''); setModalPage(1); }}
+                title="Clique para ver a lista de contatos pendentes"
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 11, color: '#FF8A65', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Pendentes
+                  </span>
+                  <span style={{ fontSize: 10, background: 'rgba(240, 107, 76, 0.2)', color: '#FF8A65', padding: '2px 6px', borderRadius: 6, fontWeight: 800 }}>
+                    1 Traço (⏱)
+                  </span>
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 900, color: '#FF8A65', marginTop: 6 }}>
+                  {withoutNumberUsers.length.toLocaleString('pt-BR')}
+                </div>
+                <div style={{ fontSize: 11, color: 'rgba(240, 107, 76, 0.8)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span>⏱</span> Sem o número salvo
+                </div>
+              </div>
+
+              {/* Card: Cobertura */}
+              <div style={{
+                background: 'rgba(123, 108, 244, 0.06)',
+                padding: '14px 16px',
+                borderRadius: 14,
+                border: '1px solid rgba(123, 108, 244, 0.2)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Taxa de Alcance
+                  </span>
+                  <span style={{ fontSize: 13 }}>📈</span>
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 900, color: 'var(--teal)', marginTop: 6 }}>
+                  {coveragePercent}%
+                </div>
+                <div style={{ marginTop: 6, width: '100%', height: 5, background: 'rgba(255, 255, 255, 0.08)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{ width: `${Math.min(parseFloat(coveragePercent) || 0, 100)}%`, height: '100%', background: 'linear-gradient(90deg, #25D366, var(--teal))', borderRadius: 3, transition: 'width 0.4s ease' }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Cartão de Destaque: Verificador Inteligente (1 vs 2 Traços) */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.12) 0%, rgba(15, 23, 42, 0.8) 100%)',
+              border: '1.5px solid var(--teal)',
+              borderRadius: 16,
+              padding: '18px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              boxShadow: '0 6px 20px rgba(0, 229, 155, 0.15)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    background: 'var(--teal)',
+                    color: '#081018',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 16,
+                    fontWeight: 900
+                  }}>
+                    ✓✓
+                  </span>
+                  <div>
+                    <div style={{ fontSize: 14.5, fontWeight: 900, color: '#fff' }}>
+                      Auditoria de Entrega Automática (Últimos 15 Minutos)
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
+                      Identifique instantaneamente quem recebeu sua transmissão e quem ainda não tem o número salvo
+                    </div>
+                  </div>
+                </div>
+
+                <span style={{
+                  fontSize: 11,
+                  background: 'rgba(0, 229, 155, 0.2)',
+                  color: 'var(--teal)',
+                  padding: '3px 10px',
+                  borderRadius: 20,
+                  fontWeight: 800,
+                  border: '1px solid var(--teal)'
+                }}>
+                  ⏱ JANELA 15 MIN
+                </span>
+              </div>
+
+              <div style={{ fontSize: 12.5, color: 'var(--ink2)', lineHeight: 1.5 }}>
+                1. Dispare sua mensagem na Lista de Transmissão oficial no WhatsApp do Dr. Cândido.<br />
+                2. Clique no botão abaixo: o robô examina os últimos <strong>15 minutos</strong> e cruza os números.<br />
+                3. Se o contato recebeu a mensagem enviada, ele é confirmado com <strong>2 traços (✓✓ Salvo na Agenda)</strong>. Se não recebeu, permanece com <strong>1 traço (⏱ Pendente)</strong>.
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+                <button
+                  type="button"
+                  className="btn btn-teal"
+                  style={{
+                    padding: '12px 20px',
+                    fontSize: 13.5,
+                    fontWeight: 900,
+                    margin: 0,
+                    borderRadius: 10,
+                    boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => setShowBroadcastTestModal(true)}
+                >
+                  <span style={{ fontWeight: 900 }}>✓✓</span> Executar Auditoria de 15 Minutos
+                </button>
+              </div>
+            </div>
+
+            {/* Guia de Transmissão Oficial */}
+            <div style={{ 
+              background: 'rgba(255, 255, 255, 0.02)', 
+              padding: '14px 16px', 
+              borderRadius: 14, 
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 18 }}>🛡️</span>
+                <span style={{ fontWeight: 800, fontSize: 13, color: '#fff' }}>
+                  Guia da Lista de Transmissão Oficial (Risco ZERO de Bloqueio)
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.6 }}>
+                1. No WhatsApp do celular, vá em <strong style={{ color: '#fff' }}>Nova Transmissão</strong>, pesquise por <strong style={{ color: 'var(--teal)' }}>T1</strong> e selecione todos os contatos.<br />
+                2. Envie sua mensagem oficial de comunicado.<br />
+                3. O WhatsApp entrega <strong>somente para quem tem o número salvo na agenda</strong>, garantindo total conformidade e taxa de abertura de até 98%!
+              </div>
+            </div>
+
+            {/* Acesso Rápido de Auditoria por Lote */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: '#fff' }}>
+                  📋 Lotes de Transmissão Oficiais ({batches.length} Lotes de 100 contatos)
+                </div>
+                <span style={{ fontSize: 12, color: 'var(--ink2)' }}>
+                  Página {batchPage} de {totalBatchPages}
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
+                {pagedBatches.map((b) => (
+                  <div 
+                    key={b.id}
+                    style={{
+                      background: 'var(--panel2)',
+                      borderRadius: 12,
+                      padding: '12px 14px',
+                      border: '1px solid var(--line)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ 
+                          fontSize: 11.5, 
+                          fontWeight: 900, 
+                          background: 'var(--teal-dim)', 
+                          color: 'var(--teal)', 
+                          padding: '2px 7px', 
+                          borderRadius: 6,
+                          border: '1px solid var(--teal)'
+                        }}>
+                          {b.id}
+                        </span>
+                        <span style={{ fontWeight: 800, fontSize: 13, color: '#fff' }}>
+                          {b.name}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: 11.5, color: 'var(--ink2)', fontWeight: 700 }}>
+                        👥 {b.count} contatos
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 4 }}>
+                      <button 
+                        type="button"
+                        className="btn btn-teal"
+                        style={{ fontSize: 11, padding: '7px 8px', margin: 0, borderRadius: 8 }}
+                        onClick={() => handleExportBatchVcf(b)}
+                        title="Baixar vCard deste lote"
+                      >
+                        📥 Baixar ({b.id})
+                      </button>
+
+                      <button 
+                        type="button"
+                        className="btn"
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 800,
+                          padding: '7px 8px',
+                          margin: 0,
+                          borderRadius: 8,
+                          background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.2), rgba(0, 180, 216, 0.2))',
+                          color: '#fff',
+                          border: '1px solid var(--teal)'
+                        }}
+                        onClick={() => {
+                          setSelectedTestBatch(b.id);
+                          setTestTargetType('batch');
+                          setTestResults([]);
+                          setShowBroadcastTestModal(true);
+                        }}
+                        title="Verificar se os contatos deste lote têm o número salvo (1 traço vs 2 traços)"
+                      >
+                        ✓✓ Checar Lote
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {totalBatchPages > 1 && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginTop: 14 }}>
+                  <button 
+                    className="btn" 
+                    style={{ 
+                      padding: '6px 12px', 
+                      fontSize: 11.5, 
+                      margin: 0,
+                      borderRadius: 8, 
+                      background: 'rgba(255, 255, 255, 0.04)', 
+                      color: batchPage === 1 ? 'var(--ink3)' : '#fff',
+                      border: '1px solid var(--line)',
+                      cursor: batchPage === 1 ? 'not-allowed' : 'pointer',
+                      opacity: batchPage === 1 ? 0.4 : 1
+                    }}
+                    disabled={batchPage === 1}
+                    onClick={() => setBatchPage(p => Math.max(p - 1, 1))}
+                  >
+                    ← Anterior
+                  </button>
+                  <span style={{ fontSize: 12, color: 'var(--ink2)', fontWeight: 600 }}>
+                    Página {batchPage} de {totalBatchPages}
+                  </span>
+                  <button 
+                    className="btn" 
+                    style={{ 
+                      padding: '6px 12px', 
+                      fontSize: 11.5, 
+                      margin: 0,
+                      borderRadius: 8, 
+                      background: 'rgba(255, 255, 255, 0.04)', 
+                      color: batchPage === totalBatchPages ? 'var(--ink3)' : '#fff',
+                      border: '1px solid var(--line)',
+                      cursor: batchPage === totalBatchPages ? 'not-allowed' : 'pointer',
+                      opacity: batchPage === totalBatchPages ? 0.4 : 1
+                    }}
+                    disabled={batchPage === totalBatchPages}
+                    onClick={() => setBatchPage(p => Math.min(p + 1, totalBatchPages))}
+                  >
+                    Próxima →
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Rodapé de Navegação da Etapa 3 */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 8, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ padding: '9px 16px', fontSize: 12.5, margin: 0 }}
+                onClick={() => setBotStep(2)}
+              >
+                ← Voltar: 2. Salvar Agendas
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ padding: '9px 16px', fontSize: 12.5, margin: 0 }}
+                onClick={() => setBotStep(4)}
+              >
+                Avançar para Etapa 4: Ajustes API →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* 🟢 ETAPA 4: AJUSTES DA API & SISTEMA                      */}
+      {/* ========================================================= */}
+      {botStep === 4 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{
+            padding: '22px 20px',
+            background: 'linear-gradient(135deg, rgba(255, 160, 0, 0.1), rgba(15, 23, 42, 0.9))',
+            border: '1.5px solid rgba(255, 160, 0, 0.35)',
+            borderRadius: 20,
+            boxShadow: '0 10px 32px rgba(0, 0, 0, 0.35)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 16
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{
+                width: 48,
+                height: 48,
+                borderRadius: 14,
+                background: 'linear-gradient(135deg, rgba(255, 160, 0, 0.25), rgba(255, 213, 79, 0.15))',
+                border: '1px solid #FFA000',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 24,
+                flexShrink: 0
+              }}>
+                ⚙️
+              </div>
+              <div>
+                <h2 style={{ fontSize: 17, fontWeight: 900, color: '#fff', margin: 0, textTransform: 'uppercase' }}>
+                  ETAPA 4: AJUSTES DA API & SERVIDOR
+                </h2>
+                <div style={{ fontSize: 12.5, color: 'var(--ink2)', marginTop: 3 }}>
+                  Configure os dados de conexão com o servidor Evolution API no Railway.
+                </div>
+              </div>
+            </div>
+
+            {/* Formulário de Configuração */}
+            <form onSubmit={handleSaveConfig} style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              padding: '18px 20px',
+              borderRadius: 16,
+              border: '1px solid var(--line)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14
+            }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase' }}>
+                  URL do Servidor Railway
+                </label>
+                <input 
+                  type="text"
+                  placeholder="https://sua-evolution-api.up.railway.app"
+                  value={config.serverUrl}
+                  onChange={(e) => setConfig({ ...config, serverUrl: e.target.value })}
+                  required
+                  style={{ marginTop: 4, width: '100%', padding: '10px 12px', fontSize: 13 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase' }}>
+                  Chave Global da API (AUTHENTICATION_API_KEY)
+                </label>
+                <input 
+                  type="text"
+                  placeholder="Sua chave secreta configurada no Railway"
+                  value={config.apiKey}
+                  onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
+                  required
+                  style={{ marginTop: 4, width: '100%', padding: '10px 12px', fontSize: 13 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase' }}>
+                  Nome da Instância
+                </label>
+                <input 
+                  type="text"
+                  placeholder="dr_candido"
+                  value={config.instanceName}
+                  onChange={(e) => setConfig({ ...config, instanceName: e.target.value })}
+                  style={{ marginTop: 4, width: '100%', padding: '10px 12px', fontSize: 13 }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
+                <button type="submit" className="btn btn-teal" style={{ flex: 1, padding: '12px', fontSize: 13, fontWeight: 800, margin: 0 }}>
+                  💾 Salvar Configurações
+                </button>
+                <button type="button" className="btn btn-ghost" style={{ padding: '12px 18px', fontSize: 13, margin: 0 }} onClick={checkStatus}>
+                  🔄 Testar Conexão
+                </button>
+              </div>
+            </form>
+
+            {/* Manutenção & Reset */}
+            <div style={{
+              background: 'rgba(240, 107, 76, 0.06)',
+              border: '1px solid rgba(240, 107, 76, 0.25)',
+              borderRadius: 14,
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#FF8A65', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>🛠️</span> Opções de Manutenção do Sistema
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5 }}>
+                Caso ocorra algum travamento de conexão no Railway ou queira limpar os dados de entrega auditados:
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{
+                    padding: '8px 14px',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    margin: 0,
+                    background: 'rgba(240, 107, 76, 0.15)',
+                    color: '#FF8A65',
+                    border: '1px solid rgba(240, 107, 76, 0.3)',
+                    cursor: 'pointer'
+                  }}
+                  onClick={handleResetAndReconnect}
+                  disabled={resettingInstance}
+                >
+                  {resettingInstance ? '⏳ Reiniciando Sessão...' : '⚠️ Reiniciar & Limpar Sessão Travada'}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn"
+                  style={{
+                    padding: '8px 14px',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    margin: 0,
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    color: 'var(--ink2)',
+                    border: '1px solid var(--line)',
+                    cursor: 'pointer'
+                  }}
+                  onClick={handleResetAnalyzedData}
+                  disabled={resettingAnalysis}
+                >
+                  {resettingAnalysis ? '⏳ Limpando...' : '🧹 Resetar Histórico de Contatos Analisados'}
+                </button>
+              </div>
+            </div>
+
+            {/* Rodapé de Navegação da Etapa 4 */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 8, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ padding: '9px 16px', fontSize: 12.5, margin: 0 }}
+                onClick={() => setBotStep(3)}
+              >
+                ← Voltar para Etapa 3 (Transmissão)
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ padding: '9px 16px', fontSize: 12.5, margin: 0 }}
+                onClick={() => setBotStep(1)}
+              >
+                Ir para Etapa 1 (Conexão)
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
