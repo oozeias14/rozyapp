@@ -3735,46 +3735,6 @@ export function EvolutionBotTab({ users, reload }) {
               )}
             </div>
 
-            {/* OPÇÃO 3: GOOGLE CONTATOS (NUVEM) */}
-            <div style={{
-              background: 'rgba(255, 255, 255, 0.02)',
-              border: '1px solid rgba(255, 255, 255, 0.06)',
-              borderRadius: 14,
-              padding: '14px 16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: 10
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 18 }}>☁️</span>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>Sincronização Nuvem Google Contatos</div>
-                  <div style={{ fontSize: 11, color: 'var(--ink3)' }}>Importação em massa via planilha CSV (computador)</div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  style={{ fontSize: 11.5, padding: '6px 12px', margin: 0 }}
-                  onClick={handleExportGoogleContactsCsv}
-                >
-                  📥 Baixar CSV
-                </button>
-                <a
-                  href="https://contacts.google.com/?hl=pt-BR"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-ghost"
-                  style={{ fontSize: 11.5, padding: '6px 12px', margin: 0, textDecoration: 'none' }}
-                >
-                  🌐 Abrir contacts.google.com ➔
-                </a>
-              </div>
-            </div>
 
             {/* Rodapé de Navegação da Etapa 2 */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 8, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
