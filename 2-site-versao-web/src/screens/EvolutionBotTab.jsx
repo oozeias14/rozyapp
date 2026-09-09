@@ -3467,19 +3467,6 @@ export function EvolutionBotTab({ users, reload }) {
                   </div>
                 </div>
               </div>
-
-              {/* Resumo Rápido */}
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11.5, background: 'rgba(255,255,255,0.06)', padding: '4px 10px', borderRadius: 8, color: '#fff' }}>
-                  Total: <strong>{validUsers.length}</strong>
-                </span>
-                <span style={{ fontSize: 11.5, background: 'rgba(37, 211, 102, 0.15)', padding: '4px 10px', borderRadius: 8, color: '#25D366' }}>
-                  Salvos: <strong>{withNumberUsers.length}</strong>
-                </span>
-                <span style={{ fontSize: 11.5, background: 'rgba(240, 107, 76, 0.15)', padding: '4px 10px', borderRadius: 8, color: '#FF8A65' }}>
-                  Pendentes: <strong>{withoutNumberUsers.length}</strong>
-                </span>
-              </div>
             </div>
 
             {/* OPÇÃO 1: SALVAR TODOS NO CELULAR (PADRÃO RECOMENDADO - 1 TOQUE) */}
