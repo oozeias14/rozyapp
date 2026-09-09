@@ -630,8 +630,8 @@ export function extractPhonesFromMessage(m, lidToPhone = new Map()) {
   return phones;
 }
 
-// Helper para verificar se a mensagem foi enviada/recebida dentro da janela de horas especificada (padrão 1h)
-export function isMessageWithinHours(msg, maxHours = 1) {
+// Helper para verificar se a mensagem foi enviada/recebida dentro da janela especificada (padrão 30 min / 0.5h)
+export function isMessageWithinHours(msg, maxHours = 0.5) {
   if (!msg) return false;
   
   let ts = msg.messageTimestamp || msg.createdAt || msg.updatedAt;
@@ -659,12 +659,12 @@ export function isMessageWithinHours(msg, maxHours = 1) {
   const nowSec = Math.floor(Date.now() / 1000);
   const diffHours = (nowSec - ts) / 3600;
 
-  return diffHours >= -1.0 && diffHours <= (maxHours || 1);
+  return diffHours >= -1.0 && diffHours <= (maxHours || 0.5);
 }
 
 // ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO ────
 
-export async function scanAllChatsForPhrase(phraseText, maxHours = 1) {
+export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.5) {
   const targetPhrase = (phraseText || '').toLowerCase().trim().replace(/^["']|["']$/g, '');
   const matchedSigs = new Set();
 
@@ -800,9 +800,9 @@ export async function scanAllChatsForPhrase(phraseText, maxHours = 1) {
       }
     });
 
-    // 8. Processa mensagens diretas que contêm a frase ou referenciam a transmissão
+    // 8. Processa mensagens diretas que contêm a frase ou qualquer mensagem recente (se sem frase)
     allMsgs.forEach((m) => {
-      const hasPhrase = targetPhrase ? doesMessageContainPhrase(m, targetPhrase) : false;
+      const hasPhrase = targetPhrase ? doesMessageContainPhrase(m, targetPhrase) : true;
       const matchesId = (m.key?.id && matchingMessageIds.has(m.key.id)) || (m.id && matchingMessageIds.has(m.id));
       const reactionParentId = m.message?.reactionMessage?.key?.id;
       const referencesBroadcastWithPhrase = reactionParentId && matchingMessageIds.has(reactionParentId);
@@ -817,7 +817,7 @@ export async function scanAllChatsForPhrase(phraseText, maxHours = 1) {
 
     // 9. Processa conversas ativas no WhatsApp (findChats)
     (chats || []).forEach((c) => {
-      const hasPhrase = targetPhrase ? (doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase)) : false;
+      const hasPhrase = targetPhrase ? (doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase)) : true;
       const matchesId = (c.lastMessage?.key?.id && matchingMessageIds.has(c.lastMessage.key.id)) || (c.lastMessage?.id && matchingMessageIds.has(c.lastMessage.id));
       const reactionParentId = c.lastMessage?.message?.reactionMessage?.key?.id;
       const referencesBroadcastWithPhrase = reactionParentId && matchingMessageIds.has(reactionParentId);
@@ -846,13 +846,14 @@ export async function scanAllChatsForPhrase(phraseText, maxHours = 1) {
   return matchedSigs;
 }
 
-export async function checkContactHasBroadcastPhrase(phone, phraseText, preScannedSigs = null, maxHours = 1) {
+export async function checkContactHasBroadcastPhrase(phone, phraseText = '', preScannedSigs = null, maxHours = 0.5) {
   const cleanPhone = extractCleanPhone(phone);
   if (!cleanPhone) {
     return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem telefone)', status: 'PENDING' };
   }
 
   const sigs = getPhoneSignatures(cleanPhone);
+  const timeDesc = maxHours <= 0.5 ? '30 min' : `${maxHours}h`;
 
   // 1. Checa se o número foi pré-confirmado com a frase ou transmissão recente
   if (preScannedSigs && preScannedSigs instanceof Set) {
@@ -863,8 +864,8 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
         checks: 2,
         status: 'DELIVERY_ACK',
         label: phraseText 
-          ? `✓✓ 2 Traços (Frase "${phraseText}" entregue na última ${maxHours}h!)`
-          : `✓✓ 2 Traços (Transmissão recebida na última ${maxHours}h!)`
+          ? `✓✓ 2 Traços (Frase "${phraseText}" entregue nos últimos ${timeDesc}!)`
+          : `✓✓ 2 Traços (Transmissão recebida nos últimos ${timeDesc}!)`
       };
     } else {
       return {
@@ -872,8 +873,8 @@ export async function checkContactHasBroadcastPhrase(phone, phraseText, preScann
         checks: 1,
         status: 'NOT_FOUND',
         label: phraseText
-          ? `✓ 1 Traço (Frase "${phraseText}" não recebida na última ${maxHours}h)`
-          : `✓ 1 Traço (Transmissão não recebida na última ${maxHours}h)`
+          ? `✓ 1 Traço (Frase "${phraseText}" não recebida nos últimos ${timeDesc})`
+          : `✓ 1 Traço (Transmissão não recebida nos últimos ${timeDesc})`
       };
     }
   }

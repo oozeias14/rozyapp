@@ -33,17 +33,22 @@ async function req(endpoint, method = 'POST', body = null) {
   });
 }
 
-async function testContacts() {
-  console.log('Fetching contacts from /chat/findContacts...');
-  const res = await req(`/chat/findContacts/${INSTANCE}`, 'POST', {});
-  const list = Array.isArray(res.body) ? res.body : [];
-  console.log(`Fetched ${list.length} contacts.`);
-
-  if (list.length > 0) {
-    console.log('Sample contact #1:', JSON.stringify(list[0], null, 2));
-    console.log('Sample contact #2:', JSON.stringify(list[1], null, 2));
-    console.log('Sample contact #3:', JSON.stringify(list[2], null, 2));
+async function inspectBroadcastTarget() {
+  console.log('=== BUSCANDO MENSAGENS COM ID AC478B4294785B078D71874B91DFEE05 OU 1788673682@broadcast ===');
+  
+  for (let page = 1; page <= 20; page++) {
+    const res = await req(`/chat/findMessages/${INSTANCE}`, 'POST', { limit: 100, page });
+    const records = res.body?.messages?.records || (Array.isArray(res.body) ? res.body : []);
+    
+    records.forEach((m, idx) => {
+      const str = JSON.stringify(m);
+      if (str.includes('AC478B4294785B078D71874B91DFEE05') || str.includes('1788673682@broadcast')) {
+        console.log(`\n[P${page} #${idx+1}] ID=${m.id}, remoteJid=${m.key?.remoteJid}`);
+        console.log(`Key:`, JSON.stringify(m.key));
+        console.log(`Full Object:`, JSON.stringify(m, null, 2));
+      }
+    });
   }
 }
 
-testContacts().catch(console.error);
+inspectBroadcastTarget().catch(console.error);

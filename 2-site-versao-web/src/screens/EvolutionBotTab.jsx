@@ -71,7 +71,7 @@ export function EvolutionBotTab({ users, reload }) {
   const [selectedTestBatch, setSelectedTestBatch] = useState('T1');
   const [verificationMethod, setVerificationMethod] = useState('phrase_track'); // 'phrase_track' | 'auto_broadcast' | 'paste'
   const [broadcastPhraseText, setBroadcastPhraseText] = useState('');
-  const [phraseTimeHours, setPhraseTimeHours] = useState(1);
+  const [phraseTimeHours, setPhraseTimeHours] = useState(0.5); // Janela estrita de 30 minutos
   const [detectedBroadcastLists, setDetectedBroadcastLists] = useState([]);
   const [selectedBroadcastJid, setSelectedBroadcastJid] = useState('');
   const [foundBroadcastMessage, setFoundBroadcastMessage] = useState(null);
@@ -549,16 +549,18 @@ export function EvolutionBotTab({ users, reload }) {
     setTestLogs([]);
     setTestProgress({ current: 0, total: targetUsers.length, success: 0, failed: 0 });
 
+    const timeDesc = phraseTimeHours <= 0.5 ? '30 minutos' : `${phraseTimeHours}h`;
+
     if (cleanPhrase) {
-      addLog(`📝 Iniciando rastreamento da frase "${cleanPhrase}" nas últimas ${phraseTimeHours}h...`, 'info');
+      addLog(`📝 Iniciando rastreamento da frase "${cleanPhrase}" nos últimos ${timeDesc}...`, 'info');
     } else {
-      addLog(`📝 Rastreando todas as mensagens de transmissão disparadas no WhatsApp nas últimas ${phraseTimeHours}h...`, 'info');
+      addLog(`📝 Rastreando mensagens e transmissões no WhatsApp nos últimos ${timeDesc}...`, 'info');
     }
 
     try {
       addLog(`⚡ Escaneando mensagens e listas de transmissão no WhatsApp...`, 'info');
       const preScannedSigs = await scanAllChatsForPhrase(cleanPhrase, phraseTimeHours);
-      addLog(`📥 ${preScannedSigs.size} identificadores do WhatsApp confirmaram o recebimento da transmissão.`, 'info');
+      addLog(`📥 ${preScannedSigs.size} identificadores do WhatsApp confirmaram atividade nos últimos ${timeDesc}.`, 'info');
 
       addLog(`📊 Auditando ${targetUsers.length} contatos selecionados...`, 'info');
 
@@ -581,10 +583,10 @@ export function EvolutionBotTab({ users, reload }) {
 
         if (is2Checks) {
           savedCount++;
-          addLog(`✓✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): TRANSMISSÃO ENTREGUE (2 Traços) ➔ SALVO!`, 'success');
+          addLog(`✓✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): TRANSMISSÃO / ATIVIDADE ENTREGUE (2 Traços) ➔ SALVO!`, 'success');
         } else {
           notSavedCount++;
-          addLog(`✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): TRANSMISSÃO NÃO RECEBIDA ➔ PENDENTE (1 Traço)`, 'error');
+          addLog(`✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): SEM MENSAGEM / ENTREGA ➔ PENDENTE (1 Traço)`, 'error');
         }
 
         evaluated.push({
@@ -610,7 +612,7 @@ export function EvolutionBotTab({ users, reload }) {
       }
 
       setTestResults(evaluated);
-      addLog(`🏁 Rastreamento por frase finalizado! Frase encontrada nas últimas ${phraseTimeHours}h (Salvos): ${savedCount} | Não encontrada (Pendentes): ${notSavedCount}`, 'info');
+      addLog(`🏁 Rastreamento finalizado! Atividade nos últimos ${timeDesc} (Salvos): ${savedCount} | Sem atividade (Pendentes): ${notSavedCount}`, 'info');
 
       // Auto-atualização dos salvos encontrados na auditoria (2 traços confirmados)
       const confirmedSavedPhones = evaluated
