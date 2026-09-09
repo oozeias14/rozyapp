@@ -784,17 +784,16 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
       }
     });
 
-    // 7. Processa recibos de status associados às mensagens de transmissão encontradas
+    // 7. Processa recibos de status (statusMessage) associados às transmissões ou conversas
     statusRecords.forEach((sr) => {
       const isDeliveredStatus = sr.status === 'DELIVERY_ACK' || sr.status === 'READ' || sr.status === 'PLAYED';
       if (!isDeliveredStatus) return;
 
       const matchesKey = sr.keyId && matchingMessageIds.has(sr.keyId);
       const matchesMsg = sr.messageId && matchingMessageIds.has(sr.messageId);
-      const isBroadcastSr = (sr.remoteJid || '').includes('@broadcast');
 
-      // Se houver frase, exige correspondência com a mensagem da frase; se não houver frase, aceita qualquer entrega de transmissão recente
-      if (matchesKey || matchesMsg || (!targetPhrase && isBroadcastSr && matchingMessageIds.size > 0)) {
+      // Se houver frase específica, checa se bate com o ID da mensagem; se sem frase, aceita todas as entregas confirmadas
+      if (matchesKey || matchesMsg || !targetPhrase) {
         const jids = [sr.participant, sr.remoteJid, sr.fromMeJid, sr.participantAlt, sr.remoteJidAlt].filter(Boolean);
         jids.forEach((j) => {
           if (j.includes('@g.us') || j.includes('@broadcast')) return;
@@ -830,7 +829,7 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
       const referencesBroadcastWithPhrase = reactionParentId && matchingMessageIds.has(reactionParentId);
       const isRecent = isMessageWithinHours(c.lastMessage, maxHours) || isMessageWithinHours(c, maxHours);
 
-      if ((hasPhrase || matchesId || referencesBroadcastWithPhrase) && isRecent) {
+      if ((hasPhrase || matchesId || referencesBroadcastWithPhrase) && (isRecent || !targetPhrase)) {
         const rJid = c.remoteJid || c.id || '';
         const rJidAlt = c.lastMessage?.key?.remoteJidAlt || c.lastMessage?.key?.participantAlt || '';
         const rJidKey = c.lastMessage?.key?.remoteJid || '';
