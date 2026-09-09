@@ -13,6 +13,7 @@ import SupportScreen from './screens/SupportScreen';
 import QrCodeScreen from './screens/QrCodeScreen';
 import BottomNav from './components/BottomNav';
 import FirstAccessModal from './components/FirstAccessModal';
+import { recordUserAccess, addUsageTime } from './lib/accessTracker';
 
 // Data e hora limite fixa da campanha (ex: até dia 24/08/2026 às 00:04:00 no fuso de Brasília, totalizando 48h)
 const POPUP_EXPIRATION_DATE = new Date('2026-08-24T00:04:00-03:00');
@@ -131,6 +132,10 @@ export default function App() {
         }
         return prev - 1;
       });
+
+      if (profile && profile.id) {
+        addUsageTime(profile.id, 1);
+      }
     }, 1000);
 
     return () => clearInterval(interval);
@@ -295,12 +300,14 @@ export default function App() {
     setLoading(false);
     if (data) {
       checkForNewMessages(data.id);
+      recordUserAccess(data);
     }
   }
 
   async function handleLogout() {
     if (profile) {
       sessionStorage.removeItem(`popup_shown_session_${profile.id}`);
+      sessionStorage.removeItem(`user_access_recorded_${profile.id}`);
     }
     localStorage.removeItem('session_start_time');
     localStorage.removeItem('active_tab');

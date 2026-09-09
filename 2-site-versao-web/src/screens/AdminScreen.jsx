@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import PersonModal from '../components/PersonModal';
 import { EvolutionBotTab } from './EvolutionBotTab';
+import { getAccessRankingList, formatUsageTime, formatLastAccess, recordUserAccess } from '../lib/accessTracker';
 import { supabase, MAX_PHOTO_BYTES, compressImageWeb, CITIES } from '../lib/supabase';
 import {
   fetchAllProfiles, updateProfile, deleteProfile, promoteToCoordinator, demoteToUser,
@@ -76,9 +77,14 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    if (profile) recordUserAccess(profile);
+  }, [profile]);
+
   const tabs = [
     ['users', '👥 Cadastros'],
     ['ranking', '🏆 Ranking'],
+    ['access_ranking', '⚡ Ranking de Acesso'],
     ...(isAdmin ? [['messages', '📣 Mensagens']] : []),
     ...(isAdmin ? [['evolution', '🤖 Robô WhatsApp']] : []),
     ...(isAdmin ? [['owner', '👨‍⚕️ Dr. Candido']] : []),
@@ -126,6 +132,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         {loading && <div style={{ fontSize: 12, color: 'var(--teal)', textAlign: 'center', margin: '8px 0' }}>⏳ Carregando dados...</div>}
         {tab === 'users' && <UsersTab users={users} onSelect={(u) => setSelected(u)} reload={load} />}
         {tab === 'ranking' && <RankingTab users={users} meetings={meetings} onSelect={(u) => setModalPerson(u)} />}
+        {tab === 'access_ranking' && <AccessRankingTab users={users} onSelect={(u) => setModalPerson(u)} />}
         {tab === 'messages' && <MessagesTab messages={messages} profile={profile} reload={load} />}
         {tab === 'evolution' && isAdmin && <EvolutionBotTab users={users} reload={load} />}
         {tab === 'owner' && isAdmin && owner && <OwnerTab owner={owner} reload={load} />}
@@ -155,9 +162,7 @@ function Avatar({ person, size = 36 }) {
 /* ===== CADASTROS ===== */
 function UsersTab({ users, onSelect, reload }) {
   const [search, setSearch] = useState('');
-  const [exporting, setExporting] = useState(false);
   const [page, setPage] = useState(1);
-  const [show100Modal, setShow100Modal] = useState(false);
 
   const filtered = users.filter((u) =>
     u.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -169,267 +174,9 @@ function UsersTab({ users, onSelect, reload }) {
   const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE) || 1;
   const paginatedUsers = filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
 
-  const validExportUsers = users.filter(u => u.role !== 'admin' && u.role !== 'admin2');
-  const unexportedCount = validExportUsers.filter(u => !u.vcf_exported).length;
-  const exportedCount = validExportUsers.filter(u => u.vcf_exported).length;
-
-  const BATCH_SIZE_100 = 100;
-  const totalBatches100 = Math.ceil(validExportUsers.length / BATCH_SIZE_100) || 1;
-  const batches100 = [];
-  for (let i = 0; i < totalBatches100; i++) {
-    const chunk = validExportUsers.slice(i * BATCH_SIZE_100, (i + 1) * BATCH_SIZE_100);
-    const startNum = i * BATCH_SIZE_100 + 1;
-    const endNum = i * BATCH_SIZE_100 + chunk.length;
-    batches100.push({
-      batchNum: i + 1,
-      id: `T${i + 1}`,
-      name: `Lote ${i + 1} (#${startNum} ao #${endNum})`,
-      count: chunk.length,
-      users: chunk,
-      startNum,
-      endNum
-    });
-  }
-
-  function generateVcfFromUsers(userList, batchPrefix = null, customFileName = null) {
-    const cards = userList.map((u, index) => {
-      const cleanName = (u.name || 'Sem Nome').trim();
-      let fullName = cleanName;
-      if (typeof batchPrefix === 'string' && batchPrefix.trim()) {
-        fullName = `${batchPrefix.trim()} ${cleanName}`;
-      } else {
-        const listIndex = Math.floor(index / 100) + 1;
-        fullName = `T${listIndex} ${cleanName}`;
-      }
-      const tel = (u.phone || u.whatsapp || '').replace(/\D/g, '');
-      let intlTel = tel;
-      if (!intlTel.startsWith('55') && (intlTel.length === 10 || intlTel.length === 11)) {
-        intlTel = '55' + intlTel;
-      }
-      if (intlTel && !intlTel.startsWith('+')) {
-        intlTel = '+' + intlTel;
-      }
-      
-      return [
-        'BEGIN:VCARD',
-        'VERSION:3.0',
-        `N:;${fullName};;;`,
-        `FN:${fullName}`,
-        ...(intlTel ? [`TEL;TYPE=CELL;TYPE=PREF:${intlTel}`, `TEL;TYPE=CELL,VOICE:${intlTel}`] : []),
-        'END:VCARD'
-      ].join('\r\n');
-    });
-
-    const vcfContent = cards.join('\r\n');
-    const blob = new Blob([vcfContent], { type: 'text/vcard;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', customFileName || `contatos_transmissao_T_${Date.now()}.vcf`);
-    document.body.appendChild(link);
-    link.click();
-    setTimeout(() => {
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }, 200);
-  }
-
-  async function updateVcfStatusInChunks(ids, exportedValue) {
-    const CHUNK_SIZE = 100;
-    for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
-      const chunk = ids.slice(i, i + CHUNK_SIZE);
-      const { error } = await supabase.from('profiles').update({ vcf_exported: exportedValue }).in('id', chunk);
-      if (error) console.warn('Chunk update error:', error);
-    }
-  }
-
-  async function handleExportSingle100Batch(batch) {
-    try {
-      generateVcfFromUsers(batch.users, batch.id, `contatos_lote_${batch.id}_(${batch.startNum}_a_${batch.endNum}).vcf`);
-      const batchIds = batch.users.map(u => u.id);
-      await updateVcfStatusInChunks(batchIds, true);
-      if (reload) await reload();
-    } catch (err) {
-      alert('Erro ao baixar lote: ' + err.message);
-    }
-  }
-
-  async function handleExportAllVCF() {
-    if (validExportUsers.length === 0) {
-      alert('Nenhum contato encontrado para exportar.');
-      return;
-    }
-
-    setExporting(true);
-    try {
-      generateVcfFromUsers(validExportUsers, null);
-
-      const allIds = validExportUsers.map(u => u.id);
-      await updateVcfStatusInChunks(allIds, true);
-      if (reload) await reload();
-    } catch (err) {
-      alert('Erro ao exportar contatos: ' + err.message);
-    } finally {
-      setExporting(false);
-    }
-  }
-
-  async function handleExportNewVCF() {
-    const toExport = validExportUsers.filter(u => !u.vcf_exported);
-    if (toExport.length === 0) {
-      if (window.confirm('Todos os contatos já foram marcados como exportados. Deseja baixar TODOS os contatos novamente?')) {
-        return handleExportAllVCF();
-      }
-      return;
-    }
-
-    setExporting(true);
-    try {
-      generateVcfFromUsers(toExport, null);
-
-      const exportedIds = toExport.map(u => u.id);
-      await updateVcfStatusInChunks(exportedIds, true);
-      if (reload) await reload();
-    } catch (err) {
-      alert('Erro ao exportar: ' + err.message);
-    } finally {
-      setExporting(false);
-    }
-  }
-
-  async function handleResetExportStatus() {
-    if (!window.confirm('Deseja marcar todos os contatos como PENDENTES de exportação novamente?')) return;
-    setExporting(true);
-    try {
-      const allIds = validExportUsers.map(u => u.id);
-      await updateVcfStatusInChunks(allIds, false);
-      alert('Contador resetado com sucesso! Todos os contatos agora constam como pendentes.');
-      if (reload) await reload();
-    } catch (err) {
-      alert('Erro ao resetar: ' + err.message);
-    } finally {
-      setExporting(false);
-    }
-  }
-
   return (
     <div>
       <div className="card-title">Todos os cadastros ({users.length})</div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '14px', background: 'var(--panel2)', padding: '14px 16px', borderRadius: '16px', border: '1.5px solid var(--violet)', boxShadow: '0 4px 20px rgba(123, 108, 244, 0.15)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-          <div>
-            <div style={{ fontSize: '11px', color: 'var(--teal)', textTransform: 'uppercase', fontWeight: 800, letterSpacing: 0.5 }}>
-              📥 Exportação de Agenda (.VCF)
-            </div>
-            <div style={{ fontSize: '12.5px', color: 'var(--ink2)', marginTop: '2px' }}>
-              Pendentes: <strong style={{ color: 'var(--teal)' }}>{unexportedCount}</strong> · Exportados: <strong style={{ color: '#fff' }}>{exportedCount}</strong>
-            </div>
-          </div>
-          
-          <button 
-            className="btn btn-ghost" 
-            onClick={handleResetExportStatus}
-            disabled={exporting}
-            style={{ margin: 0, padding: '4px 10px', fontSize: '11px', width: 'auto', color: 'var(--ink3)' }}
-            title="Resetar contador de exportados"
-          >
-            🔄 Resetar Contador
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <button 
-            className="btn btn-teal" 
-            onClick={() => setShow100Modal(true)}
-            style={{ flex: '1 1 200px', margin: 0, padding: '10px 14px', fontSize: '12.5px', fontWeight: 800 }}
-            title="Abre a lista com os lotes de 100 contatos cada para baixar sem erro no celular"
-          >
-            📱 Baixar em Lotes de 100 (Celular)
-          </button>
-
-          <button 
-            className="btn btn-ghost" 
-            onClick={handleExportAllVCF}
-            disabled={exporting}
-            style={{ flex: '1 1 140px', margin: 0, padding: '10px 12px', fontSize: '12px' }}
-            title="Baixar arquivo único completo com todos os contatos (Google Contatos / PC)"
-          >
-            {exporting ? '⏳ Baixando...' : '📥 Baixar Tudo (.vcf)'}
-          </button>
-
-          <button 
-            className="btn btn-ghost" 
-            onClick={handleExportNewVCF}
-            disabled={exporting}
-            style={{ flex: '1 1 140px', margin: 0, padding: '10px 12px', fontSize: '12px' }}
-            title="Baixar apenas contatos novos que ainda não foram exportados"
-          >
-            📥 Apenas Novos ({unexportedCount})
-          </button>
-        </div>
-      </div>
-
-      {show100Modal && (
-        <div className="modal-bg" style={{ zIndex: 12000 }}>
-          <div className="modal" style={{ maxWidth: 460, padding: 22 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h3 style={{ fontSize: 16, color: '#fff', margin: 0, fontWeight: 800 }}>
-                📱 Lotes de 100 Contatos (Celular)
-              </h3>
-              <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 12, margin: 0 }} onClick={() => setShow100Modal(false)}>
-                ✕ Fechar
-              </button>
-            </div>
-
-            <p style={{ fontSize: 12, color: 'var(--ink2)', marginBottom: 16, lineHeight: 1.4 }}>
-              Baixe os lotes abaixo individualmente. Como cada arquivo tem no máximo <strong>100 contatos</strong>, seu celular vai salvar na hora sem apresentar limite!
-            </p>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: '55vh', overflowY: 'auto', paddingRight: 4 }}>
-              {batches100.map((b) => (
-                <div 
-                  key={b.id} 
-                  style={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'space-between', 
-                    background: 'var(--panel2)', 
-                    padding: '10px 14px', 
-                    borderRadius: 12, 
-                    border: '1px solid var(--line)',
-                    gap: 10
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: 800, fontSize: 13, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ background: 'var(--teal-dim)', color: 'var(--teal)', padding: '1px 6px', borderRadius: 4, fontSize: 11 }}>
-                        {b.id}
-                      </span>
-                      <span>{b.name}</span>
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--ink3)', marginTop: 2 }}>
-                      👥 {b.count} contatos
-                    </div>
-                  </div>
-
-                  <button 
-                    className="btn btn-teal"
-                    style={{ margin: 0, padding: '6px 12px', fontSize: 11.5, width: 'auto', whiteSpace: 'nowrap' }}
-                    onClick={() => handleExportSingle100Batch(b)}
-                  >
-                    📥 Baixar .vcf
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <button className="btn btn-ghost" style={{ width: '100%', marginTop: 14, margin: 0 }} onClick={() => setShow100Modal(false)}>
-              Concluir
-            </button>
-          </div>
-        </div>
-      )}
 
       <input 
         placeholder="Buscar nome, e-mail ou ID..." 
@@ -514,8 +261,12 @@ function UsersTab({ users, onSelect, reload }) {
   );
 }
 
-/* ===== RANKING (TOP 100) ===== */
+/* ===== RANKING MMN ===== */
 function RankingTab({ users, meetings, onSelect }) {
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
+
   // Helper para calcular tamanho da rede pela árvore de indicações (até a 20ª geração)
   function getReferralNetworkCount(userId) {
     let count = 0;
@@ -530,8 +281,8 @@ function RankingTab({ users, meetings, onSelect }) {
     return count;
   }
 
-  // Filtrar para excluir os administradores do ranking
-  const nonAdminUsers = users.filter((u) => u.role !== 'admin');
+  // Filtrar para excluir os administradores do ranking tradicional MMN
+  const nonAdminUsers = users.filter((u) => u.role !== 'admin' && u.role !== 'admin2');
 
   // Calcular indicações, volume da rede e reuniões de cada usuário
   const rankingData = nonAdminUsers.map((u) => {
@@ -557,7 +308,24 @@ function RankingTab({ users, meetings, onSelect }) {
     return b.eventsCount - a.eventsCount;
   });
 
-  const top100 = rankingData.slice(0, 100);
+  const rankedItemsWithPosition = rankingData.map((item, index) => ({
+    ...item,
+    globalRank: index + 1
+  }));
+
+  const filteredData = rankedItemsWithPosition.filter((item) => {
+    const p = item.profile;
+    const q = search.toLowerCase();
+    return (
+      p.name.toLowerCase().includes(q) ||
+      String(p.id).includes(q) ||
+      (p.email || '').toLowerCase().includes(q) ||
+      (p.phone || '').includes(q)
+    );
+  });
+
+  const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE) || 1;
+  const paginatedData = filteredData.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
 
   function getRankBadgeStyle(rank) {
     if (rank === 1) {
@@ -590,11 +358,22 @@ function RankingTab({ users, meetings, onSelect }) {
 
   return (
     <div>
-      <div className="card-title">Ranking Geral MMN (Top 100)</div>
-      {top100.length === 0 && <div className="empty">Nenhum cadastro encontrado.</div>}
+      <div className="card-title">Ranking Geral MMN ({rankingData.length})</div>
+
+      <input 
+        placeholder="Buscar no ranking por nome, e-mail ou ID..." 
+        value={search} 
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setPage(1);
+        }} 
+      />
+
+      {paginatedData.length === 0 && <div className="empty">Nenhum cadastro encontrado.</div>}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {top100.map((item, idx) => {
-          const rank = idx + 1;
+        {paginatedData.map((item) => {
+          const rank = item.globalRank;
           const p = item.profile;
           const badgeStyle = getRankBadgeStyle(rank);
           
@@ -637,6 +416,7 @@ function RankingTab({ users, meetings, onSelect }) {
                   alignItems: 'center', 
                   justifyContent: 'center', 
                   fontSize: 12,
+                  flexShrink: 0,
                   ...badgeStyle
                 }}
               >
@@ -660,6 +440,298 @@ function RankingTab({ users, meetings, onSelect }) {
           );
         })}
       </div>
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
+          <button 
+            className="btn" 
+            style={{ 
+              width: 'auto',
+              flexShrink: 0,
+              margin: 0,
+              padding: '8px 16px', 
+              fontSize: 13, 
+              fontWeight: 600,
+              borderRadius: 10, 
+              background: 'rgba(255, 255, 255, 0.04)', 
+              color: page === 1 ? 'var(--ink3)' : '#fff',
+              border: '1px solid ' + (page === 1 ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
+              cursor: page === 1 ? 'not-allowed' : 'pointer',
+              opacity: page === 1 ? 0.4 : 1,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6
+            }}
+            disabled={page === 1}
+            onClick={() => setPage(p => Math.max(p - 1, 1))}
+          >
+            <span>←</span> Anterior
+          </button>
+          <span style={{ fontSize: 13, color: 'var(--ink2)', fontWeight: 600, whiteSpace: 'nowrap', minWidth: '100px', textAlign: 'center' }}>
+            Página {page} de {totalPages}
+          </span>
+          <button 
+            className="btn" 
+            style={{ 
+              width: 'auto',
+              flexShrink: 0,
+              margin: 0,
+              padding: '8px 16px', 
+              fontSize: 13, 
+              fontWeight: 600,
+              borderRadius: 10, 
+              background: 'rgba(255, 255, 255, 0.04)', 
+              color: page === totalPages ? 'var(--ink3)' : '#fff',
+              border: '1px solid ' + (page === totalPages ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
+              cursor: page === totalPages ? 'not-allowed' : 'pointer',
+              opacity: page === totalPages ? 0.4 : 1,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6
+            }}
+            disabled={page === totalPages}
+            onClick={() => setPage(p => Math.min(p + 1, totalPages))}
+          >
+            Próxima <span>→</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ===== RANKING DE ACESSO (CLONADO E CUSTOMIZADO) ===== */
+function AccessRankingTab({ users, onSelect }) {
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
+
+  // Obtém lista ordenada por pontos de acesso e tempo de uso (INCLUI ADMINISTRADORES!)
+  const accessList = getAccessRankingList(users);
+
+  const totalUsers = users.length;
+  const totalPoints = accessList.reduce((acc, cur) => acc + (cur.accessPoints || 0), 0);
+  const totalUsageSeconds = accessList.reduce((acc, cur) => acc + (cur.totalUsageSeconds || 0), 0);
+
+  // Atribui a posição global no ranking (1º, 2º, etc.)
+  const rankedItemsWithPosition = accessList.map((item, index) => ({
+    ...item,
+    globalRank: index + 1
+  }));
+
+  const filteredData = rankedItemsWithPosition.filter((item) => {
+    const p = item.profile;
+    const q = search.toLowerCase();
+    return (
+      p.name.toLowerCase().includes(q) ||
+      String(p.id).includes(q) ||
+      (p.email || '').toLowerCase().includes(q) ||
+      (p.phone || '').includes(q)
+    );
+  });
+
+  const totalPages = Math.ceil(filteredData.length / ITEMS_PER_PAGE) || 1;
+  const paginatedData = filteredData.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
+
+  function getRankBadgeStyle(rank) {
+    if (rank === 1) {
+      return {
+        background: 'linear-gradient(135deg, #FFE259, #FFA751)',
+        color: '#000',
+        fontWeight: 'bold',
+        textShadow: '0 1px 1px rgba(255,255,255,0.4)',
+      };
+    }
+    if (rank === 2) {
+      return {
+        background: 'linear-gradient(135deg, #E2E8F0, #94A3B8)',
+        color: '#000',
+        fontWeight: 'bold',
+      };
+    }
+    if (rank === 3) {
+      return {
+        background: 'linear-gradient(135deg, #F39C12, #D35400)',
+        color: '#fff',
+        fontWeight: 'bold',
+      };
+    }
+    return {
+      background: 'rgba(255, 255, 255, 0.08)',
+      color: 'var(--ink2)',
+    };
+  }
+
+  return (
+    <div>
+      <div className="card-title">Ranking de Acesso ao Sistema ({accessList.length})</div>
+
+      {/* Cards de Métricas Consolidadas */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 10, marginBottom: 14 }}>
+        <div style={{ background: 'var(--panel)', padding: '12px 14px', borderRadius: 12, border: '1px solid var(--line)' }}>
+          <div style={{ fontSize: 11, color: 'var(--ink2)', fontWeight: 600 }}>👥 Usuários</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: '#fff', marginTop: 4 }}>{totalUsers}</div>
+          <div style={{ fontSize: 10, color: 'var(--ink3)', marginTop: 2 }}>no sistema</div>
+        </div>
+
+        <div style={{ background: 'var(--panel)', padding: '12px 14px', borderRadius: 12, border: '1px solid rgba(0, 212, 180, 0.3)' }}>
+          <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 600 }}>⚡ Total Acessos</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--teal)', marginTop: 4 }}>{totalPoints} pts</div>
+          <div style={{ fontSize: 10, color: 'var(--ink3)', marginTop: 2 }}>1 acesso = 1 ponto</div>
+        </div>
+
+        <div style={{ background: 'var(--panel)', padding: '12px 14px', borderRadius: 12, border: '1px solid rgba(123, 108, 244, 0.3)' }}>
+          <div style={{ fontSize: 11, color: 'var(--violet)', fontWeight: 600 }}>⏱️ Tempo Total</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--violet)', marginTop: 4 }}>{formatUsageTime(totalUsageSeconds)}</div>
+          <div style={{ fontSize: 10, color: 'var(--ink3)', marginTop: 2 }}>tempo de uso</div>
+        </div>
+      </div>
+
+      <div style={{ background: 'rgba(0, 212, 180, 0.06)', border: '1px solid rgba(0, 212, 180, 0.2)', padding: '8px 12px', borderRadius: 10, marginBottom: 12, fontSize: 11.5, color: 'var(--ink2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 15 }}>⚡</span>
+        <span>
+          Cada vez que um usuário ou <strong>administrador</strong> acessa o sistema, ele soma <strong>1 ponto</strong>. O tempo em tela é medido continuamente antes de sair.
+        </span>
+      </div>
+
+      <input 
+        placeholder="Buscar por nome, e-mail ou ID..." 
+        value={search} 
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setPage(1);
+        }} 
+      />
+
+      {paginatedData.length === 0 && <div className="empty">Nenhum registro encontrado.</div>}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {paginatedData.map((item) => {
+          const rank = item.globalRank;
+          const p = item.profile;
+          const badgeStyle = getRankBadgeStyle(rank);
+          
+          const borderStyle =
+            rank === 1 ? '1px solid #FFA751' :
+            rank === 2 ? '1px solid #94A3B8' :
+            rank === 3 ? '1px solid #D35400' :
+            '1px solid rgba(255, 255, 255, 0.04)';
+
+          const shadowStyle =
+            rank === 1 ? '0 0 10px rgba(255, 167, 81, 0.12)' :
+            rank === 2 ? '0 0 10px rgba(148, 163, 184, 0.08)' :
+            rank === 3 ? '0 0 10px rgba(211, 84, 0, 0.08)' :
+            'none';
+          
+          return (
+            <div 
+              key={p.id} 
+              className="data-row" 
+              onClick={() => onSelect(p)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                cursor: 'pointer',
+                padding: '10px 14px',
+                borderRadius: 12,
+                backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                border: borderStyle,
+                boxShadow: shadowStyle,
+                transition: 'background 0.2s',
+              }}
+            >
+              <div 
+                style={{ 
+                  width: 28, 
+                  height: 28, 
+                  borderRadius: '50%', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  fontSize: 12,
+                  flexShrink: 0,
+                  ...badgeStyle
+                }}
+              >
+                {rank}
+              </div>
+              <Avatar person={p} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                  <span className={`role-badge ${roleClass(p.role)}`} style={{ fontSize: 9, padding: '1px 5px' }}>{roleLabel(p.role)}</span>
+                </div>
+                <div className="muted" style={{ fontSize: 11, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 8px', marginTop: 4 }}>
+                  <span>⚡ Pontos: <strong style={{ color: 'var(--teal)', fontSize: 13 }}>{item.accessPoints} pts</strong></span>
+                  <span>·</span>
+                  <span>⏱️ Tempo de Uso: <strong style={{ color: 'var(--violet)', fontSize: 12 }}>{formatUsageTime(item.totalUsageSeconds)}</strong></span>
+                  <span>·</span>
+                  <span>🕒 Último: <span style={{ color: 'var(--ink2)', fontSize: 11 }}>{formatLastAccess(item.lastAccessAt)}</span></span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
+          <button 
+            className="btn" 
+            style={{ 
+              width: 'auto',
+              flexShrink: 0,
+              margin: 0,
+              padding: '8px 16px', 
+              fontSize: 13, 
+              fontWeight: 600,
+              borderRadius: 10, 
+              background: 'rgba(255, 255, 255, 0.04)', 
+              color: page === 1 ? 'var(--ink3)' : '#fff',
+              border: '1px solid ' + (page === 1 ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
+              cursor: page === 1 ? 'not-allowed' : 'pointer',
+              opacity: page === 1 ? 0.4 : 1,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6
+            }}
+            disabled={page === 1}
+            onClick={() => setPage(p => Math.max(p - 1, 1))}
+          >
+            <span>←</span> Anterior
+          </button>
+          <span style={{ fontSize: 13, color: 'var(--ink2)', fontWeight: 600, whiteSpace: 'nowrap', minWidth: '100px', textAlign: 'center' }}>
+            Página {page} de {totalPages}
+          </span>
+          <button 
+            className="btn" 
+            style={{ 
+              width: 'auto',
+              flexShrink: 0,
+              margin: 0,
+              padding: '8px 16px', 
+              fontSize: 13, 
+              fontWeight: 600,
+              borderRadius: 10, 
+              background: 'rgba(255, 255, 255, 0.04)', 
+              color: page === totalPages ? 'var(--ink3)' : '#fff',
+              border: '1px solid ' + (page === totalPages ? 'rgba(255, 255, 255, 0.05)' : 'var(--line)'),
+              cursor: page === totalPages ? 'not-allowed' : 'pointer',
+              opacity: page === totalPages ? 0.4 : 1,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6
+            }}
+            disabled={page === totalPages}
+            onClick={() => setPage(p => Math.min(p + 1, totalPages))}
+          >
+            Próxima <span>→</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
