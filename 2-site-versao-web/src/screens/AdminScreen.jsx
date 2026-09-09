@@ -2,6 +2,13 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import PersonModal from '../components/PersonModal';
 import { EvolutionBotTab } from './EvolutionBotTab';
+import { 
+  getEvolutionConfig, 
+  loadEvolutionConfig, 
+  saveEvolutionConfig, 
+  fetchInstanceStatus, 
+  resetAndRecreateInstance 
+} from '../lib/evolutionApi';
 import { getAccessRankingList, formatUsageTime, formatLastAccess, recordUserAccess, addUsageTime } from '../lib/accessTracker';
 import { supabase, MAX_PHOTO_BYTES, compressImageWeb, CITIES } from '../lib/supabase';
 import {
@@ -1680,6 +1687,200 @@ function SettingsTab({ settings, profile, reload, users }) {
         <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Mínimo 6 caracteres" />
         <button className="btn btn-violet" onClick={savePassword}>Alterar senha</button>
       </div>
+
+      <EvolutionApiSettingsCard />
     </div>
+  );
+}
+
+/* ===== AJUSTES DA API DO ROBÔ WHATSAPP (EVOLUTION API / RAILWAY) ===== */
+function EvolutionApiSettingsCard() {
+  const [cfg, setCfg] = useState(getEvolutionConfig());
+  const [status, setStatus] = useState({ connected: false, state: 'checking' });
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [resettingInstance, setResettingInstance] = useState(false);
+  const [resettingAnalysis, setResettingAnalysis] = useState(false);
+
+  useEffect(() => {
+    async function init() {
+      const synced = await loadEvolutionConfig();
+      setCfg(synced);
+      await check(synced);
+    }
+    init();
+  }, []);
+
+  async function check(currentCfg = cfg) {
+    if (!currentCfg.serverUrl || !currentCfg.apiKey) {
+      setStatus({ connected: false, state: 'unconfigured' });
+      return;
+    }
+    setTesting(true);
+    try {
+      const res = await fetchInstanceStatus();
+      setStatus(res || { connected: false });
+    } catch (err) {
+      setStatus({ connected: false, error: err.message });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function handleSave(e) {
+    if (e) e.preventDefault();
+    setSaving(true);
+    try {
+      await saveEvolutionConfig(cfg);
+      alert('Configurações da Evolution API salvas com sucesso!');
+      await check(cfg);
+    } catch (err) {
+      alert('Erro ao salvar: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleResetSession() {
+    if (!window.confirm('Isso vai reiniciar a sessão no Railway para limpar travamentos. Deseja continuar?')) return;
+    setResettingInstance(true);
+    try {
+      await resetAndRecreateInstance();
+      alert('Sessão reiniciada com sucesso no Railway!');
+      await check(cfg);
+    } catch (err) {
+      alert('Erro ao reiniciar sessão: ' + err.message);
+    } finally {
+      setResettingInstance(false);
+    }
+  }
+
+  function handleResetAnalysis() {
+    if (!window.confirm('Deseja limpar todo o histórico de contatos analisados? Todos os membros voltarão para a lista de Pendentes no robô.')) return;
+    setResettingAnalysis(true);
+    try {
+      localStorage.removeItem('wa_saved_phones');
+      alert('Histórico de análises limpo com sucesso! Os membros agora aparecem como Pendentes.');
+    } catch (err) {
+      alert('Erro: ' + err.message);
+    } finally {
+      setResettingAnalysis(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="card-title">🤖 Robô de Transmissão (Ajustes da API & Servidor)</div>
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, paddingBottom: 10, borderBottom: '1px solid var(--line)' }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>Status do Servidor Evolution API</div>
+            <div style={{ fontSize: 11.5, color: 'var(--ink3)' }}>Comunicação com a instância conectada no WhatsApp</div>
+          </div>
+          <span style={{
+            fontSize: 12,
+            padding: '4px 10px',
+            borderRadius: 8,
+            fontWeight: 800,
+            background: status.connected ? 'rgba(37, 211, 102, 0.15)' : 'rgba(240, 107, 76, 0.15)',
+            color: status.connected ? '#25D366' : '#FF8A65',
+            border: '1px solid ' + (status.connected ? '#25D366' : '#F06B4C')
+          }}>
+            {testing ? '⏳ Testando...' : status.connected ? '🟢 Conectado' : '🔴 Desconectado'}
+          </span>
+        </div>
+
+        <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <label className="lbl">URL do Servidor Railway</label>
+            <input 
+              type="text" 
+              value={cfg.serverUrl} 
+              onChange={(e) => setCfg({ ...cfg, serverUrl: e.target.value })} 
+              placeholder="https://sua-evolution-api.up.railway.app" 
+              required
+            />
+          </div>
+
+          <div>
+            <label className="lbl">Chave Global da API (AUTHENTICATION_API_KEY)</label>
+            <input 
+              type="text" 
+              value={cfg.apiKey} 
+              onChange={(e) => setCfg({ ...cfg, apiKey: e.target.value })} 
+              placeholder="Sua chave secreta configurada no Railway" 
+              required
+            />
+          </div>
+
+          <div>
+            <label className="lbl">Nome da Instância</label>
+            <input 
+              type="text" 
+              value={cfg.instanceName} 
+              onChange={(e) => setCfg({ ...cfg, instanceName: e.target.value })} 
+              placeholder="dr_candido" 
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
+            <button type="submit" className="btn btn-teal" disabled={saving} style={{ flex: 1, margin: 0, padding: '10px 16px' }}>
+              {saving ? '⏳ Salvando...' : '💾 Salvar Ajustes da API'}
+            </button>
+            <button type="button" className="btn btn-ghost" disabled={testing} onClick={() => check(cfg)} style={{ margin: 0, padding: '10px 16px' }}>
+              {testing ? '⏳ Testando...' : '🔄 Testar Conexão'}
+            </button>
+          </div>
+        </form>
+
+        {/* Manutenção do Robô */}
+        <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, marginTop: 4 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: '#FF8A65', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>🛠️</span> Opções de Manutenção do Sistema
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--ink3)', marginBottom: 10 }}>
+            Utilize estas opções para destravar sessões no Railway ou reiniciar o histórico de análises de transmissão:
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn"
+              style={{
+                padding: '8px 14px',
+                fontSize: 12,
+                fontWeight: 800,
+                margin: 0,
+                background: 'rgba(240, 107, 76, 0.15)',
+                color: '#FF8A65',
+                border: '1px solid rgba(240, 107, 76, 0.3)',
+                cursor: 'pointer'
+              }}
+              onClick={handleResetSession}
+              disabled={resettingInstance}
+            >
+              {resettingInstance ? '⏳ Reiniciando...' : '⚠️ Reiniciar & Limpar Sessão Travada'}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              style={{
+                padding: '8px 14px',
+                fontSize: 12,
+                fontWeight: 800,
+                margin: 0,
+                background: 'rgba(255, 255, 255, 0.05)',
+                color: 'var(--ink2)',
+                border: '1px solid var(--line)',
+                cursor: 'pointer'
+              }}
+              onClick={handleResetAnalysis}
+              disabled={resettingAnalysis}
+            >
+              {resettingAnalysis ? '⏳ Limpando...' : '🧹 Resetar Histórico de Análises'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }

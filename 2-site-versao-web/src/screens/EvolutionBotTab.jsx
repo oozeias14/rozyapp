@@ -1242,16 +1242,6 @@ export function EvolutionBotTab({ users, reload }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button 
               type="button" 
-              className="btn btn-ghost" 
-              style={{ fontSize: 12, padding: '6px 12px', margin: 0 }}
-              onClick={() => setBotStep(4)}
-              title="Ajustar URL do servidor Railway e Chave de API"
-            >
-              ⚙️ Ajustes API
-            </button>
-
-            <button 
-              type="button" 
               className="btn" 
               style={{ 
                 fontSize: 12, 
@@ -1394,43 +1384,6 @@ export function EvolutionBotTab({ users, reload }) {
           </div>
           <span style={{ fontSize: 12, fontWeight: botStep === 3 ? 800 : 600, color: botStep === 3 ? '#fff' : 'var(--ink2)' }}>
             3. Transmissão & Checagem
-          </span>
-        </div>
-
-        {/* Linha 3-4 */}
-        <div style={{ flex: 1, minWidth: 14, height: 2, background: botStep === 4 ? 'var(--teal)' : 'var(--line)', margin: '0 4px', transition: 'background 0.3s' }} />
-
-        {/* Passo 4: Ajustes API */}
-        <div 
-          onClick={() => setBotStep(4)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 7,
-            cursor: 'pointer',
-            opacity: botStep === 4 ? 1 : 0.75,
-            transition: 'all 0.2s'
-          }}
-        >
-          <div style={{
-            width: 28,
-            height: 28,
-            borderRadius: '50%',
-            background: botStep === 4 
-              ? 'linear-gradient(135deg, #FFA000, #FFD54F)' 
-              : 'var(--panel2)',
-            color: botStep === 4 ? '#051A14' : 'var(--ink3)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 12,
-            fontWeight: 900,
-            boxShadow: botStep === 4 ? '0 0 12px rgba(255, 160, 0, 0.45)' : 'none'
-          }}>
-            4
-          </div>
-          <span style={{ fontSize: 12, fontWeight: botStep === 4 ? 800 : 600, color: botStep === 4 ? '#fff' : 'var(--ink2)' }}>
-            4. Ajustes API
           </span>
         </div>
       </div>
@@ -3226,10 +3179,6 @@ export function EvolutionBotTab({ users, reload }) {
                   <span style={{ fontSize: 12, color: 'var(--ink2)' }}>Instância Conectada:</span>
                   <span style={{ fontSize: 12.5, fontWeight: 800, color: '#25D366' }}>{config.instanceName}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 10 }}>
-                  <span style={{ fontSize: 12, color: 'var(--ink2)' }}>Servidor Railway:</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{config.serverUrl || 'Railway Oficial'}</span>
-                </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                   <span style={{ fontSize: 12, color: 'var(--ink2)' }}>Status da Conexão:</span>
                   <span style={{ fontSize: 11.5, background: 'rgba(37, 211, 102, 0.2)', color: '#25D366', padding: '3px 8px', borderRadius: 6, fontWeight: 800 }}>
@@ -3896,193 +3845,11 @@ export function EvolutionBotTab({ users, reload }) {
 
               <button
                 type="button"
-                className="btn btn-teal"
-                style={{ padding: '9px 18px', fontSize: 12.5, fontWeight: 900, margin: 0 }}
-                onClick={() => setBotStep(4)}
-              >
-                Avançar para Etapa 4 (Ajustes API) →
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================= */}
-      {/* 🟢 ETAPA 4: AJUSTES DA API & SISTEMA                      */}
-      {/* ========================================================= */}
-      {botStep === 4 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{
-            padding: '22px 20px',
-            background: 'linear-gradient(135deg, rgba(255, 160, 0, 0.1), rgba(15, 23, 42, 0.9))',
-            border: '1.5px solid rgba(255, 160, 0, 0.35)',
-            borderRadius: 20,
-            boxShadow: '0 10px 32px rgba(0, 0, 0, 0.35)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 16
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{
-                width: 48,
-                height: 48,
-                borderRadius: 14,
-                background: 'linear-gradient(135deg, rgba(255, 160, 0, 0.25), rgba(255, 213, 79, 0.15))',
-                border: '1px solid #FFA000',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 24,
-                flexShrink: 0
-              }}>
-                ⚙️
-              </div>
-              <div>
-                <h2 style={{ fontSize: 17, fontWeight: 900, color: '#fff', margin: 0, textTransform: 'uppercase' }}>
-                  ETAPA 4: AJUSTES DA API & SERVIDOR
-                </h2>
-                <div style={{ fontSize: 12.5, color: 'var(--ink2)', marginTop: 3 }}>
-                  Configure os dados de conexão com o servidor Evolution API no Railway.
-                </div>
-              </div>
-            </div>
-
-            {/* Formulário de Configuração */}
-            <form onSubmit={handleSaveConfig} style={{
-              background: 'rgba(255, 255, 255, 0.03)',
-              padding: '18px 20px',
-              borderRadius: 16,
-              border: '1px solid var(--line)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 14
-            }}>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase' }}>
-                  URL do Servidor Railway
-                </label>
-                <input 
-                  type="text"
-                  placeholder="https://sua-evolution-api.up.railway.app"
-                  value={config.serverUrl}
-                  onChange={(e) => setConfig({ ...config, serverUrl: e.target.value })}
-                  required
-                  style={{ marginTop: 4, width: '100%', padding: '10px 12px', fontSize: 13 }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase' }}>
-                  Chave Global da API (AUTHENTICATION_API_KEY)
-                </label>
-                <input 
-                  type="text"
-                  placeholder="Sua chave secreta configurada no Railway"
-                  value={config.apiKey}
-                  onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
-                  required
-                  style={{ marginTop: 4, width: '100%', padding: '10px 12px', fontSize: 13 }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase' }}>
-                  Nome da Instância
-                </label>
-                <input 
-                  type="text"
-                  placeholder="dr_candido"
-                  value={config.instanceName}
-                  onChange={(e) => setConfig({ ...config, instanceName: e.target.value })}
-                  style={{ marginTop: 4, width: '100%', padding: '10px 12px', fontSize: 13 }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
-                <button type="submit" className="btn btn-teal" style={{ flex: 1, padding: '12px', fontSize: 13, fontWeight: 800, margin: 0 }}>
-                  💾 Salvar Configurações
-                </button>
-                <button type="button" className="btn btn-ghost" style={{ padding: '12px 18px', fontSize: 13, margin: 0 }} onClick={checkStatus}>
-                  🔄 Testar Conexão
-                </button>
-              </div>
-            </form>
-
-            {/* Manutenção & Reset */}
-            <div style={{
-              background: 'rgba(240, 107, 76, 0.06)',
-              border: '1px solid rgba(240, 107, 76, 0.25)',
-              borderRadius: 14,
-              padding: '16px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 10
-            }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#FF8A65', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>🛠️</span> Opções de Manutenção do Sistema
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.5 }}>
-                Caso ocorra algum travamento de conexão no Railway ou queira limpar os dados de entrega auditados:
-              </div>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
-                <button
-                  type="button"
-                  className="btn"
-                  style={{
-                    padding: '8px 14px',
-                    fontSize: 12,
-                    fontWeight: 800,
-                    margin: 0,
-                    background: 'rgba(240, 107, 76, 0.15)',
-                    color: '#FF8A65',
-                    border: '1px solid rgba(240, 107, 76, 0.3)',
-                    cursor: 'pointer'
-                  }}
-                  onClick={handleResetAndReconnect}
-                  disabled={resettingInstance}
-                >
-                  {resettingInstance ? '⏳ Reiniciando Sessão...' : '⚠️ Reiniciar & Limpar Sessão Travada'}
-                </button>
-
-                <button
-                  type="button"
-                  className="btn"
-                  style={{
-                    padding: '8px 14px',
-                    fontSize: 12,
-                    fontWeight: 800,
-                    margin: 0,
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    color: 'var(--ink2)',
-                    border: '1px solid var(--line)',
-                    cursor: 'pointer'
-                  }}
-                  onClick={handleResetAnalyzedData}
-                  disabled={resettingAnalysis}
-                >
-                  {resettingAnalysis ? '⏳ Limpando...' : '🧹 Resetar Histórico de Contatos Analisados'}
-                </button>
-              </div>
-            </div>
-
-            {/* Rodapé de Navegação da Etapa 4 */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 8, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                style={{ padding: '9px 16px', fontSize: 12.5, margin: 0 }}
-                onClick={() => setBotStep(3)}
-              >
-                ← Voltar para Etapa 3 (Transmissão)
-              </button>
-
-              <button
-                type="button"
                 className="btn btn-ghost"
                 style={{ padding: '9px 16px', fontSize: 12.5, margin: 0 }}
                 onClick={() => setBotStep(1)}
               >
-                Ir para Etapa 1 (Conexão)
+                ← Voltar ao Início (1. Conexão)
               </button>
             </div>
           </div>
