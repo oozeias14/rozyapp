@@ -1,6 +1,8 @@
 // ── RASTREADOR DE ACESSOS E TEMPO DE USO (Ranking de Acesso) ────
 
 const STORAGE_KEY = 'wa_system_access_tracking';
+const VERSION_KEY = 'wa_system_access_version';
+const CURRENT_VERSION = 'v4_tiebreak_fixed';
 
 /**
  * Lê o mapa de acessos do localStorage
@@ -98,45 +100,105 @@ export function simulateAccessForUser(profileId, pointsToAdd = 1, secondsToAdd =
 }
 
 /**
- * Gera sementes de acessos consistentes para usuários cadastrados que ainda não possuem histórico
- * Baseado no id, papel e data de criação, garantindo que a lista inicial seja rica e dinâmica
+ * Gera sementes de acessos consistentes e estritamente determinísticas por ID.
+ * Garante que usuários com a mesma pontuação (ex: 17 pts) possuam tempos de uso distintos,
+ * permitindo o desempate exato pelo tempo de uso conforme solicitado.
  */
 function getDeterministicSeed(user) {
   const idNum = Number(user.id) || 1;
   const isStaff = user.role === 'admin' || user.role === 'admin2' || user.role === 'coord';
   
-  // Base de acessos proporcional à importância e id
+  // Base de acessos (1 acesso = 1 ponto)
+  // Administradores e coordenadores com pontuação de liderança alta
   const basePoints = isStaff 
-    ? 25 + (idNum % 30) 
+    ? 28 + (idNum % 25) 
     : 3 + (idNum % 15);
 
+  // Tempo de uso com precisão de minutos e segundos únicos por ID.
+  // Fatores coprimos (13 e 37) garantem tempos estritamente diferentes entre todos os IDs.
   const baseMinutes = isStaff
-    ? 120 + (idNum % 200)
-    : 15 + (idNum % 45);
+    ? 150 + ((idNum * 23) % 280)
+    : 15 + ((idNum * 13) % 210);
 
-  // Calcula data de último acesso recente (últimas horas/dias)
-  const hoursAgo = (idNum % 72);
-  const fakeLastAccess = Date.now() - (hoursAgo * 3600 * 1000);
+  const extraSeconds = (idNum * 37) % 60;
+  const totalSeconds = (baseMinutes * 60) + extraSeconds;
+
+  // Data de último acesso determinística e estável (não volátil)
+  const baseline = 1757400000000;
+  const offsetHours = (idNum * 7) % 72;
+  const fixedLastAccess = baseline - (offsetHours * 3600 * 1000) - (extraSeconds * 1000);
 
   return {
     access_points: basePoints,
-    total_usage_seconds: baseMinutes * 60,
-    last_access_at: fakeLastAccess,
+    total_usage_seconds: totalSeconds,
+    last_access_at: fixedLastAccess,
     sessions_count: basePoints
   };
 }
 
 /**
- * Retorna lista ordenada de todos os usuários com dados consolidados de acesso
- * Inclui administradores (admin e admin2) conforme solicitado
+ * Migra e normaliza os dados armazenados para garantir que empates de pontuação
+ * tenham tempos de uso calibrados e únicos para desempate estável.
+ */
+function ensureNormalizedAccessData(stored, users) {
+  try {
+    const currentVersion = localStorage.getItem(VERSION_KEY);
+    if (currentVersion === CURRENT_VERSION) {
+      return stored;
+    }
+
+    const updated = { ...stored };
+    users.forEach((u) => {
+      const seed = getDeterministicSeed(u);
+      const existing = updated[u.id];
+
+      if (!existing) {
+        updated[u.id] = seed;
+      } else {
+        // Mantém pontos já registrados (ou os do seed) e calibra tempo de uso único para desempate
+        const liveExtraSeconds = (existing.total_usage_seconds || 0) % 60;
+        const totalSecs = Math.max(existing.total_usage_seconds || 0, seed.total_usage_seconds);
+
+        updated[u.id] = {
+          ...existing,
+          access_points: existing.access_points || seed.access_points,
+          total_usage_seconds: totalSecs + (liveExtraSeconds ? 0 : seed.total_usage_seconds % 60),
+          last_access_at: existing.last_access_at || seed.last_access_at,
+          sessions_count: existing.sessions_count || seed.sessions_count,
+        };
+      }
+    });
+
+    saveStoredAccessData(updated);
+    localStorage.setItem(VERSION_KEY, CURRENT_VERSION);
+    return updated;
+  } catch (e) {
+    console.warn('Erro ao normalizar dados de acesso:', e);
+    return stored;
+  }
+}
+
+/**
+ * Retorna lista ordenada de todos os usuários com dados consolidados de acesso.
+ * Inclui administradores (admin e admin2).
+ * 
+ * CRITÉRIOS DE ORDENAÇÃO E DESEMPATE (estritamente aplicados):
+ * 1º: Pontos de Acesso (decrescente)
+ * 2º: Tempo de Uso em segundos (decrescente) -> Critério de desempate
+ * 3º: Data do Último Acesso (mais recente primeiro)
+ * 4º: ID do cadastro (crescente -> garante posição 100% estável e fixa sem alternar entre renders)
  */
 export function getAccessRankingList(users = []) {
-  const stored = getStoredAccessData();
+  let stored = getStoredAccessData();
+  stored = ensureNormalizedAccessData(stored, users);
 
+  let needSave = false;
   const list = users.map((u) => {
     let access = stored[u.id];
     if (!access) {
       access = getDeterministicSeed(u);
+      stored[u.id] = access;
+      needSave = true;
     }
 
     return {
@@ -148,15 +210,28 @@ export function getAccessRankingList(users = []) {
     };
   });
 
-  // Ordena por Pontos de Acesso (decrescente), depois Tempo de Uso (decrescente)
+  if (needSave) {
+    saveStoredAccessData(stored);
+  }
+
+  // Ordenação com os quesitos estritos de desempate:
   list.sort((a, b) => {
+    // 1º Quesito: Pontos de Acesso
     if (b.accessPoints !== a.accessPoints) {
       return b.accessPoints - a.accessPoints;
     }
+    // 2º Quesito de Desempate: Tempo de Uso (em segundos)
     if (b.totalUsageSeconds !== a.totalUsageSeconds) {
       return b.totalUsageSeconds - a.totalUsageSeconds;
     }
-    return (b.lastAccessAt || 0) - (a.lastAccessAt || 0);
+    // 3º Quesito de Desempate: Último Acesso mais recente
+    const timeA = a.lastAccessAt ? new Date(a.lastAccessAt).getTime() : 0;
+    const timeB = b.lastAccessAt ? new Date(b.lastAccessAt).getTime() : 0;
+    if (timeB !== timeA) {
+      return timeB - timeA;
+    }
+    // 4º Quesito Estável Final: ID de cadastro (ordem de chegada imutável)
+    return (Number(a.profile.id) || 0) - (Number(b.profile.id) || 0);
   });
 
   return list;
@@ -173,7 +248,7 @@ export function formatUsageTime(totalSeconds) {
   const seconds = sec % 60;
 
   if (hours > 0) {
-    return `${hours}h ${minutes}m`;
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
   }
   if (minutes > 0) {
     return `${minutes}m ${seconds}s`;

@@ -591,7 +591,7 @@ function AccessRankingTab({ users, onSelect }) {
       <div style={{ background: 'rgba(0, 212, 180, 0.06)', border: '1px solid rgba(0, 212, 180, 0.2)', padding: '8px 12px', borderRadius: 10, marginBottom: 12, fontSize: 11.5, color: 'var(--ink2)', display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 15 }}>⚡</span>
         <span>
-          Cada vez que um usuário ou <strong>administrador</strong> acessa o sistema, ele soma <strong>1 ponto</strong>. O tempo em tela é medido continuamente antes de sair.
+          Cada acesso ao sistema soma <strong>1 ponto</strong> (administradores também participam). Em caso de empate na pontuação, o <strong>tempo de uso</strong> é utilizado como critério de desempate fixo!
         </span>
       </div>
 
