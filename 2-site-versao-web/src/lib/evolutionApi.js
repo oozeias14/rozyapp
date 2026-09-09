@@ -717,7 +717,7 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
     for (const bjId of broadcastJids) {
       const bSpecificRes = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
         method: 'POST',
-        body: JSON.stringify({ where: { key: { remoteJid: bjId } }, limit: 50 }),
+        body: JSON.stringify({ where: { key: { remoteJid: bjId } }, limit: 100 }),
       }).catch(() => null);
       const bSpecRecs = bSpecificRes?.messages?.records || (Array.isArray(bSpecificRes) ? bSpecificRes : []);
       if (Array.isArray(bSpecRecs) && bSpecRecs.length > 0) {
@@ -730,7 +730,7 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
     for (const bjId of broadcastJids) {
       const sRes = await evolutionFetch(`/chat/findStatusMessage/${instanceName}`, {
         method: 'POST',
-        body: JSON.stringify({ where: { remoteJid: bjId } }),
+        body: JSON.stringify({ where: { remoteJid: bjId }, limit: 500 }),
       }).catch(() => null);
       const sList = Array.isArray(sRes) ? sRes : (sRes?.records || []);
       if (Array.isArray(sList) && sList.length > 0) {
@@ -738,10 +738,10 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
       }
     }
 
-    // 4b. Busca também recibos gerais da tabela statusMessage
+    // 4b. Busca também recibos gerais da tabela statusMessage (até 500 registros)
     const sResGeneral = await evolutionFetch(`/chat/findStatusMessage/${instanceName}`, {
       method: 'POST',
-      body: JSON.stringify({ limit: 100 }),
+      body: JSON.stringify({ limit: 500 }),
     }).catch(() => null);
     const sGenList = Array.isArray(sResGeneral) ? sResGeneral : (sResGeneral?.records || []);
     if (Array.isArray(sGenList) && sGenList.length > 0) {
@@ -774,9 +774,10 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
 
     (chats || []).forEach((c) => {
       const isRecent = isMessageWithinHours(c.lastMessage, maxHours) || isMessageWithinHours(c, maxHours);
+      const isBroadcast = (c.remoteJid || c.id || '').includes('@broadcast');
       const matches = targetPhrase 
         ? (doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase))
-        : (c.remoteJid || c.id || '').includes('@broadcast');
+        : isBroadcast;
       if (isRecent && matches) {
         if (c.lastMessage?.key?.id) matchingMessageIds.add(c.lastMessage.key.id);
         if (c.lastMessage?.id) matchingMessageIds.add(c.lastMessage.id);
@@ -785,9 +786,15 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
 
     // 7. Processa recibos de status associados às mensagens de transmissão encontradas
     statusRecords.forEach((sr) => {
+      const isDeliveredStatus = sr.status === 'DELIVERY_ACK' || sr.status === 'READ' || sr.status === 'PLAYED';
+      if (!isDeliveredStatus) return;
+
       const matchesKey = sr.keyId && matchingMessageIds.has(sr.keyId);
       const matchesMsg = sr.messageId && matchingMessageIds.has(sr.messageId);
-      if (matchesKey || matchesMsg) {
+      const isBroadcastSr = (sr.remoteJid || '').includes('@broadcast');
+
+      // Se houver frase, exige correspondência com a mensagem da frase; se não houver frase, aceita qualquer entrega de transmissão recente
+      if (matchesKey || matchesMsg || (!targetPhrase && isBroadcastSr && matchingMessageIds.size > 0)) {
         const jids = [sr.participant, sr.remoteJid, sr.fromMeJid, sr.participantAlt, sr.remoteJidAlt].filter(Boolean);
         jids.forEach((j) => {
           if (j.includes('@g.us') || j.includes('@broadcast')) return;
