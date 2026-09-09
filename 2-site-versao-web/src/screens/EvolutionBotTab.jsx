@@ -3802,6 +3802,116 @@ export function EvolutionBotTab({ users, reload }) {
               </div>
             </div>
 
+            {/* Cartão de Destaque: Auditoria de Entrega Automática (1 vs 2 Traços) */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.12) 0%, rgba(15, 23, 42, 0.8) 100%)',
+              border: '1.5px solid var(--teal)',
+              borderRadius: 16,
+              padding: '20px 22px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+              boxShadow: '0 6px 20px rgba(0, 229, 155, 0.15)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 10,
+                    background: 'var(--teal)',
+                    color: '#081018',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 16,
+                    fontWeight: 900
+                  }}>
+                    ✓✓
+                  </span>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 900, color: '#fff' }}>
+                      Auditoria de Entrega Automática (Últimos 15 Minutos)
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
+                      Identifique instantaneamente quem recebeu sua transmissão e quem ainda não tem o número salvo
+                    </div>
+                  </div>
+                </div>
+
+                <span style={{
+                  fontSize: 11,
+                  background: 'rgba(0, 229, 155, 0.2)',
+                  color: 'var(--teal)',
+                  padding: '3px 10px',
+                  borderRadius: 20,
+                  fontWeight: 800,
+                  border: '1px solid var(--teal)'
+                }}>
+                  ⏱ JANELA 15 MIN
+                </span>
+              </div>
+
+              <div style={{ fontSize: 12.5, color: 'var(--ink2)', lineHeight: 1.6 }}>
+                1. Dispare sua mensagem na Lista de Transmissão oficial no WhatsApp do Dr. Cândido.<br />
+                2. Clique no botão abaixo: o robô examina os últimos <strong>15 minutos</strong> e cruza os números.<br />
+                3. Se o contato recebeu a mensagem enviada, ele é confirmado com <strong>2 traços (✓✓ Salvo na Agenda)</strong>. Se não recebeu, permanece com <strong>1 traço (⏱ Pendente)</strong>.
+              </div>
+
+              {/* Ações de Auditoria: Executar e Limpar posicionado abaixo */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
+                <div>
+                  <button
+                    type="button"
+                    className="btn btn-teal"
+                    style={{
+                      padding: '13px 24px',
+                      fontSize: 14,
+                      fontWeight: 900,
+                      margin: 0,
+                      borderRadius: 12,
+                      boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => setShowBroadcastTestModal(true)}
+                  >
+                    <span style={{ fontWeight: 900 }}>✓✓</span> Executar Auditoria de 15 Minutos
+                  </button>
+                </div>
+
+                <div>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      padding: '8px 14px',
+                      margin: 0,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      borderRadius: 8,
+                      background: 'rgba(240, 107, 76, 0.1)',
+                      color: '#FF8A65',
+                      border: '1px solid rgba(240, 107, 76, 0.25)',
+                      cursor: resettingAnalysis ? 'not-allowed' : 'pointer',
+                      opacity: resettingAnalysis ? 0.6 : 1,
+                      transition: 'all 0.2s ease'
+                    }}
+                    onClick={handleResetAnalyzedData}
+                    disabled={resettingAnalysis || syncingContacts || isTestingRunning}
+                    title="Limpar todos os dados analisados e resetar contatos para Pendentes"
+                  >
+                    <span>🧹</span> {resettingAnalysis ? 'Limpando...' : 'Limpar Dados Analisados (Resetar para Pendentes)'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* Grid de Métricas Principais */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
               {/* Card: Total */}
@@ -3911,116 +4021,6 @@ export function EvolutionBotTab({ users, reload }) {
                 </div>
                 <div style={{ marginTop: 6, width: '100%', height: 5, background: 'rgba(255, 255, 255, 0.08)', borderRadius: 3, overflow: 'hidden' }}>
                   <div style={{ width: `${Math.min(parseFloat(coveragePercent) || 0, 100)}%`, height: '100%', background: 'linear-gradient(90deg, #25D366, var(--teal))', borderRadius: 3, transition: 'width 0.4s ease' }} />
-                </div>
-              </div>
-            </div>
-
-            {/* Cartão de Destaque: Verificador Inteligente (1 vs 2 Traços) */}
-            <div style={{
-              background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.12) 0%, rgba(15, 23, 42, 0.8) 100%)',
-              border: '1.5px solid var(--teal)',
-              borderRadius: 16,
-              padding: '20px 22px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 14,
-              boxShadow: '0 6px 20px rgba(0, 229, 155, 0.15)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: 10,
-                    background: 'var(--teal)',
-                    color: '#081018',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 16,
-                    fontWeight: 900
-                  }}>
-                    ✓✓
-                  </span>
-                  <div>
-                    <div style={{ fontSize: 15, fontWeight: 900, color: '#fff' }}>
-                      Auditoria de Entrega Automática (Últimos 15 Minutos)
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
-                      Identifique instantaneamente quem recebeu sua transmissão e quem ainda não tem o número salvo
-                    </div>
-                  </div>
-                </div>
-
-                <span style={{
-                  fontSize: 11,
-                  background: 'rgba(0, 229, 155, 0.2)',
-                  color: 'var(--teal)',
-                  padding: '3px 10px',
-                  borderRadius: 20,
-                  fontWeight: 800,
-                  border: '1px solid var(--teal)'
-                }}>
-                  ⏱ JANELA 15 MIN
-                </span>
-              </div>
-
-              <div style={{ fontSize: 12.5, color: 'var(--ink2)', lineHeight: 1.6 }}>
-                1. Dispare sua mensagem na Lista de Transmissão oficial no WhatsApp do Dr. Cândido.<br />
-                2. Clique no botão abaixo: o robô examina os últimos <strong>15 minutos</strong> e cruza os números.<br />
-                3. Se o contato recebeu a mensagem enviada, ele é confirmado com <strong>2 traços (✓✓ Salvo na Agenda)</strong>. Se não recebeu, permanece com <strong>1 traço (⏱ Pendente)</strong>.
-              </div>
-
-              {/* Ações de Auditoria: Executar e Limpar posicionado abaixo */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
-                <div>
-                  <button
-                    type="button"
-                    className="btn btn-teal"
-                    style={{
-                      padding: '13px 24px',
-                      fontSize: 14,
-                      fontWeight: 900,
-                      margin: 0,
-                      borderRadius: 12,
-                      boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      cursor: 'pointer'
-                    }}
-                    onClick={() => setShowBroadcastTestModal(true)}
-                  >
-                    <span style={{ fontWeight: 900 }}>✓✓</span> Executar Auditoria de 15 Minutos
-                  </button>
-                </div>
-
-                <div>
-                  <button
-                    type="button"
-                    className="btn"
-                    style={{
-                      fontSize: 11.5,
-                      fontWeight: 700,
-                      padding: '8px 14px',
-                      margin: 0,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      borderRadius: 8,
-                      background: 'rgba(240, 107, 76, 0.1)',
-                      color: '#FF8A65',
-                      border: '1px solid rgba(240, 107, 76, 0.25)',
-                      cursor: resettingAnalysis ? 'not-allowed' : 'pointer',
-                      opacity: resettingAnalysis ? 0.6 : 1,
-                      transition: 'all 0.2s ease'
-                    }}
-                    onClick={handleResetAnalyzedData}
-                    disabled={resettingAnalysis || syncingContacts || isTestingRunning}
-                    title="Limpar todos os dados analisados e resetar contatos para Pendentes"
-                  >
-                    <span>🧹</span> {resettingAnalysis ? 'Limpando...' : 'Limpar Dados Analisados (Resetar para Pendentes)'}
-                  </button>
                 </div>
               </div>
             </div>
