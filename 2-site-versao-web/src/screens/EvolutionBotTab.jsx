@@ -3776,81 +3776,29 @@ export function EvolutionBotTab({ users, reload }) {
             flexDirection: 'column',
             gap: 16
           }}>
-            {/* Cabeçalho com Título e Ações Rápidas */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 12,
-                  background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.2), rgba(123, 108, 244, 0.2))',
-                  border: '1px solid rgba(0, 229, 155, 0.3)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 22,
-                  flexShrink: 0
-                }}>
-                  📊
-                </div>
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 900, color: '#fff', letterSpacing: '-0.2px' }}>
-                    ETAPA 3: TRANSMISSÃO & VERIFICAÇÃO (1 VS 2 TRAÇOS)
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
-                    Monitore o alcance das listas de transmissão e audite a entrega em tempo real
-                  </div>
-                </div>
+            {/* Cabeçalho com Título */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                width: 44,
+                height: 44,
+                borderRadius: 12,
+                background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.2), rgba(123, 108, 244, 0.2))',
+                border: '1px solid rgba(0, 229, 155, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 22,
+                flexShrink: 0
+              }}>
+                📊
               </div>
-
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  className="btn btn-teal"
-                  style={{
-                    fontSize: 12.5,
-                    fontWeight: 800,
-                    padding: '9px 16px',
-                    margin: 0,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    borderRadius: 10,
-                    background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
-                    color: '#081018',
-                    border: 'none',
-                    boxShadow: '0 4px 14px rgba(0, 229, 155, 0.35)',
-                    cursor: 'pointer'
-                  }}
-                  onClick={() => setShowBroadcastTestModal(true)}
-                >
-                  <span style={{ fontWeight: 900 }}>✓✓</span> Abrir Verificador (1 vs 2 Traços)
-                </button>
-
-                <button
-                  type="button"
-                  className="btn"
-                  style={{
-                    fontSize: 12.5,
-                    fontWeight: 700,
-                    padding: '9px 12px',
-                    margin: 0,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    borderRadius: 10,
-                    background: 'rgba(240, 107, 76, 0.1)',
-                    color: '#FF8A65',
-                    border: '1px solid rgba(240, 107, 76, 0.3)',
-                    cursor: resettingAnalysis ? 'not-allowed' : 'pointer',
-                    opacity: resettingAnalysis ? 0.6 : 1
-                  }}
-                  onClick={handleResetAnalyzedData}
-                  disabled={resettingAnalysis || syncingContacts || isTestingRunning}
-                  title="Limpar todos os dados analisados e resetar contatos para Pendentes"
-                >
-                  <span>🧹</span> {resettingAnalysis ? 'Limpando...' : 'Limpar'}
-                </button>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 900, color: '#fff', letterSpacing: '-0.2px' }}>
+                  ETAPA 3: TRANSMISSÃO & VERIFICAÇÃO (1 VS 2 TRAÇOS)
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
+                  Monitore o alcance das listas de transmissão e audite a entrega em tempo real
+                </div>
               </div>
             </div>
 
@@ -3972,18 +3920,18 @@ export function EvolutionBotTab({ users, reload }) {
               background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.12) 0%, rgba(15, 23, 42, 0.8) 100%)',
               border: '1.5px solid var(--teal)',
               borderRadius: 16,
-              padding: '18px 20px',
+              padding: '20px 22px',
               display: 'flex',
               flexDirection: 'column',
-              gap: 12,
+              gap: 14,
               boxShadow: '0 6px 20px rgba(0, 229, 155, 0.15)'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 8,
+                    width: 34,
+                    height: 34,
+                    borderRadius: 10,
                     background: 'var(--teal)',
                     color: '#081018',
                     display: 'flex',
@@ -3995,7 +3943,7 @@ export function EvolutionBotTab({ users, reload }) {
                     ✓✓
                   </span>
                   <div>
-                    <div style={{ fontSize: 14.5, fontWeight: 900, color: '#fff' }}>
+                    <div style={{ fontSize: 15, fontWeight: 900, color: '#fff' }}>
                       Auditoria de Entrega Automática (Últimos 15 Minutos)
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
@@ -4017,187 +3965,64 @@ export function EvolutionBotTab({ users, reload }) {
                 </span>
               </div>
 
-              <div style={{ fontSize: 12.5, color: 'var(--ink2)', lineHeight: 1.5 }}>
+              <div style={{ fontSize: 12.5, color: 'var(--ink2)', lineHeight: 1.6 }}>
                 1. Dispare sua mensagem na Lista de Transmissão oficial no WhatsApp do Dr. Cândido.<br />
                 2. Clique no botão abaixo: o robô examina os últimos <strong>15 minutos</strong> e cruza os números.<br />
                 3. Se o contato recebeu a mensagem enviada, ele é confirmado com <strong>2 traços (✓✓ Salvo na Agenda)</strong>. Se não recebeu, permanece com <strong>1 traço (⏱ Pendente)</strong>.
               </div>
 
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
-                <button
-                  type="button"
-                  className="btn btn-teal"
-                  style={{
-                    padding: '12px 20px',
-                    fontSize: 13.5,
-                    fontWeight: 900,
-                    margin: 0,
-                    borderRadius: 10,
-                    boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    cursor: 'pointer'
-                  }}
-                  onClick={() => setShowBroadcastTestModal(true)}
-                >
-                  <span style={{ fontWeight: 900 }}>✓✓</span> Executar Auditoria de 15 Minutos
-                </button>
-              </div>
-            </div>
-
-            {/* Guia de Transmissão Oficial */}
-            <div style={{ 
-              background: 'rgba(255, 255, 255, 0.02)', 
-              padding: '14px 16px', 
-              borderRadius: 14, 
-              border: '1px solid rgba(255, 255, 255, 0.06)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 18 }}>🛡️</span>
-                <span style={{ fontWeight: 800, fontSize: 13, color: '#fff' }}>
-                  Guia da Lista de Transmissão Oficial (Risco ZERO de Bloqueio)
-                </span>
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.6 }}>
-                1. No WhatsApp do celular, vá em <strong style={{ color: '#fff' }}>Nova Transmissão</strong>, pesquise por <strong style={{ color: 'var(--teal)' }}>T1</strong> e selecione todos os contatos.<br />
-                2. Envie sua mensagem oficial de comunicado.<br />
-                3. O WhatsApp entrega <strong>somente para quem tem o número salvo na agenda</strong>, garantindo total conformidade e taxa de abertura de até 98%!
-              </div>
-            </div>
-
-            {/* Acesso Rápido de Auditoria por Lote */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <div style={{ fontSize: 14, fontWeight: 900, color: '#fff' }}>
-                  📋 Lotes de Transmissão Oficiais ({batches.length} Lotes de 100 contatos)
-                </div>
-                <span style={{ fontSize: 12, color: 'var(--ink2)' }}>
-                  Página {batchPage} de {totalBatchPages}
-                </span>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
-                {pagedBatches.map((b) => (
-                  <div 
-                    key={b.id}
+              {/* Ações de Auditoria: Executar e Limpar posicionado abaixo */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
+                <div>
+                  <button
+                    type="button"
+                    className="btn btn-teal"
                     style={{
-                      background: 'var(--panel2)',
+                      padding: '13px 24px',
+                      fontSize: 14,
+                      fontWeight: 900,
+                      margin: 0,
                       borderRadius: 12,
-                      padding: '12px 14px',
-                      border: '1px solid var(--line)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 8
+                      boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      cursor: 'pointer'
                     }}
+                    onClick={() => setShowBroadcastTestModal(true)}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ 
-                          fontSize: 11.5, 
-                          fontWeight: 900, 
-                          background: 'var(--teal-dim)', 
-                          color: 'var(--teal)', 
-                          padding: '2px 7px', 
-                          borderRadius: 6,
-                          border: '1px solid var(--teal)'
-                        }}>
-                          {b.id}
-                        </span>
-                        <span style={{ fontWeight: 800, fontSize: 13, color: '#fff' }}>
-                          {b.name}
-                        </span>
-                      </div>
-                      <span style={{ fontSize: 11.5, color: 'var(--ink2)', fontWeight: 700 }}>
-                        👥 {b.count} contatos
-                      </span>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 4 }}>
-                      <button 
-                        type="button"
-                        className="btn btn-teal"
-                        style={{ fontSize: 11, padding: '7px 8px', margin: 0, borderRadius: 8 }}
-                        onClick={() => handleExportBatchVcf(b)}
-                        title="Baixar vCard deste lote"
-                      >
-                        📥 Baixar ({b.id})
-                      </button>
-
-                      <button 
-                        type="button"
-                        className="btn"
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 800,
-                          padding: '7px 8px',
-                          margin: 0,
-                          borderRadius: 8,
-                          background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.2), rgba(0, 180, 216, 0.2))',
-                          color: '#fff',
-                          border: '1px solid var(--teal)'
-                        }}
-                        onClick={() => {
-                          setSelectedTestBatch(b.id);
-                          setTestTargetType('batch');
-                          setTestResults([]);
-                          setShowBroadcastTestModal(true);
-                        }}
-                        title="Verificar se os contatos deste lote têm o número salvo (1 traço vs 2 traços)"
-                      >
-                        ✓✓ Checar Lote
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {totalBatchPages > 1 && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginTop: 14 }}>
-                  <button 
-                    className="btn" 
-                    style={{ 
-                      padding: '6px 12px', 
-                      fontSize: 11.5, 
-                      margin: 0,
-                      borderRadius: 8, 
-                      background: 'rgba(255, 255, 255, 0.04)', 
-                      color: batchPage === 1 ? 'var(--ink3)' : '#fff',
-                      border: '1px solid var(--line)',
-                      cursor: batchPage === 1 ? 'not-allowed' : 'pointer',
-                      opacity: batchPage === 1 ? 0.4 : 1
-                    }}
-                    disabled={batchPage === 1}
-                    onClick={() => setBatchPage(p => Math.max(p - 1, 1))}
-                  >
-                    ← Anterior
-                  </button>
-                  <span style={{ fontSize: 12, color: 'var(--ink2)', fontWeight: 600 }}>
-                    Página {batchPage} de {totalBatchPages}
-                  </span>
-                  <button 
-                    className="btn" 
-                    style={{ 
-                      padding: '6px 12px', 
-                      fontSize: 11.5, 
-                      margin: 0,
-                      borderRadius: 8, 
-                      background: 'rgba(255, 255, 255, 0.04)', 
-                      color: batchPage === totalBatchPages ? 'var(--ink3)' : '#fff',
-                      border: '1px solid var(--line)',
-                      cursor: batchPage === totalBatchPages ? 'not-allowed' : 'pointer',
-                      opacity: batchPage === totalBatchPages ? 0.4 : 1
-                    }}
-                    disabled={batchPage === totalBatchPages}
-                    onClick={() => setBatchPage(p => Math.min(p + 1, totalBatchPages))}
-                  >
-                    Próxima →
+                    <span style={{ fontWeight: 900 }}>✓✓</span> Executar Auditoria de 15 Minutos
                   </button>
                 </div>
-              )}
+
+                <div>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      padding: '8px 14px',
+                      margin: 0,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      borderRadius: 8,
+                      background: 'rgba(240, 107, 76, 0.1)',
+                      color: '#FF8A65',
+                      border: '1px solid rgba(240, 107, 76, 0.25)',
+                      cursor: resettingAnalysis ? 'not-allowed' : 'pointer',
+                      opacity: resettingAnalysis ? 0.6 : 1,
+                      transition: 'all 0.2s ease'
+                    }}
+                    onClick={handleResetAnalyzedData}
+                    disabled={resettingAnalysis || syncingContacts || isTestingRunning}
+                    title="Limpar todos os dados analisados e resetar contatos para Pendentes"
+                  >
+                    <span>🧹</span> {resettingAnalysis ? 'Limpando...' : 'Limpar Dados Analisados (Resetar para Pendentes)'}
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Rodapé de Navegação da Etapa 3 */}
@@ -4213,11 +4038,11 @@ export function EvolutionBotTab({ users, reload }) {
 
               <button
                 type="button"
-                className="btn btn-ghost"
-                style={{ padding: '9px 16px', fontSize: 12.5, margin: 0 }}
+                className="btn btn-teal"
+                style={{ padding: '9px 18px', fontSize: 12.5, fontWeight: 900, margin: 0 }}
                 onClick={() => setBotStep(4)}
               >
-                Avançar para Etapa 4: Ajustes API →
+                Avançar para Etapa 4 (Ajustes API) →
               </button>
             </div>
           </div>
