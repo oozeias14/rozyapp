@@ -2666,52 +2666,6 @@ export function EvolutionBotTab({ users, reload }) {
                       )}
                     </div>
 
-                    {/* 2. Sincronização dos Traços (Rastrear Transmissão - Padrão Anti-Ban) */}
-                    {!isTestingRunning && (
-                      <div style={{
-                        marginTop: 6,
-                        padding: '12px 14px',
-                        background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.12), rgba(15, 23, 42, 0.8))',
-                        border: '1.5px solid var(--teal)',
-                        borderRadius: 10,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 8
-                      }}>
-                        <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.5 }}>
-                          <strong style={{ color: 'var(--teal)' }}>🛡️ Rastrear Transmissão (Padrão 100% Anti-Ban):</strong><br />
-                          <span>
-                            1. Envie uma mensagem na sua <strong>Lista de Transmissão no WhatsApp do Celular</strong>.<br />
-                            2. O robô cruza em tempo real os contatos do app com o WhatsApp conectado e analisa <strong>os últimos 15 minutos a partir do momento que você clicar no botão</strong>.<br />
-                            3. Identifica automaticamente: <strong style={{ color: '#25D366' }}>✓✓ 2 Traços = Recebeu / Salvo</strong> e <strong style={{ color: '#FF8A65' }}>✓ 1 Traço = Pendente / Não Salvo</strong>.
-                          </span>
-                        </div>
-
-                        <div style={{ marginTop: 2 }}>
-                          <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--teal)', textTransform: 'uppercase' }}>
-                            Palavra ou Frase da Transmissão (Opcional):
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Deixe em branco para buscar em todas as listas, ou digite uma palavra..."
-                            value={broadcastPhraseText}
-                            onChange={(e) => setBroadcastPhraseText(e.target.value)}
-                            style={{
-                              width: '100%',
-                              padding: '9px 12px',
-                              fontSize: 13,
-                              fontWeight: 700,
-                              borderRadius: 8,
-                              background: 'rgba(0,0,0,0.5)',
-                              border: '1.5px solid var(--teal)',
-                              color: '#fff',
-                              marginTop: 4,
-                              boxSizing: 'border-box'
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
 
                     {/* Se a verificação estiver rodando */}
                     {isTestingRunning && (
@@ -2826,9 +2780,7 @@ export function EvolutionBotTab({ users, reload }) {
                           }}
                           onClick={handleAuditByPhraseLive}
                         >
-                          {broadcastPhraseText.trim()
-                            ? `📝 Rastrear Frase "${broadcastPhraseText.trim()}" (Últimos 15 min · ${getSelectedTargetUsers().length} Contatos)`
-                            : `⚡ Rastrear Transmissão dos Últimos 15 Min (${getSelectedTargetUsers().length} Contatos)`}
+                          ⚡ Rastrear Transmissão dos Últimos 15 Min ({getSelectedTargetUsers().length} Contatos)
                         </button>
 
                         <button
