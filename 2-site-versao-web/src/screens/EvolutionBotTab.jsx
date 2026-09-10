@@ -1220,45 +1220,6 @@ export function EvolutionBotTab({ users, reload }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Header do Robô */}
-      <div style={{ 
-        background: 'linear-gradient(135deg, rgba(61, 217, 179, 0.12), rgba(15, 23, 42, 0.85))', 
-        padding: '14px 18px', 
-        borderRadius: 16, 
-        border: '1px solid rgba(61, 217, 179, 0.25)',
-        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontSize: 28 }}>🤖</div>
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 900, color: '#fff' }}>Robô de Transmissão (Evolution API)</div>
-              <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
-                Automação de listas de transmissão e checagem de entrega no WhatsApp
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button 
-              type="button" 
-              className="btn" 
-              style={{ 
-                fontSize: 12, 
-                padding: '6px 12px', 
-                margin: 0,
-                background: status.connected ? 'rgba(37, 211, 102, 0.2)' : 'rgba(240, 107, 76, 0.2)',
-                color: status.connected ? '#25D366' : '#FF8A65',
-                border: '1px solid ' + (status.connected ? '#25D366' : '#F06B4C')
-              }}
-              onClick={checkStatus}
-              title="Clique para testar conexão com o WhatsApp"
-            >
-              {loading ? '⏳ Checando...' : status.connected ? '🟢 Conectado' : '🔴 Desconectado'}
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* Barra de Progresso por Etapas (Estilo MassSignup / Cadastro de Folha) */}
       <div style={{
