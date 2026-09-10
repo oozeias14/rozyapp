@@ -3176,14 +3176,6 @@ export function EvolutionBotTab({ users, reload }) {
                   <button
                     type="button"
                     className="btn btn-ghost"
-                    style={{ padding: '6px 12px', fontSize: 11.5, margin: 0 }}
-                    onClick={checkStatus}
-                  >
-                    🔄 Checar Status
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
                     style={{ padding: '6px 12px', fontSize: 11.5, margin: 0, color: '#FF8A65', borderColor: 'rgba(240, 107, 76, 0.3)' }}
                     onClick={handleDisconnect}
                   >
