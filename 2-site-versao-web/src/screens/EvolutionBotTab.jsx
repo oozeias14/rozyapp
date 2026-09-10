@@ -579,7 +579,18 @@ export function EvolutionBotTab({ users, reload }) {
         const fullName = (u.name || 'Sem nome').trim();
 
         const phraseCheck = await checkContactHasBroadcastPhrase(rawPhone, cleanPhrase, preScannedSigs, phraseTimeHours);
-        const is2Checks = phraseCheck.has2Checks;
+        let is2Checks = phraseCheck.has2Checks;
+
+        // Segunda linha de garantia: se não capturou no escaneamento geral,
+        // checa diretamente a conversa individual do contato no WhatsApp
+        if (!is2Checks && rawPhone) {
+          try {
+            const directCheck = await getContactDeliveryStatusDirect(rawPhone, Math.max(phraseTimeHours, 0.5));
+            if (directCheck && directCheck.has2Checks) {
+              is2Checks = true;
+            }
+          } catch (e) {}
+        }
 
         if (is2Checks) {
           savedCount++;

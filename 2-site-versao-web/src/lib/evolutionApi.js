@@ -331,14 +331,14 @@ export async function fetchWhatsAppMessages(params = {}) {
 }
 
 // Helper para mapear LIDs (@lid) para números de telefone reais (@s.whatsapp.net)
-export function buildLidPhoneMapping(chats = [], messages = [], contacts = []) {
+export async function buildLidPhoneMapping(chats = [], messages = [], contacts = [], statusRecords = []) {
   const lidToPhone = new Map();
 
   function register(lidStr, phoneStr) {
     if (!lidStr || !phoneStr) return;
     const cleanLid = extractCleanPhone(lidStr);
     const cleanPhone = extractCleanPhone(phoneStr);
-    if (cleanLid && cleanPhone && cleanLid !== cleanPhone && cleanPhone.length >= 8) {
+    if (cleanLid && cleanPhone && cleanLid !== cleanPhone && cleanPhone.length >= 8 && cleanPhone.length <= 15) {
       lidToPhone.set(cleanLid, cleanPhone);
     }
   }
@@ -364,7 +364,9 @@ export function buildLidPhoneMapping(chats = [], messages = [], contacts = []) {
     const partAlt = m.key?.participantAlt || m.participantAlt || '';
 
     if (rJid.includes('@lid') && rAlt) register(rJid, rAlt);
+    if (rAlt.includes('@lid') && rJid) register(rAlt, rJid);
     if (part.includes('@lid') && partAlt) register(part, partAlt);
+    if (partAlt.includes('@lid') && part) register(partAlt, part);
 
     if (m.message?.reactionMessage?.key) {
       const rk = m.message.reactionMessage.key;
@@ -375,6 +377,35 @@ export function buildLidPhoneMapping(chats = [], messages = [], contacts = []) {
       }
     }
   });
+
+  // Mapeia LIDs que aparecem em statusRecords buscando suas chaves de mensagem ou conversas
+  if (Array.isArray(statusRecords) && statusRecords.length > 0) {
+    const lidCandidates = new Set();
+    statusRecords.forEach(sr => {
+      const rj = sr.remoteJid || '';
+      const pt = sr.participant || '';
+      if (rj.includes('@lid')) lidCandidates.add(extractCleanPhone(rj));
+      if (pt.includes('@lid')) lidCandidates.add(extractCleanPhone(pt));
+    });
+
+    const unmappedLids = Array.from(lidCandidates).filter(l => !lidToPhone.has(l));
+    if (unmappedLids.length > 0) {
+      try {
+        const { instanceName } = getEvolutionConfig();
+        await Promise.all(unmappedLids.slice(0, 10).map(async (lid) => {
+          const qRes = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+            method: 'POST',
+            body: JSON.stringify({ where: { key: { remoteJid: lid + '@lid' } }, limit: 5 }),
+          }).catch(() => null);
+          const qRecs = qRes?.messages?.records || (Array.isArray(qRes) ? qRes : []);
+          qRecs.forEach(qm => {
+            const alt = qm.key?.remoteJidAlt || qm.remoteJidAlt;
+            if (alt && !alt.includes('@lid')) register(lid, alt);
+          });
+        }));
+      } catch (e) {}
+    }
+  }
 
   return lidToPhone;
 }
@@ -418,7 +449,7 @@ export async function getContactDeliveryStatusDirect(phone, maxHours = 1) {
 
   try {
     const chats = await fetchWhatsAppChats().catch(() => []);
-    const lidToPhone = buildLidPhoneMapping(chats, []);
+    const lidToPhone = await buildLidPhoneMapping(chats, []);
 
     for (const c of chats) {
       const rawR = (c.remoteJid || c.id || '').toLowerCase();
@@ -453,6 +484,41 @@ export async function getContactDeliveryStatusDirect(phone, maxHours = 1) {
         }
       }
     }
+
+    // Se não localizou nos chats carregados, consulta diretamente mensagens para o número (com e sem 55)
+    const { instanceName } = getEvolutionConfig();
+    const candidateJids = [
+      clean + '@s.whatsapp.net',
+      (clean.startsWith('55') ? clean : '55' + clean) + '@s.whatsapp.net',
+      (clean.startsWith('55') ? clean.substring(2) : clean) + '@s.whatsapp.net'
+    ];
+
+    for (const cJid of candidateJids) {
+      const dMsgs = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+        method: 'POST',
+        body: JSON.stringify({ where: { key: { remoteJid: cJid } }, limit: 5 }),
+      }).catch(() => null);
+      const dRecs = dMsgs?.messages?.records || (Array.isArray(dMsgs) ? dMsgs : []);
+      for (const m of dRecs) {
+        if (isMessageWithinHours(m, maxHours)) {
+          const fromMe = m.key?.fromMe ?? false;
+          const status = (m.status || '').toUpperCase();
+          const hasReaction = Boolean(m.message?.reactionMessage);
+          const updates = Array.isArray(m.MessageUpdate) ? m.MessageUpdate : [];
+          const is2Checks = !fromMe || status === 'DELIVERY_ACK' || status === 'READ' || status === 'PLAYED' ||
+                            hasReaction || updates.some(u => (u.status || '').toUpperCase() === 'DELIVERY_ACK' || (u.status || '').toUpperCase() === 'READ');
+          if (is2Checks) {
+            return {
+              has2Checks: true,
+              checks: 2,
+              status: status || 'DELIVERY_ACK',
+              label: !fromMe ? '✓✓ 2 Traços (Mensagem Recebida / Interagiu)' : '✓✓ 2 Traços (Entregue no WhatsApp)'
+            };
+          }
+        }
+      }
+    }
+
   } catch (e) {
     console.warn('Erro ao checar status direto:', e);
   }
@@ -661,12 +727,13 @@ export function isMessageWithinHours(msg, maxHours = (10 / 60)) {
 
   const nowSec = Math.floor(Date.now() / 1000);
   const diffSec = nowSec - ts;
-  // Limite estrito de 10 minutos (600s) com tolerância máxima de 700s (~11.6 min) para absorver o tempo
-  // de clique do usuário, mas NUNCA aceitar mensagens antigas
+  // Limite com tolerância adequada (até 30 minutos / 1800s para janela de 10-15 min) para absorver o tempo
+  // que o usuário gasta disparando no celular, abrindo o computador, selecionando contatos e iniciando a auditoria,
+  // além de compensar pequenas discrepâncias de relógio/fuso horário do servidor Railway.
   const baseSec = (maxHours || (10 / 60)) * 3600;
-  const maxSec = baseSec <= 600 ? 700 : (baseSec <= 900 ? 1000 : baseSec);
+  const maxSec = baseSec <= 900 ? 1800 : Math.max(baseSec * 1.5, baseSec + 900);
 
-  return diffSec >= -60 && diffSec <= maxSec;
+  return diffSec >= -180 && diffSec <= maxSec;
 }
 
 // ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO ────
@@ -777,9 +844,21 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = (10 / 60
     } catch (e) {}
 
     // 5. Constrói dicionário completo de tradução LID <-> Telefone real
-    const lidToPhone = buildLidPhoneMapping(chats, allMsgs, contacts);
+    const lidToPhone = await buildLidPhoneMapping(chats, allMsgs, contacts, statusRecords);
 
-    // 6. Detecta se houve atividade em listas de transmissão (@broadcast) dentro da janela
+    // Helper universal para cadastrar números confirmados
+    function addConfirmedJid(jid) {
+      if (!jid || typeof jid !== 'string') return;
+      if (jid.includes('@g.us') || jid.includes('@broadcast')) return;
+      let clean = extractCleanPhone(jid);
+      if (!clean || ownerPhones.has(clean)) return;
+      if (lidToPhone.has(clean)) clean = lidToPhone.get(clean);
+      if (clean && clean.length >= 8 && !ownerPhones.has(clean)) {
+        getPhoneSignatures(clean).forEach((sig) => matchedSigs.add(sig));
+      }
+    }
+
+    // 6. Detecta mensagens de transmissão correspondentes
     const activeBroadcastJids = new Set();
     const matchingMessageIds = new Set();
 
@@ -808,90 +887,103 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = (10 / 60
       }
     });
 
-    // 7. Processa contatos confirmados das listas de transmissão ativas nos últimos 10 minutos
-    if (activeBroadcastJids.size > 0) {
-      // 7a. Recibos de status associados às listas de transmissão ativas
-      statusRecords.forEach((sr) => {
-        const isDelivered = sr.status === 'DELIVERY_ACK' || sr.status === 'READ' || sr.status === 'PLAYED';
-        if (!isDelivered) return;
+    // 7. Processa recibos de status (statusMessage)
+    // Se sem frase específica, aceita qualquer entrega confirmada de transmissão ou conversa recente
+    statusRecords.forEach((sr) => {
+      const st = (sr.status || '').toUpperCase();
+      const isDelivered = st === 'DELIVERY_ACK' || st === 'READ' || st === 'PLAYED' || st === 'SERVER_ACK' || !st;
+      if (!isDelivered) return;
 
-        const belongsToActiveBcast = activeBroadcastJids.has(sr.remoteJid);
-        const matchesKey = (sr.keyId && matchingMessageIds.has(sr.keyId)) || (sr.messageId && matchingMessageIds.has(sr.messageId));
+      const belongsToActiveBcast = activeBroadcastJids.has(sr.remoteJid);
+      const matchesKey = (sr.keyId && matchingMessageIds.has(sr.keyId)) || (sr.messageId && matchingMessageIds.has(sr.messageId));
 
-        if (belongsToActiveBcast || matchesKey) {
-          const jids = [sr.participant, sr.participantAlt].filter(Boolean);
-          jids.forEach((j) => {
-            if (j.includes('@g.us') || j.includes('@broadcast')) return;
-            let clean = extractCleanPhone(j);
-            if (ownerPhones.has(clean)) return;
-            if (lidToPhone.has(clean)) clean = lidToPhone.get(clean);
-            if (clean && clean.length >= 8 && !ownerPhones.has(clean)) {
-              getPhoneSignatures(clean).forEach((sig) => matchedSigs.add(sig));
-            }
-          });
-        }
-      });
+      if (matchesKey || belongsToActiveBcast || !targetPhrase) {
+        const jids = [
+          sr.participant,
+          sr.remoteJid,
+          sr.fromMeJid,
+          sr.participantAlt,
+          sr.remoteJidAlt,
+          sr.key?.participant,
+          sr.key?.remoteJid
+        ].filter(Boolean);
 
-      // 7b. Reações e mensagens comprovando participação na lista de transmissão ativa
-      allMsgs.forEach((m) => {
-        const rKey = m.message?.reactionMessage?.key;
-        if (rKey && activeBroadcastJids.has(rKey.remoteJid)) {
-          const jids = [rKey.participant, m.key?.remoteJid, m.key?.remoteJidAlt].filter(Boolean);
-          jids.forEach((j) => {
-            if (j.includes('@g.us') || j.includes('@broadcast')) return;
-            let clean = extractCleanPhone(j);
-            if (ownerPhones.has(clean)) return;
-            if (lidToPhone.has(clean)) clean = lidToPhone.get(clean);
-            if (clean && clean.length >= 8 && !ownerPhones.has(clean)) {
-              getPhoneSignatures(clean).forEach((sig) => matchedSigs.add(sig));
-            }
-          });
-        }
-      });
-    }
-
-    // 8. Processa mensagens diretas 1:1 (IGNORA mensagens de grupos @g.us e @broadcast) dentro da janela de 10 min
-    allMsgs.forEach((m) => {
-      const rJid = m.key?.remoteJid || m.remoteJid || '';
-      if (rJid.includes('@g.us') || rJid.includes('@broadcast')) return; // IGNORA GRUPOS E BROADCAST
-
-      const hasPhrase = targetPhrase ? doesMessageContainPhrase(m, targetPhrase) : true;
-      const matchesId = (m.key?.id && matchingMessageIds.has(m.key.id)) || (m.id && matchingMessageIds.has(m.id));
-
-      if ((hasPhrase || matchesId) && isMessageWithinHours(m, maxHours)) {
-        const jids = [m.key?.remoteJid, m.key?.remoteJidAlt, m.remoteJid, m.remoteJidAlt].filter(Boolean);
-        jids.forEach((j) => {
-          if (j.includes('@g.us') || j.includes('@broadcast')) return;
-          let clean = extractCleanPhone(j);
-          if (ownerPhones.has(clean)) return;
-          if (lidToPhone.has(clean)) clean = lidToPhone.get(clean);
-          if (clean && clean.length >= 8 && !ownerPhones.has(clean)) {
-            getPhoneSignatures(clean).forEach((sig) => matchedSigs.add(sig));
-          }
-        });
+        jids.forEach(addConfirmedJid);
       }
     });
 
-    // 9. Processa conversas diretas 1:1 ativas no WhatsApp (IGNORA GRUPOS @g.us) estritamente dentro da janela de 10 min
+    // 8. Processa mensagens das transmissões (MessageUpdate e userReceipt) e mensagens diretas
+    allMsgs.forEach((m) => {
+      const rJid = m.key?.remoteJid || m.remoteJid || '';
+      const isBroadcast = (rJid.includes('@broadcast') && !rJid.includes('status@broadcast')) || m.broadcast;
+
+      if (isBroadcast) {
+        const matches = targetPhrase ? doesMessageContainPhrase(m, targetPhrase) : true;
+        if (matches && isMessageWithinHours(m, maxHours)) {
+          // Destinatários confirmados em MessageUpdate
+          (m.MessageUpdate || []).forEach((mu) => {
+            const st = (mu.status || '').toUpperCase();
+            if (st === 'DELIVERY_ACK' || st === 'READ' || st === 'PLAYED' || !st) {
+              addConfirmedJid(mu.participant);
+              addConfirmedJid(mu.fromMeJid);
+              addConfirmedJid(mu.key?.participant);
+              addConfirmedJid(mu.key?.remoteJidAlt);
+            }
+          });
+          // Destinatários confirmados em userReceipt
+          (m.userReceipt || []).forEach((ur) => {
+            addConfirmedJid(ur.userJid);
+            addConfirmedJid(ur.jid);
+            addConfirmedJid(ur.user);
+            addConfirmedJid(ur.userJidAlt);
+          });
+          // Reações a transmissões
+          const rKey = m.message?.reactionMessage?.key;
+          if (rKey) {
+            addConfirmedJid(rKey.participant);
+            addConfirmedJid(m.key?.remoteJidAlt);
+          }
+        }
+      } else {
+        // Mensagens diretas 1:1 (ignora grupos @g.us)
+        if (!rJid.includes('@g.us')) {
+          const hasPhrase = targetPhrase ? doesMessageContainPhrase(m, targetPhrase) : true;
+          const matchesId = (m.key?.id && matchingMessageIds.has(m.key.id)) || (m.id && matchingMessageIds.has(m.id));
+
+          if ((hasPhrase || matchesId) && isMessageWithinHours(m, maxHours)) {
+            const st = (m.status || '').toUpperCase();
+            const fromMe = m.key?.fromMe ?? true;
+            const is2Checks = !fromMe || st === 'DELIVERY_ACK' || st === 'READ' || st === 'PLAYED';
+            if (is2Checks) {
+              const jids = [m.key?.remoteJid, m.key?.remoteJidAlt, m.remoteJid, m.remoteJidAlt].filter(Boolean);
+              jids.forEach(addConfirmedJid);
+            }
+          }
+        }
+      }
+    });
+
+    // 9. Processa conversas diretas 1:1 ativas no WhatsApp (ignora grupos @g.us)
     (chats || []).forEach((c) => {
       const rJid = c.remoteJid || c.id || '';
-      if (rJid.includes('@g.us') || rJid.includes('@broadcast')) return; // IGNORA GRUPOS E BROADCAST
+      if (rJid.includes('@g.us') || rJid.includes('@broadcast')) return;
 
       const hasPhrase = targetPhrase ? (doesMessageContainPhrase(c, targetPhrase) || doesMessageContainPhrase(c.lastMessage, targetPhrase)) : true;
       const matchesId = (c.lastMessage?.key?.id && matchingMessageIds.has(c.lastMessage.key.id)) || (c.lastMessage?.id && matchingMessageIds.has(c.lastMessage.id));
       const isRecent = isMessageWithinHours(c.lastMessage, maxHours) || isMessageWithinHours(c, maxHours);
 
       if ((hasPhrase || matchesId) && isRecent) {
-        const jids = [rJid, c.remoteJidAlt, c.lastMessage?.key?.remoteJidAlt].filter(Boolean);
-        jids.forEach((j) => {
-          if (!j || j.includes('@g.us') || j.includes('@broadcast')) return;
-          let cleanP = extractCleanPhone(j);
-          if (ownerPhones.has(cleanP)) return;
-          if (lidToPhone.has(cleanP)) cleanP = lidToPhone.get(cleanP);
-          if (cleanP && cleanP.length >= 8 && !ownerPhones.has(cleanP)) {
-            getPhoneSignatures(cleanP).forEach((sig) => matchedSigs.add(sig));
-          }
-        });
+        const fromMe = c.lastMessage?.key?.fromMe ?? false;
+        const st = (c.lastMessage?.status || '').toUpperCase();
+        const hasReaction = Boolean(c.lastMessage?.message?.reactionMessage);
+        const updates = Array.isArray(c.lastMessage?.MessageUpdate) ? c.lastMessage.MessageUpdate : [];
+        const is2Checks = !fromMe || st === 'DELIVERY_ACK' || st === 'READ' || st === 'PLAYED' ||
+                          hasReaction || updates.some(u => (u.status || '').toUpperCase() === 'DELIVERY_ACK' || (u.status || '').toUpperCase() === 'READ');
+
+        if (is2Checks) {
+          const jids = [rJid, c.remoteJidAlt, c.lastMessage?.key?.remoteJidAlt].filter(Boolean);
+          jids.forEach(addConfirmedJid);
+        }
       }
     });
 
