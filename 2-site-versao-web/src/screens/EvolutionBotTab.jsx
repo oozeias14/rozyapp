@@ -2666,176 +2666,50 @@ export function EvolutionBotTab({ users, reload }) {
                       )}
                     </div>
 
-                    {/* 2. Escolha do Método de Verificação */}
+                    {/* 2. Sincronização dos Traços (Rastrear Transmissão - Padrão Anti-Ban) */}
                     {!isTestingRunning && (
-                      <div>
-                        <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          2. Como Deseja Sincronizar os Traços?
-                        </label>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, marginTop: 6 }}>
-                          {/* Opção 1: Rastrear por Frase da Transmissão (100% Anti-Ban / Sincronizado com Celular) */}
-                          <button
-                            type="button"
-                            className="btn"
-                            style={{
-                              margin: 0,
-                              padding: '10px 8px',
-                              fontSize: 11.5,
-                              borderRadius: 10,
-                              textAlign: 'center',
-                              background: verificationMethod === 'phrase_track' ? 'rgba(0, 229, 155, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-                              color: verificationMethod === 'phrase_track' ? '#fff' : 'var(--ink2)',
-                              border: '1px solid ' + (verificationMethod === 'phrase_track' ? 'var(--teal)' : 'var(--line)'),
-                              cursor: 'pointer',
-                              boxShadow: verificationMethod === 'phrase_track' ? '0 0 12px rgba(0, 229, 155, 0.3)' : 'none'
-                            }}
-                            onClick={() => setVerificationMethod('phrase_track')}
-                          >
-                            <div style={{ fontSize: 16 }}>📝</div>
-                            <div style={{ fontWeight: 900, marginTop: 2, color: verificationMethod === 'phrase_track' ? 'var(--teal)' : 'inherit' }}>Rastrear Transmissão</div>
-                            <div style={{ fontSize: 10, opacity: 0.8 }}>Sincroniza do Celular (Anti-Ban)</div>
-                          </button>
-
-                          {/* Opção 2: Auditoria Geral de Recibos */}
-                          <button
-                            type="button"
-                            className="btn"
-                            style={{
-                              margin: 0,
-                              padding: '10px 8px',
-                              fontSize: 11.5,
-                              borderRadius: 10,
-                              textAlign: 'center',
-                              background: verificationMethod === 'auto_broadcast' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                              color: verificationMethod === 'auto_broadcast' ? '#fff' : 'var(--ink2)',
-                              border: '1px solid ' + (verificationMethod === 'auto_broadcast' ? 'var(--teal)' : 'var(--line)'),
-                              cursor: 'pointer'
-                            }}
-                            onClick={() => setVerificationMethod('auto_broadcast')}
-                          >
-                            <div style={{ fontSize: 16 }}>📡</div>
-                            <div style={{ fontWeight: 800, marginTop: 2 }}>Recibos Gerais</div>
-                            <div style={{ fontSize: 10, opacity: 0.7 }}>Lê recibos de entrega do WA</div>
-                          </button>
-
-                          {/* Opção 3: Conferência Rápida / Manual */}
-                          <button
-                            type="button"
-                            className="btn"
-                            style={{
-                              margin: 0,
-                              padding: '10px 8px',
-                              fontSize: 11.5,
-                              borderRadius: 10,
-                              textAlign: 'center',
-                              background: verificationMethod === 'paste' ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-                              color: verificationMethod === 'paste' ? '#fff' : 'var(--ink2)',
-                              border: '1px solid ' + (verificationMethod === 'paste' ? 'var(--teal)' : 'var(--line)'),
-                              cursor: 'pointer'
-                            }}
-                            onClick={() => setVerificationMethod('paste')}
-                          >
-                            <div style={{ fontSize: 16 }}>📋</div>
-                            <div style={{ fontWeight: 800, marginTop: 2 }}>Conferência Manual</div>
-                            <div style={{ fontSize: 10, opacity: 0.7 }}>Ajustar / Colar dados</div>
-                          </button>
+                      <div style={{
+                        marginTop: 6,
+                        padding: '12px 14px',
+                        background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.12), rgba(15, 23, 42, 0.8))',
+                        border: '1.5px solid var(--teal)',
+                        borderRadius: 10,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8
+                      }}>
+                        <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.5 }}>
+                          <strong style={{ color: 'var(--teal)' }}>🛡️ Rastrear Transmissão (Padrão 100% Anti-Ban):</strong><br />
+                          <span>
+                            1. Envie uma mensagem na sua <strong>Lista de Transmissão no WhatsApp do Celular</strong>.<br />
+                            2. O robô cruza em tempo real os contatos do app com o WhatsApp conectado e analisa <strong>os últimos 15 minutos a partir do momento que você clicar no botão</strong>.<br />
+                            3. Identifica automaticamente: <strong style={{ color: '#25D366' }}>✓✓ 2 Traços = Recebeu / Salvo</strong> e <strong style={{ color: '#FF8A65' }}>✓ 1 Traço = Pendente / Não Salvo</strong>.
+                          </span>
                         </div>
 
-                        {/* Conteúdo do Método Selecionado */}
-                        {verificationMethod === 'phrase_track' && (
-                          <div style={{
-                            marginTop: 10,
-                            padding: '12px 14px',
-                            background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.12), rgba(15, 23, 42, 0.8))',
-                            border: '1.5px solid var(--teal)',
-                            borderRadius: 10,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 8
-                          }}>
-                            <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.5 }}>
-                              <strong style={{ color: 'var(--teal)' }}>🛡️ Sincronização 100% Anti-Ban (Passivo / Cruzamento em Tempo Real):</strong><br />
-                              <span>
-                                1. Envie uma mensagem na sua <strong>Lista de Transmissão no WhatsApp do Celular</strong>.<br />
-                                2. O robô cruza em tempo real os contatos do app com o WhatsApp conectado e analisa <strong>os últimos 15 minutos a partir do momento que você clicar no botão</strong>.<br />
-                                3. Identifica automaticamente: <strong style={{ color: '#25D366' }}>✓✓ 2 Traços = Recebeu / Salvo</strong> e <strong style={{ color: '#FF8A65' }}>✓ 1 Traço = Pendente / Não Salvo</strong>.
-                              </span>
-                            </div>
-
-                            <div style={{ marginTop: 2 }}>
-                              <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--teal)', textTransform: 'uppercase' }}>
-                                Palavra ou Frase da Transmissão (Opcional):
-                              </label>
-                              <input
-                                type="text"
-                                placeholder="Deixe em branco para buscar em todas as listas, ou digite uma palavra..."
-                                value={broadcastPhraseText}
-                                onChange={(e) => setBroadcastPhraseText(e.target.value)}
-                                style={{
-                                  width: '100%',
-                                  padding: '9px 12px',
-                                  fontSize: 13,
-                                  fontWeight: 700,
-                                  borderRadius: 8,
-                                  background: 'rgba(0,0,0,0.5)',
-                                  border: '1.5px solid var(--teal)',
-                                  color: '#fff',
-                                  marginTop: 4,
-                                  boxSizing: 'border-box'
-                                }}
-                              />
-                            </div>
-                          </div>
-                        )}
-
-                        {verificationMethod === 'auto_broadcast' && (
-                          <div style={{
-                            marginTop: 10,
-                            padding: '12px 14px',
-                            background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.08), rgba(15, 23, 42, 0.6))',
-                            border: '1px solid rgba(0, 229, 155, 0.3)',
-                            borderRadius: 10,
-                            fontSize: 12,
-                            color: '#fff',
-                            lineHeight: 1.5,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 8
-                          }}>
-                            <div>
-                              <strong style={{ color: 'var(--teal)' }}>🎯 Auditoria Geral de Transmissões:</strong><br />
-                              <span>
-                                1. O robô varre <strong>todas as mensagens e listas de transmissão disparadas no seu WhatsApp</strong>.<br />
-                                2. Lê os recibos oficiais de entrega (✓✓ 2 Traços) em todas as conversas do aparelho com suporte automático a 8 e 9 dígitos e mapeamento LID.<br />
-                                3. Cruza instantaneamente com os contatos do <strong>{testTargetType === 'batch' ? `Lote ${selectedTestBatch}` : 'grupo selecionado'}</strong> e exibe o status de cada membro.
-                              </span>
-                            </div>
-                          </div>
-                        )}
-
-                        {verificationMethod === 'paste' && (
-                          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink2)' }}>
-                              (Opcional) Cole aqui os nomes ou números copiados de "Dados da Mensagem" do WhatsApp:
-                            </label>
-                            <textarea
-                              rows={3}
-                              placeholder="Cole aqui o texto copiado de quem recebeu a transmissão ou clique em 'Abrir Lista' para marcar diretamente..."
-                              value={pastedMessageData}
-                              onChange={(e) => setPastedMessageData(e.target.value)}
-                              style={{
-                                width: '100%',
-                                padding: '8px 10px',
-                                fontSize: 12,
-                                borderRadius: 8,
-                                background: 'rgba(0,0,0,0.3)',
-                                border: '1px solid var(--line)',
-                                color: '#fff',
-                                boxSizing: 'border-box'
-                              }}
-                            />
-                          </div>
-                        )}
+                        <div style={{ marginTop: 2 }}>
+                          <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--teal)', textTransform: 'uppercase' }}>
+                            Palavra ou Frase da Transmissão (Opcional):
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Deixe em branco para buscar em todas as listas, ou digite uma palavra..."
+                            value={broadcastPhraseText}
+                            onChange={(e) => setBroadcastPhraseText(e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '9px 12px',
+                              fontSize: 13,
+                              fontWeight: 700,
+                              borderRadius: 8,
+                              background: 'rgba(0,0,0,0.5)',
+                              border: '1.5px solid var(--teal)',
+                              color: '#fff',
+                              marginTop: 4,
+                              boxSizing: 'border-box'
+                            }}
+                          />
+                        </div>
                       </div>
                     )}
 
@@ -2934,121 +2808,28 @@ export function EvolutionBotTab({ users, reload }) {
                     {/* Rodapé e Botão Principal de Ação */}
                     {!isTestingRunning && (
                       <div style={{ marginTop: 6, paddingTop: 12, borderTop: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {verificationMethod === 'phrase_track' && (
-                          <button
-                            type="button"
-                            className="btn btn-teal"
-                            disabled={getSelectedTargetUsers().length === 0}
-                            style={{
-                              width: '100%',
-                              padding: '13px 16px',
-                              fontSize: 13.5,
-                              fontWeight: 900,
-                              margin: 0,
-                              borderRadius: 10,
-                              background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
-                              color: '#081018',
-                              cursor: 'pointer',
-                              boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)'
-                            }}
-                            onClick={handleAuditByPhraseLive}
-                          >
-                            {broadcastPhraseText.trim()
-                              ? `📝 Rastrear Frase "${broadcastPhraseText.trim()}" (Últimos 15 min · ${getSelectedTargetUsers().length} Contatos)`
-                              : `⚡ Rastrear Transmissão dos Últimos 15 Min (${getSelectedTargetUsers().length} Contatos)`}
-                          </button>
-                        )}
-                        {verificationMethod === 'auto_broadcast' && (
-                          <button
-                            type="button"
-                            className="btn btn-teal"
-                            disabled={getSelectedTargetUsers().length === 0}
-                            style={{
-                              width: '100%',
-                              padding: '13px 16px',
-                              fontSize: 13.5,
-                              fontWeight: 900,
-                              margin: 0,
-                              borderRadius: 10,
-                              background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
-                              color: '#081018',
-                              cursor: 'pointer',
-                              boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)'
-                            }}
-                            onClick={handleAutoAuditBroadcastLive}
-                          >
-                            📡 Auditar Mensagem da Transmissão {selectedTestBatch} ({getSelectedTargetUsers().length} Contatos)
-                          </button>
-                        )}
-
-                        {verificationMethod === 'paste' && (
-                          <button
-                            type="button"
-                            className="btn btn-teal"
-                            disabled={getSelectedTargetUsers().length === 0}
-                            style={{
-                              width: '100%',
-                              padding: '13px 16px',
-                              fontSize: 13.5,
-                              fontWeight: 900,
-                              margin: 0,
-                              borderRadius: 10,
-                              background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
-                              color: '#081018',
-                              cursor: 'pointer',
-                              boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)'
-                            }}
-                            onClick={handleOpenTransmissionChecklist}
-                          >
-                            📋 Abrir Lista & Conferir ({getSelectedTargetUsers().length} Contatos)
-                          </button>
-                        )}
-
-                        {verificationMethod === 'check_status' && (
-                          <button
-                            type="button"
-                            className="btn btn-teal"
-                            disabled={getSelectedTargetUsers().length === 0}
-                            style={{
-                              width: '100%',
-                              padding: '13px 16px',
-                              fontSize: 13.5,
-                              fontWeight: 900,
-                              margin: 0,
-                              borderRadius: 10,
-                              background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
-                              color: '#081018',
-                              cursor: 'pointer',
-                              boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)'
-                            }}
-                            onClick={handleCheckBroadcastStatusLive}
-                          >
-                            🔄 Sincronizar e Checar no WhatsApp ({getSelectedTargetUsers().length} Contatos)
-                          </button>
-                        )}
-
-                        {verificationMethod === 'send_and_verify' && (
-                          <button
-                            type="button"
-                            className="btn btn-teal"
-                            disabled={getSelectedTargetUsers().length === 0}
-                            style={{
-                              width: '100%',
-                              padding: '13px 16px',
-                              fontSize: 13.5,
-                              fontWeight: 900,
-                              margin: 0,
-                              borderRadius: 10,
-                              background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
-                              color: '#081018',
-                              cursor: 'pointer',
-                              boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)'
-                            }}
-                            onClick={handleSendAndVerifyBroadcast}
-                          >
-                            🚀 Disparar Mensagem na Transmissão & Checar Traços
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          className="btn btn-teal"
+                          disabled={getSelectedTargetUsers().length === 0}
+                          style={{
+                            width: '100%',
+                            padding: '13px 16px',
+                            fontSize: 13.5,
+                            fontWeight: 900,
+                            margin: 0,
+                            borderRadius: 10,
+                            background: 'linear-gradient(135deg, #00E59B 0%, #00B4D8 100%)',
+                            color: '#081018',
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 16px rgba(0, 229, 155, 0.35)'
+                          }}
+                          onClick={handleAuditByPhraseLive}
+                        >
+                          {broadcastPhraseText.trim()
+                            ? `📝 Rastrear Frase "${broadcastPhraseText.trim()}" (Últimos 15 min · ${getSelectedTargetUsers().length} Contatos)`
+                            : `⚡ Rastrear Transmissão dos Últimos 15 Min (${getSelectedTargetUsers().length} Contatos)`}
+                        </button>
 
                         <button
                           type="button"
