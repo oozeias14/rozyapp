@@ -3781,7 +3781,7 @@ export function EvolutionBotTab({ users, reload }) {
             </div>
 
             {/* Rodapé de Navegação da Etapa 3 */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 8, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
               <button
                 type="button"
                 className="btn btn-ghost"
@@ -3789,15 +3789,6 @@ export function EvolutionBotTab({ users, reload }) {
                 onClick={() => setBotStep(2)}
               >
                 ← Voltar: 2. Salvar Agendas
-              </button>
-
-              <button
-                type="button"
-                className="btn btn-ghost"
-                style={{ padding: '9px 16px', fontSize: 12.5, margin: 0 }}
-                onClick={() => setBotStep(1)}
-              >
-                ← Voltar ao Início (1. Conexão)
               </button>
             </div>
           </div>
