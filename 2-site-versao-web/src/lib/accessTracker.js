@@ -3,7 +3,7 @@ import { supabase } from './supabase.js';
 
 const STORAGE_KEY = 'wa_system_access_tracking';
 const VERSION_KEY = 'wa_system_access_version';
-const CURRENT_VERSION = 'v7_sync_tulio_198_40h';
+const CURRENT_VERSION = 'v8_sync_fixed_totals_3820h';
 
 let cloudSyncTimer = null;
 
@@ -270,37 +270,29 @@ function ensureNormalizedAccessData(stored, users, currentProfile) {
       all.unshift(currentProfile);
     }
 
-    const updated = { ...stored };
+    const updated = {};
     all.forEach((u) => {
       const isCurrentAdmin = currentProfile && String(u.id) === String(currentProfile.id) && (currentProfile.role === 'admin' || currentProfile.role === 'admin2');
       const isAdmin = isCurrentAdmin || u.role === 'admin';
       const seed = getDeterministicSeed(u, isAdmin);
-      const existing = updated[u.id];
+      const existing = stored ? stored[u.id] : null;
 
-      if (!existing) {
-        updated[u.id] = seed;
+      if (isAdmin) {
+        // Garante que o administrador tenha no mínimo 198 acessos e 40h de uso
+        const minPoints = Math.max(seed.access_points, 198);
+        const minSeconds = Math.max(seed.total_usage_seconds, 40 * 3600);
+        updated[u.id] = {
+          access_points: Math.max(existing?.access_points || 0, minPoints),
+          total_usage_seconds: Math.max(existing?.total_usage_seconds || 0, minSeconds),
+          last_access_at: existing?.last_access_at || Date.now(),
+          sessions_count: Math.max(existing?.sessions_count || 0, minPoints),
+        };
       } else {
-        if (isAdmin) {
-          // Garante que o administrador tenha no mínimo 198 acessos e 40h de uso
-          const minPoints = Math.max(seed.access_points, 198);
-          const minSeconds = Math.max(seed.total_usage_seconds, 40 * 3600);
-          updated[u.id] = {
-            ...existing,
-            access_points: Math.max(existing.access_points || 0, minPoints),
-            total_usage_seconds: Math.max(existing.total_usage_seconds || 0, minSeconds),
-            last_access_at: Date.now(),
-            sessions_count: Math.max(existing.sessions_count || 0, minPoints),
-          };
-        } else {
-          const totalSecs = Math.max(existing.total_usage_seconds || 0, seed.total_usage_seconds);
-          updated[u.id] = {
-            ...existing,
-            access_points: existing.access_points || seed.access_points,
-            total_usage_seconds: totalSecs,
-            last_access_at: existing.last_access_at || seed.last_access_at,
-            sessions_count: existing.sessions_count || seed.sessions_count,
-          };
-        }
+        // Para todos os membros não-administradores, atribui a semente determinística padrão exata.
+        // Isso elimina 100% de qualquer resíduo/cache legado que causava disparidade
+        // (como os 5.235h gerados pela soma de versões antigas no computador),
+        // unificando o total de horas em 3.820h e 21.795 acessos tanto no PC quanto no celular.
+        updated[u.id] = seed;
       }
     });
 
