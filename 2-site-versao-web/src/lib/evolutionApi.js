@@ -727,13 +727,13 @@ export function isMessageWithinHours(msg, maxHours = (10 / 60)) {
 
   const nowSec = Math.floor(Date.now() / 1000);
   const diffSec = nowSec - ts;
-  // Limite com tolerância adequada (até 30 minutos / 1800s para janela de 10-15 min) para absorver o tempo
-  // que o usuário gasta disparando no celular, abrindo o computador, selecionando contatos e iniciando a auditoria,
-  // além de compensar pequenas discrepâncias de relógio/fuso horário do servidor Railway.
-  const baseSec = (maxHours || (10 / 60)) * 3600;
-  const maxSec = baseSec <= 900 ? 1800 : Math.max(baseSec * 1.5, baseSec + 900);
+  // Janela estrita de 10 minutos (600s), com tolerância de no máximo 30 segundos (<= 630s).
+  // Se a mensagem foi enviada há mais de 10 minutos (ex: 11, 15, 23 min atrás),
+  // retorna estritamente false para que o sistema se mantenha limpo/zerado.
+  const baseSec = Math.round((maxHours || (10 / 60)) * 3600);
+  const maxSec = baseSec <= 600 ? 630 : baseSec;
 
-  return diffSec >= -180 && diffSec <= maxSec;
+  return diffSec >= -60 && diffSec <= maxSec;
 }
 
 // ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO ────
@@ -888,29 +888,36 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = (10 / 60
     });
 
     // 7. Processa recibos de status (statusMessage)
-    // Se sem frase específica, aceita qualquer entrega confirmada de transmissão ou conversa recente
-    statusRecords.forEach((sr) => {
-      const st = (sr.status || '').toUpperCase();
-      const isDelivered = st === 'DELIVERY_ACK' || st === 'READ' || st === 'PLAYED' || st === 'SERVER_ACK' || !st;
-      if (!isDelivered) return;
+    // CRUCIAL: Só processa recibos se houver transmissão ativa detectada nos últimos 10 minutos!
+    // E apenas vinculando às mensagens e listas de transmissão ativas na janela de tempo.
+    if (activeBroadcastJids.size > 0 || matchingMessageIds.size > 0) {
+      statusRecords.forEach((sr) => {
+        if (sr.updatedAt || sr.createdAt) {
+          if (!isMessageWithinHours(sr, maxHours)) return;
+        }
 
-      const belongsToActiveBcast = activeBroadcastJids.has(sr.remoteJid);
-      const matchesKey = (sr.keyId && matchingMessageIds.has(sr.keyId)) || (sr.messageId && matchingMessageIds.has(sr.messageId));
+        const st = (sr.status || '').toUpperCase();
+        const isDelivered = st === 'DELIVERY_ACK' || st === 'READ' || st === 'PLAYED' || st === 'SERVER_ACK' || !st;
+        if (!isDelivered) return;
 
-      if (matchesKey || belongsToActiveBcast || !targetPhrase) {
-        const jids = [
-          sr.participant,
-          sr.remoteJid,
-          sr.fromMeJid,
-          sr.participantAlt,
-          sr.remoteJidAlt,
-          sr.key?.participant,
-          sr.key?.remoteJid
-        ].filter(Boolean);
+        const belongsToActiveBcast = activeBroadcastJids.has(sr.remoteJid);
+        const matchesKey = (sr.keyId && matchingMessageIds.has(sr.keyId)) || (sr.messageId && matchingMessageIds.has(sr.messageId));
 
-        jids.forEach(addConfirmedJid);
-      }
-    });
+        if (matchesKey || belongsToActiveBcast) {
+          const jids = [
+            sr.participant,
+            sr.remoteJid,
+            sr.fromMeJid,
+            sr.participantAlt,
+            sr.remoteJidAlt,
+            sr.key?.participant,
+            sr.key?.remoteJid
+          ].filter(Boolean);
+
+          jids.forEach(addConfirmedJid);
+        }
+      });
+    }
 
     // 8. Processa mensagens das transmissões (MessageUpdate e userReceipt) e mensagens diretas
     allMsgs.forEach((m) => {
@@ -1370,31 +1377,42 @@ export async function fetchAllWhatsAppTransmissionReceipts(maxHours = 1) {
     });
 
     // E) Recibos de entrega de transmissões (statusRecords)
-    statusRecords.forEach((sr) => {
-      const st = (sr.status || '').toUpperCase();
-      const isDelivered = st === 'DELIVERY_ACK' || st === 'READ' || st === 'PLAYED' || st === 'SERVER_ACK' || !st;
-      const jids = [sr.participant, sr.remoteJid, sr.fromMeJid, sr.participantAlt, sr.remoteJidAlt].filter(Boolean);
-      jids.forEach((j) => {
-        if (j.includes('@g.us') || j.includes('@broadcast')) return;
-        let clean = extractCleanPhone(j);
-        if (lidToPhone.has(clean)) clean = lidToPhone.get(clean);
-        if (clean && clean.length >= 8) {
-          getPhoneSignatures(clean).forEach((sig) => {
-            const existing = receiptsMap.get(sig);
-            if (!existing || (!existing.is2Checks && isDelivered)) {
-              receiptsMap.set(sig, {
-                checks: isDelivered ? 2 : 1,
-                is2Checks: isDelivered,
-                status: st || 'DELIVERY_ACK',
-                label: '✓✓ 2 Traços (Entregue na Transmissão)',
-                source: 'broadcast_status_receipt',
-                phone: clean
-              });
-            }
-          });
+    // Só processa recibos se houver transmissão recente ativa (broadcastKeyIds)
+    if (broadcastKeyIds.size > 0) {
+      statusRecords.forEach((sr) => {
+        if (sr.updatedAt || sr.createdAt) {
+          if (!isMessageWithinHours(sr, maxHours)) return;
         }
+        const matchesKey = (sr.keyId && broadcastKeyIds.has(sr.keyId)) || (sr.messageId && broadcastKeyIds.has(sr.messageId));
+        if (!matchesKey) return;
+
+        const st = (sr.status || '').toUpperCase();
+        const isDelivered = st === 'DELIVERY_ACK' || st === 'READ' || st === 'PLAYED' || st === 'SERVER_ACK' || !st;
+        if (!isDelivered) return;
+
+        const jids = [sr.participant, sr.remoteJid, sr.fromMeJid, sr.participantAlt, sr.remoteJidAlt].filter(Boolean);
+        jids.forEach((j) => {
+          if (j.includes('@g.us') || j.includes('@broadcast')) return;
+          let clean = extractCleanPhone(j);
+          if (lidToPhone.has(clean)) clean = lidToPhone.get(clean);
+          if (clean && clean.length >= 8) {
+            getPhoneSignatures(clean).forEach((sig) => {
+              const existing = receiptsMap.get(sig);
+              if (!existing || (!existing.is2Checks && isDelivered)) {
+                receiptsMap.set(sig, {
+                  checks: isDelivered ? 2 : 1,
+                  is2Checks: isDelivered,
+                  status: st || 'DELIVERY_ACK',
+                  label: '✓✓ 2 Traços (Entregue na Transmissão)',
+                  source: 'broadcast_status_receipt',
+                  phone: clean
+                });
+              }
+            });
+          }
+        });
       });
-    });
+    }
   } catch (err) {
     console.warn('Erro ao consultar mensagens para auditoria:', err);
   }

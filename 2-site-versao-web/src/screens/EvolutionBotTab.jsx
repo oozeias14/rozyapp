@@ -585,7 +585,7 @@ export function EvolutionBotTab({ users, reload }) {
         // checa diretamente a conversa individual do contato no WhatsApp
         if (!is2Checks && rawPhone) {
           try {
-            const directCheck = await getContactDeliveryStatusDirect(rawPhone, Math.max(phraseTimeHours, 0.5));
+            const directCheck = await getContactDeliveryStatusDirect(rawPhone, phraseTimeHours);
             if (directCheck && directCheck.has2Checks) {
               is2Checks = true;
             }
