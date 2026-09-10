@@ -633,8 +633,8 @@ export function extractPhonesFromMessage(m, lidToPhone = new Map()) {
   return phones;
 }
 
-// Helper para verificar se a mensagem foi enviada/recebida dentro da janela especificada (padrão 15 min / 0.25h)
-export function isMessageWithinHours(msg, maxHours = 0.25) {
+// Helper para verificar se a mensagem foi enviada/recebida dentro da janela especificada (padrão 10 min / (10/60)h)
+export function isMessageWithinHours(msg, maxHours = (10 / 60)) {
   if (!msg) return false;
   
   let ts = msg.messageTimestamp || msg.createdAt || msg.updatedAt;
@@ -661,17 +661,17 @@ export function isMessageWithinHours(msg, maxHours = 0.25) {
 
   const nowSec = Math.floor(Date.now() / 1000);
   const diffSec = nowSec - ts;
-  // Limite estrito de 15 minutos (900s) com tolerância máxima de 1000s (~16.6 min) para absorver o tempo
-  // de clique do usuário, mas NUNCA aceitar mensagens antigas (ex: 19+ minutos)
-  const baseSec = (maxHours || 0.25) * 3600;
-  const maxSec = baseSec <= 900 ? 1000 : baseSec;
+  // Limite estrito de 10 minutos (600s) com tolerância máxima de 700s (~11.6 min) para absorver o tempo
+  // de clique do usuário, mas NUNCA aceitar mensagens antigas
+  const baseSec = (maxHours || (10 / 60)) * 3600;
+  const maxSec = baseSec <= 600 ? 700 : (baseSec <= 900 ? 1000 : baseSec);
 
   return diffSec >= -60 && diffSec <= maxSec;
 }
 
 // ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO ────
 
-export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
+export async function scanAllChatsForPhrase(phraseText = '', maxHours = (10 / 60)) {
   const targetPhrase = (phraseText || '').toLowerCase().trim().replace(/^["']|["']$/g, '');
   const matchedSigs = new Set();
 
@@ -808,7 +808,7 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
       }
     });
 
-    // 7. Processa contatos confirmados das listas de transmissão ativas nos últimos 15 minutos
+    // 7. Processa contatos confirmados das listas de transmissão ativas nos últimos 10 minutos
     if (activeBroadcastJids.size > 0) {
       // 7a. Recibos de status associados às listas de transmissão ativas
       statusRecords.forEach((sr) => {
@@ -850,7 +850,7 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
       });
     }
 
-    // 8. Processa mensagens diretas 1:1 (IGNORA mensagens de grupos @g.us e @broadcast) dentro da janela de 15 min
+    // 8. Processa mensagens diretas 1:1 (IGNORA mensagens de grupos @g.us e @broadcast) dentro da janela de 10 min
     allMsgs.forEach((m) => {
       const rJid = m.key?.remoteJid || m.remoteJid || '';
       if (rJid.includes('@g.us') || rJid.includes('@broadcast')) return; // IGNORA GRUPOS E BROADCAST
@@ -872,7 +872,7 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
       }
     });
 
-    // 9. Processa conversas diretas 1:1 ativas no WhatsApp (IGNORA GRUPOS @g.us) estritamente dentro da janela de 15 min
+    // 9. Processa conversas diretas 1:1 ativas no WhatsApp (IGNORA GRUPOS @g.us) estritamente dentro da janela de 10 min
     (chats || []).forEach((c) => {
       const rJid = c.remoteJid || c.id || '';
       if (rJid.includes('@g.us') || rJid.includes('@broadcast')) return; // IGNORA GRUPOS E BROADCAST
@@ -902,14 +902,14 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 0.25) {
   return matchedSigs;
 }
 
-export async function checkContactHasBroadcastPhrase(phone, phraseText = '', preScannedSigs = null, maxHours = 0.25) {
+export async function checkContactHasBroadcastPhrase(phone, phraseText = '', preScannedSigs = null, maxHours = (10 / 60)) {
   const cleanPhone = extractCleanPhone(phone);
   if (!cleanPhone) {
     return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem telefone)', status: 'PENDING' };
   }
 
   const sigs = getPhoneSignatures(cleanPhone);
-  const timeDesc = maxHours <= 0.25 ? '15 min' : maxHours <= 0.5 ? '30 min' : `${maxHours}h`;
+  const timeDesc = maxHours <= 0.17 ? '10 min' : maxHours <= 0.25 ? '15 min' : maxHours <= 0.5 ? '30 min' : `${maxHours}h`;
 
   // 1. Checa se o número foi pré-confirmado com a frase ou transmissão recente
   if (preScannedSigs && preScannedSigs instanceof Set) {
