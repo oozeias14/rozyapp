@@ -13,7 +13,7 @@ import SupportScreen from './screens/SupportScreen';
 import QrCodeScreen from './screens/QrCodeScreen';
 import BottomNav from './components/BottomNav';
 import FirstAccessModal from './components/FirstAccessModal';
-import { recordUserAccess, addUsageTime } from './lib/accessTracker';
+import { recordUserAccess, addUsageTime, loadCloudAccessData, syncCloudAccessImmediately } from './lib/accessTracker';
 
 // Data e hora limite fixa da campanha (ex: até dia 24/08/2026 às 00:04:00 no fuso de Brasília, totalizando 48h)
 const POPUP_EXPIRATION_DATE = new Date('2026-08-24T00:04:00-03:00');
@@ -134,7 +134,7 @@ export default function App() {
       });
 
       if (profile && profile.id) {
-        addUsageTime(profile.id, 1);
+        addUsageTime(profile.id, 1, profile);
       }
     }, 1000);
 
@@ -216,6 +216,8 @@ export default function App() {
     if (hash.includes('type=recovery') || search.includes('type=recovery') || hash.includes('error_code=')) {
       setPasswordRecovery(true);
     }
+
+    loadCloudAccessData();
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -301,11 +303,13 @@ export default function App() {
     if (data) {
       checkForNewMessages(data.id);
       recordUserAccess(data);
+      loadCloudAccessData();
     }
   }
 
   async function handleLogout() {
     if (profile) {
+      await syncCloudAccessImmediately(profile);
       sessionStorage.removeItem(`popup_shown_session_${profile.id}`);
       sessionStorage.removeItem(`user_access_recorded_${profile.id}`);
     }

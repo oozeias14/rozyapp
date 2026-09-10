@@ -9,7 +9,7 @@ import {
   fetchInstanceStatus, 
   resetAndRecreateInstance 
 } from '../lib/evolutionApi';
-import { getAccessRankingList, formatUsageTime, formatLastAccess, recordUserAccess, addUsageTime } from '../lib/accessTracker';
+import { getAccessRankingList, formatUsageTime, formatLastAccess, recordUserAccess } from '../lib/accessTracker';
 import { supabase, MAX_PHOTO_BYTES, compressImageWeb, CITIES } from '../lib/supabase';
 import {
   fetchAllProfiles, updateProfile, deleteProfile, promoteToCoordinator, demoteToUser,
@@ -515,16 +515,13 @@ function AccessRankingTab({ users, currentProfile, onSelect }) {
   const [tick, setTick] = useState(0);
   const ITEMS_PER_PAGE = 10;
 
-  // Atualiza tempo de uso em tempo real a cada segundo
+  // Atualiza a exibição visual em tempo real a cada segundo (a contagem real é gerida no App.jsx para evitar duplicação)
   useEffect(() => {
     const timer = setInterval(() => {
-      if (currentProfile && currentProfile.id) {
-        addUsageTime(currentProfile.id, 1);
-      }
       setTick((t) => t + 1);
     }, 1000);
     return () => clearInterval(timer);
-  }, [currentProfile]);
+  }, []);
 
   // Obtem lista com o administrador no topo e dados atualizados
   const accessList = getAccessRankingList(users, currentProfile);

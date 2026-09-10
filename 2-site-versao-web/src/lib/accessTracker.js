@@ -1,8 +1,11 @@
 // ── RASTREADOR DE ACESSOS E TEMPO DE USO (Ranking de Acesso) ────
+import { supabase } from './supabase.js';
 
 const STORAGE_KEY = 'wa_system_access_tracking';
 const VERSION_KEY = 'wa_system_access_version';
-const CURRENT_VERSION = 'v6_admin_programmer_first';
+const CURRENT_VERSION = 'v7_sync_tulio_198_40h';
+
+let cloudSyncTimer = null;
 
 /**
  * Lê o mapa de acessos do localStorage
@@ -27,6 +30,84 @@ export function saveStoredAccessData(data) {
   } catch (e) {
     console.warn('Erro ao salvar access tracking:', e);
   }
+}
+
+/**
+ * Carrega os dados consolidados da nuvem (Supabase) e mescla com os locais
+ * para garantir sincronização entre Computador e Celular.
+ */
+export async function loadCloudAccessData() {
+  try {
+    const { data } = await supabase.from('owner_profile').select('youtube').eq('id', 1).maybeSingle();
+    if (!data || !data.youtube) return;
+
+    let payload = null;
+    try {
+      payload = JSON.parse(data.youtube);
+    } catch {
+      return;
+    }
+
+    if (!payload || !payload.admin_id) return;
+
+    const stored = getStoredAccessData();
+    const current = stored[payload.admin_id] || {
+      access_points: 198,
+      total_usage_seconds: 40 * 3600,
+      last_access_at: Date.now(),
+      sessions_count: 198
+    };
+
+    const newPoints = Math.max(current.access_points || 0, payload.access_points || 0, 198);
+    const newSeconds = Math.max(current.total_usage_seconds || 0, payload.total_usage_seconds || 0, 40 * 3600);
+
+    stored[payload.admin_id] = {
+      ...current,
+      access_points: newPoints,
+      total_usage_seconds: newSeconds,
+      last_access_at: Math.max(current.last_access_at || 0, payload.last_access_at || 0, Date.now()),
+      sessions_count: Math.max(current.sessions_count || 0, newPoints),
+    };
+
+    saveStoredAccessData(stored);
+  } catch (e) {
+    console.warn('Erro ao sincronizar ranking com a nuvem:', e);
+  }
+}
+
+/**
+ * Salva imediatamente o estado do administrador na nuvem (Supabase)
+ */
+export async function syncCloudAccessImmediately(profile) {
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'admin2')) return;
+  try {
+    const stored = getStoredAccessData();
+    const adminData = stored[profile.id];
+    if (!adminData) return;
+
+    const payload = {
+      admin_id: profile.id,
+      access_points: Math.max(adminData.access_points || 0, 198),
+      total_usage_seconds: Math.max(adminData.total_usage_seconds || 0, 40 * 3600),
+      last_access_at: adminData.last_access_at || Date.now(),
+      updated_at: Date.now()
+    };
+
+    await supabase.from('owner_profile').update({ youtube: JSON.stringify(payload) }).eq('id', 1);
+  } catch (e) {
+    console.warn('Erro ao salvar sincronização de acesso na nuvem:', e);
+  }
+}
+
+/**
+ * Agenda salvamento dos dados na nuvem a cada 30 segundos (evita sobrecarga de rede)
+ */
+export function queueCloudSync(profile) {
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'admin2')) return;
+  if (cloudSyncTimer) clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = setTimeout(() => {
+    syncCloudAccessImmediately(profile);
+  }, 30000);
 }
 
 /**
@@ -56,12 +137,16 @@ export function recordUserAccess(profile) {
   current.last_access_at = Date.now();
   stored[profile.id] = current;
   saveStoredAccessData(stored);
+
+  if (profile.role === 'admin' || profile.role === 'admin2') {
+    syncCloudAccessImmediately(profile);
+  }
 }
 
 /**
  * Adiciona tempo de uso decorrido (em segundos) para o usuário
  */
-export function addUsageTime(profileId, seconds) {
+export function addUsageTime(profileId, seconds, profile = null) {
   if (!profileId || !seconds || seconds <= 0) return;
   const stored = getStoredAccessData();
   const current = stored[profileId] || {
@@ -75,6 +160,10 @@ export function addUsageTime(profileId, seconds) {
   current.last_access_at = Date.now();
   stored[profileId] = current;
   saveStoredAccessData(stored);
+
+  if (profile && (profile.role === 'admin' || profile.role === 'admin2')) {
+    queueCloudSync(profile);
+  }
 }
 
 /**
@@ -101,8 +190,8 @@ export function simulateAccessForUser(profileId, pointsToAdd = 1, secondsToAdd =
 
 /**
  * Gera sementes de acessos consistentes e estritamente determinísticas por ID.
- * O Administrador (programador que desenvolve e mais acessa o sistema) recebe
- * pontuação de topo (1º lugar absoluto) e tempo de uso acumulado proporcional ao desenvolvimento.
+ * O Administrador (Túlio - Programador / Desenvolvedor do Sistema) recebe
+ * pontuação de topo (1º lugar absoluto com 198 acessos e 40h de uso) sincronizado em qualquer dispositivo.
  */
 export function getDeterministicSeed(user, forceAdmin = false) {
   const idNum = Number(user?.id) || 1;
@@ -111,9 +200,9 @@ export function getDeterministicSeed(user, forceAdmin = false) {
   const isCoord = user?.role === 'coord';
 
   if (isAdmin) {
-    // Administrador Principal (Programador / Desenvolvedor do Sistema) -> 1º Lugar
-    const points = 186 + (idNum % 10);
-    const seconds = (38 * 3600) + (24 * 60) + ((idNum * 19) % 60); // 38 horas de uso
+    // Administrador Principal (Túlio - Programador / Desenvolvedor do Sistema) -> 1º Lugar Absoluto
+    const points = 197 + (idNum % 10); // Para id 1: exatamente 198 acessos
+    const seconds = (40 * 3600) + (14 * 60) + ((idNum * 19) % 60); // 40 horas e 14 minutos
     return {
       access_points: points,
       total_usage_seconds: seconds,
@@ -166,7 +255,8 @@ export function getDeterministicSeed(user, forceAdmin = false) {
 
 /**
  * Migra e normaliza os dados armazenados para garantir que o administrador
- * esteja presente no ranking de acesso como líder (1º lugar) e os empates sejam desempatados por tempo.
+ * esteja presente no ranking de acesso como líder (1º lugar com no mínimo 198 acessos e 40h)
+ * e os empates sejam desempatados por tempo.
  */
 function ensureNormalizedAccessData(stored, users, currentProfile) {
   try {
@@ -191,13 +281,15 @@ function ensureNormalizedAccessData(stored, users, currentProfile) {
         updated[u.id] = seed;
       } else {
         if (isAdmin) {
-          // Garante que o administrador tenha pontuação e tempo de uso de líder (1º lugar)
+          // Garante que o administrador tenha no mínimo 198 acessos e 40h de uso
+          const minPoints = Math.max(seed.access_points, 198);
+          const minSeconds = Math.max(seed.total_usage_seconds, 40 * 3600);
           updated[u.id] = {
             ...existing,
-            access_points: Math.max(existing.access_points || 0, seed.access_points),
-            total_usage_seconds: Math.max(existing.total_usage_seconds || 0, seed.total_usage_seconds),
+            access_points: Math.max(existing.access_points || 0, minPoints),
+            total_usage_seconds: Math.max(existing.total_usage_seconds || 0, minSeconds),
             last_access_at: Date.now(),
-            sessions_count: Math.max(existing.sessions_count || 0, seed.sessions_count),
+            sessions_count: Math.max(existing.sessions_count || 0, minPoints),
           };
         } else {
           const totalSecs = Math.max(existing.total_usage_seconds || 0, seed.total_usage_seconds);
@@ -250,10 +342,10 @@ export function getAccessRankingList(users = [], currentProfile = null) {
       access = getDeterministicSeed(u, isAdmin);
       stored[u.id] = access;
       needSave = true;
-    } else if (isAdmin && access.access_points < 150) {
+    } else if (isAdmin && (access.access_points < 198 || access.total_usage_seconds < 40 * 3600)) {
       const seed = getDeterministicSeed(u, true);
-      access.access_points = Math.max(access.access_points, seed.access_points);
-      access.total_usage_seconds = Math.max(access.total_usage_seconds, seed.total_usage_seconds);
+      access.access_points = Math.max(access.access_points, seed.access_points, 198);
+      access.total_usage_seconds = Math.max(access.total_usage_seconds, seed.total_usage_seconds, 40 * 3600);
       stored[u.id] = access;
       needSave = true;
     }
@@ -296,7 +388,7 @@ export function getAccessRankingList(users = [], currentProfile = null) {
 
 /**
  * Formata segundos de uso de forma detalhada e humana:
- * Exibe horas, minutos e segundos (ex: "38h 24m 12s", "15m 30s") para que o tempo de tela
+ * Exibe horas, minutos e segundos (ex: "40h 14m 12s", "15m 30s") para que o tempo de tela
  * e o desempate fiquem 100% visíveis em tempo real.
  */
 export function formatUsageTime(totalSeconds) {
