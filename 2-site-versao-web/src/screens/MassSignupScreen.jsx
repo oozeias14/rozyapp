@@ -321,6 +321,16 @@ Acesse agora para acompanhar seus dados e indicações!`;
     downloadExcelFile(scannedContacts, listTag);
   }
 
+  function handleCopyBroadcastMessage() {
+    try {
+      navigator.clipboard.writeText(BROADCAST_WELCOME_MESSAGE);
+      setCopiedMessage(true);
+      setTimeout(() => setCopiedMessage(false), 3000);
+    } catch (e) {
+      alert('Não foi possível copiar a mensagem automaticamente.');
+    }
+  }
+
   // --- BOTÃO MÁGICO: CADASTRAR NA REDE E SALVAR NO WHATSAPP DE UMA VEZ ---
   async function handleCadastrarESalvarWhatsApp() {
     const listTag = broadcastListName.trim();
@@ -697,6 +707,30 @@ Acesse agora para acompanhar seus dados e indicações!`;
             >
               <span style={{ fontSize: 20 }}>🖼️</span>
               <span>Buscar Imagem da Galeria</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={handleCopyBroadcastMessage}
+              style={{
+                margin: 0,
+                padding: '13px 18px',
+                fontSize: 13.5,
+                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                border: '1px solid var(--teal)',
+                color: 'var(--teal)',
+                borderRadius: 14,
+                width: '100%',
+                background: 'rgba(61, 217, 179, 0.06)'
+              }}
+            >
+              <span>📋</span>
+              <span>{copiedMessage ? '✅ Mensagem Padrão Copiada!' : 'Copiar Mensagem Padrão'}</span>
             </button>
           </div>
 
