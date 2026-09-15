@@ -11,7 +11,8 @@ import {
 } from '../lib/gemini';
 
 export default function MassSignupScreen({ profile }) {
-  const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
+  const galleryInputRef = useRef(null);
 
   const [totalUsers, setTotalUsers] = useState(0);
   const [allProfiles, setAllProfiles] = useState([]);
@@ -643,40 +644,75 @@ Acesse agora para acompanhar seus dados e indicações!`;
             </div>
           </div>
 
-          {/* Botão Gigante de Foto */}
-          <button
-            type="button"
-            className="btn"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={scanning}
-            style={{
-              margin: 0,
-              padding: '18px 24px',
-              fontSize: 16,
-              fontWeight: 900,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 12,
-              background: 'linear-gradient(135deg, #3DD9B3, #25D366)',
-              color: '#051A14',
-              border: 'none',
-              borderRadius: 16,
-              boxShadow: '0 8px 28px rgba(61, 217, 179, 0.45)',
-              cursor: 'pointer',
-              width: '100%',
-              maxWidth: 380
-            }}
-          >
-            <span style={{ fontSize: 24 }}>📸</span>
-            <span>{scanning ? '⏳ Lendo Folha de Presença...' : 'Tirar Foto da Folha de Presença'}</span>
-          </button>
+          {/* Botões de Foto da Câmera e Escolher da Galeria */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%', maxWidth: 380 }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => cameraInputRef.current?.click()}
+              disabled={scanning}
+              style={{
+                margin: 0,
+                padding: '16px 20px',
+                fontSize: 15,
+                fontWeight: 900,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 10,
+                background: 'linear-gradient(135deg, #3DD9B3, #25D366)',
+                color: '#051A14',
+                border: 'none',
+                borderRadius: 16,
+                boxShadow: '0 8px 24px rgba(61, 217, 179, 0.4)',
+                cursor: 'pointer',
+                width: '100%'
+              }}
+            >
+              <span style={{ fontSize: 22 }}>📸</span>
+              <span>{scanning ? '⏳ Lendo Folha de Presença...' : 'Tirar Foto com a Câmera'}</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn"
+              onClick={() => galleryInputRef.current?.click()}
+              disabled={scanning}
+              style={{
+                margin: 0,
+                padding: '14px 20px',
+                fontSize: 14.5,
+                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 10,
+                background: 'rgba(255, 255, 255, 0.08)',
+                color: '#fff',
+                border: '1px solid var(--line)',
+                borderRadius: 14,
+                cursor: 'pointer',
+                width: '100%'
+              }}
+            >
+              <span style={{ fontSize: 20 }}>🖼️</span>
+              <span>Buscar Imagem da Galeria</span>
+            </button>
+          </div>
 
           <input
-            ref={fileInputRef}
+            ref={cameraInputRef}
             type="file"
             accept="image/*"
             capture="environment"
+            style={{ display: 'none' }}
+            onChange={handleAttendanceSheetCapture}
+          />
+
+          <input
+            ref={galleryInputRef}
+            type="file"
+            accept="image/*"
             style={{ display: 'none' }}
             onChange={handleAttendanceSheetCapture}
           />
