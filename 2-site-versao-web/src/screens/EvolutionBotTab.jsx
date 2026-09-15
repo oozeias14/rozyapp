@@ -1057,7 +1057,7 @@ function MassDispatchView({ users, status, setShowConnectModal, config, getPhone
 
 export function EvolutionBotTab({ users, reload }) {
   const [config, setConfig] = useState(getEvolutionConfig());
-  const [mainMode, setMainMode] = useState('saved_numbers'); // 'saved_numbers' (Botão 1) | 'mass_dispatch' (Botão 2)
+  const [mainMode, setMainMode] = useState(null); // null (Menu de Opções) | 'saved_numbers' (Botão 1) | 'mass_dispatch' (Botão 2)
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [connectTab, setConnectTab] = useState('qr'); // 'qr' | 'pairing'
@@ -2257,103 +2257,169 @@ export function EvolutionBotTab({ users, reload }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-      {/* SELETOR DE BOTOES PRINCIPAIS SOLICITADOS PELO USUARIO */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-        gap: 12,
-        marginBottom: 8
-      }}>
-        <button
-          type="button"
-          onClick={() => setMainMode('saved_numbers')}
-          style={{
-            padding: '14px 18px',
-            borderRadius: 14,
-            border: mainMode === 'saved_numbers' ? '2px solid var(--teal)' : '1px solid var(--line)',
-            background: mainMode === 'saved_numbers' 
-              ? 'linear-gradient(135deg, rgba(0, 229, 155, 0.2), rgba(15, 23, 42, 0.95))' 
-              : 'rgba(15, 23, 42, 0.6)',
-            color: '#fff',
-            cursor: 'pointer',
-            textAlign: 'left',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 14,
-            boxShadow: mainMode === 'saved_numbers' ? '0 4px 20px rgba(0, 229, 155, 0.25)' : 'none',
-            transition: 'all 0.25s ease'
-          }}
-        >
+      {/* TELA INICIAL COM APENAS OS 2 BOTÕES SOLICITADOS */}
+      {mainMode === null && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{
-            width: 42,
-            height: 42,
-            borderRadius: 12,
-            background: mainMode === 'saved_numbers' ? 'var(--teal)' : 'rgba(255, 255, 255, 0.08)',
-            color: mainMode === 'saved_numbers' ? '#081018' : 'var(--ink2)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 18,
-            fontWeight: 900,
-            flexShrink: 0
+            background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(13, 17, 28, 0.98))',
+            border: '1px solid var(--line)',
+            borderRadius: 16,
+            padding: 24,
+            textAlign: 'center',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
           }}>
-            1
+            <h2 style={{ fontSize: 20, fontWeight: 900, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+              <span>🤖</span> Robô de WhatsApp
+            </h2>
+            <p style={{ fontSize: 13, color: 'var(--ink2)', marginTop: 6, marginBottom: 0 }}>
+              Escolha qual ferramenta do robô você deseja acessar abaixo:
+            </p>
           </div>
-          <div>
-            <div style={{ fontSize: 14.5, fontWeight: 900, color: mainMode === 'saved_numbers' ? 'var(--teal)' : '#fff' }}>
-              1 - Descobrir Número Salvo
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 2, lineHeight: 1.3 }}>
-              Análise de transmissão, checagem de 1 e 2 traços no WhatsApp
-            </div>
-          </div>
-        </button>
 
-        <button
-          type="button"
-          onClick={() => setMainMode('mass_dispatch')}
-          style={{
-            padding: '14px 18px',
-            borderRadius: 14,
-            border: mainMode === 'mass_dispatch' ? '2px solid #00E59B' : '1px solid var(--line)',
-            background: mainMode === 'mass_dispatch' 
-              ? 'linear-gradient(135deg, rgba(0, 229, 155, 0.2), rgba(15, 23, 42, 0.95))' 
-              : 'rgba(15, 23, 42, 0.6)',
-            color: '#fff',
-            cursor: 'pointer',
-            textAlign: 'left',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 14,
-            boxShadow: mainMode === 'mass_dispatch' ? '0 4px 20px rgba(0, 229, 155, 0.25)' : 'none',
-            transition: 'all 0.25s ease'
-          }}
-        >
           <div style={{
-            width: 42,
-            height: 42,
-            borderRadius: 12,
-            background: mainMode === 'mass_dispatch' ? '#00E59B' : 'rgba(255, 255, 255, 0.08)',
-            color: mainMode === 'mass_dispatch' ? '#081018' : 'var(--ink2)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 18,
-            fontWeight: 900,
-            flexShrink: 0
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: 16
           }}>
-            2
+            {/* BOTÃO 1 */}
+            <button
+              type="button"
+              onClick={() => setMainMode('saved_numbers')}
+              style={{
+                padding: '24px 20px',
+                borderRadius: 16,
+                border: '1px solid rgba(0, 229, 155, 0.4)',
+                background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.12), rgba(15, 23, 42, 0.85))',
+                color: '#fff',
+                cursor: 'pointer',
+                textAlign: 'left',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 14,
+                boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+                transition: 'all 0.25s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 14,
+                  background: 'var(--teal)',
+                  color: '#081018',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 22,
+                  fontWeight: 900
+                }}>
+                  1
+                </div>
+                <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--teal)', background: 'rgba(0, 229, 155, 0.18)', padding: '4px 10px', borderRadius: 20 }}>
+                  Acessar Ferramenta ➔
+                </span>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: '#fff' }}>
+                  1 - Descobrir Número Salvo
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--ink2)', marginTop: 6, lineHeight: 1.4 }}>
+                  Análise de transmissão, cruzamento de agenda e auditoria de 1 e 2 traços (✓ vs ✓✓) no WhatsApp.
+                </div>
+              </div>
+            </button>
+
+            {/* BOTÃO 2 */}
+            <button
+              type="button"
+              onClick={() => setMainMode('mass_dispatch')}
+              style={{
+                padding: '24px 20px',
+                borderRadius: 16,
+                border: '1px solid rgba(0, 229, 155, 0.4)',
+                background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.12), rgba(15, 23, 42, 0.85))',
+                color: '#fff',
+                cursor: 'pointer',
+                textAlign: 'left',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 14,
+                boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+                transition: 'all 0.25s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 14,
+                  background: '#00E59B',
+                  color: '#081018',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 22,
+                  fontWeight: 900
+                }}>
+                  2
+                </div>
+                <span style={{ fontSize: 11.5, fontWeight: 800, color: '#00E59B', background: 'rgba(0, 229, 155, 0.18)', padding: '4px 10px', borderRadius: 20 }}>
+                  Acessar Ferramenta ➔
+                </span>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: '#fff' }}>
+                  2 - Envio de Mensagem em Massa
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--ink2)', marginTop: 6, lineHeight: 1.4 }}>
+                  Disparos programados com cronômetro regressivo, anexo de imagens e confirmação de voto ("Cândido").
+                </div>
+              </div>
+            </button>
           </div>
-          <div>
-            <div style={{ fontSize: 14.5, fontWeight: 900, color: mainMode === 'mass_dispatch' ? '#00E59B' : '#fff' }}>
-              2 - Envio de Mensagem em Massa
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 2, lineHeight: 1.3 }}>
-              Disparos com cronômetro, imagens e confirmação de voto ("Cândido")
-            </div>
+        </div>
+      )}
+
+      {/* BOTÃO DE VOLTAR NO TOPO QUANDO QUALQUER OPÇÃO ESTIVER ABERTA */}
+      {mainMode !== null && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 14px',
+          background: 'rgba(15, 23, 42, 0.8)',
+          borderRadius: 12,
+          border: '1px solid var(--line)'
+        }}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setMainMode(null)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '7px 14px',
+              fontSize: 12.5,
+              fontWeight: 800,
+              margin: 0,
+              borderRadius: 8,
+              background: 'rgba(255, 255, 255, 0.06)',
+              border: '1px solid var(--line)',
+              color: '#fff',
+              cursor: 'pointer'
+            }}
+          >
+            ← Voltar para as Opções
+          </button>
+
+          <div style={{ fontSize: 13.5, fontWeight: 900, color: 'var(--teal)' }}>
+            {mainMode === 'saved_numbers' ? '📌 1 - Descobrir Número Salvo' : '🚀 2 - Envio de Mensagem em Massa'}
           </div>
-        </button>
-      </div>
+        </div>
+      )}
 
       {mainMode === 'mass_dispatch' && (
         <MassDispatchView 
