@@ -310,6 +310,88 @@ export async function sendWhatsAppMessage(number, text) {
   });
 }
 
+export async function sendWhatsAppMedia(number, mediaUrlOrBase64, caption = '', mediatype = 'image') {
+  const { instanceName } = getEvolutionConfig();
+  let cleanNumber = (number || '').toString().trim();
+  
+  if (!cleanNumber.includes('@')) {
+    let digits = cleanNumber.replace(/\D/g, '');
+    if (digits.length === 10 || digits.length === 11) {
+      digits = '55' + digits;
+    }
+    cleanNumber = digits;
+  }
+
+  const typingDelay = Math.floor(Math.random() * (2500 - 1000 + 1)) + 1000;
+
+  return await evolutionFetch(`/message/sendMedia/${instanceName}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      number: cleanNumber,
+      mediaMessage: {
+        mediatype: mediatype || 'image',
+        caption: caption || '',
+        media: mediaUrlOrBase64
+      },
+      options: {
+        delay: typingDelay,
+        presence: 'composing',
+      }
+    }),
+  });
+}
+
+export async function scanChatsForVoteConfirmation(keyword = 'candido', maxHours = 120) {
+  const cleanKeyword = normalizeText(keyword);
+  const confirmedMap = new Map();
+
+  try {
+    const chats = await fetchWhatsAppChats().catch(() => []);
+    const lidToPhone = await buildLidPhoneMapping(chats, []);
+
+    for (const c of chats) {
+      const rawR = (c.remoteJid || c.id || '').toLowerCase();
+      if (rawR.includes('@g.us')) continue;
+
+      const altR = c.lastMessage?.key?.remoteJidAlt || c.lastMessage?.key?.participantAlt || '';
+      const jids = [altR, rawR].filter(Boolean);
+
+      let cleanP = '';
+      for (const j of jids) {
+        let p = extractCleanPhone(j);
+        if (lidToPhone.has(p)) p = lidToPhone.get(p);
+        if (p) { cleanP = p; break; }
+      }
+
+      if (!cleanP) continue;
+
+      const lastMsg = c.lastMessage;
+      if (!lastMsg) continue;
+
+      const fromMe = lastMsg.key?.fromMe ?? false;
+      if (!fromMe) {
+        const msgText = extractActualMessageText(lastMsg);
+        if (doesMessageContainPhrase(lastMsg, cleanKeyword) || normalizeText(msgText).includes(cleanKeyword)) {
+          const sigs = getPhoneSignatures(cleanP);
+          const time = lastMsg.messageTimestamp ? new Date(lastMsg.messageTimestamp * 1000) : new Date();
+          const info = {
+            phone: cleanP,
+            name: c.name || c.pushName || 'Contato WhatsApp',
+            text: msgText,
+            timestamp: time.toISOString(),
+            formattedTime: time.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })
+          };
+          sigs.forEach(s => confirmedMap.set(s, info));
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao escanear confirmação de votos:', err);
+  }
+
+  return confirmedMap;
+}
+
 // ── CONSULTA E STATUS DE MENSAGENS (1 TRAÇO VS 2 TRAÇOS) ───────────
 
 export async function fetchWhatsAppMessages(params = {}) {

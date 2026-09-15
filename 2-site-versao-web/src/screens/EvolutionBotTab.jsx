@@ -9,6 +9,8 @@ import {
   getPairingCode, 
   disconnectInstance, 
   sendWhatsAppMessage, 
+  sendWhatsAppMedia,
+  scanChatsForVoteConfirmation,
   fetchWhatsAppMessages,
   evaluateMessageDelivery,
   checkWhatsAppNumbers,
@@ -31,8 +33,1031 @@ function initials(name) {
   return (name || '?').split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
 }
 
+function MassDispatchView({ users, status, setShowConnectModal, config, getPhoneSignatures, extractCleanPhone }) {
+  // Configurações de Datas e Horários da Campanha
+  const [campaignDate1, setCampaignDate1] = useState(() => localStorage.getItem('wa_mass_date1') || '2026-10-03');
+  const [campaignDate2, setCampaignDate2] = useState(() => localStorage.getItem('wa_mass_date2') || '2026-10-04');
+  const [scheduledTime, setScheduledTime] = useState(() => localStorage.getItem('wa_mass_time') || '09:00');
+  const [autoStartEnabled, setAutoStartEnabled] = useState(() => localStorage.getItem('wa_mass_autostart') !== 'false');
+  
+  // Mensagem e Imagem
+  const [messageText, setMessageText] = useState(() => localStorage.getItem('wa_mass_msg') || 
+    'Olá {primeiro_nome}, tudo bem? Aqui é da equipe oficial do Dr. Cândido Teles! 🤝\n\nGostaríamos de contar com seu apoio na nossa caminhada! Por favor, responda a esta mensagem digitando a palavra "CÂNDIDO" para confirmar seu voto e apoio. 🗳️\n\nJuntos por um futuro melhor! 🙏'
+  );
+  const [imageUrl, setImageUrl] = useState(() => localStorage.getItem('wa_mass_img_url') || '');
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [voteKeyword, setVoteKeyword] = useState(() => localStorage.getItem('wa_mass_keyword') || 'Cândido');
+
+  // Delays anti-ban (5s a 10s)
+  const [minDelaySec] = useState(5);
+  const [maxDelaySec] = useState(10);
+
+  // Estados de Execução
+  const [isRunning, setIsRunning] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [progress, setProgress] = useState({ current: 0, total: 0, success: 0, failed: 0 });
+  const [logs, setLogs] = useState([]);
+  const abortRef = useRef(false);
+  const pauseRef = useRef(false);
+  const logBoxRef = useRef(null);
+
+  // Mapeamento de Envios Efetuados: phoneSig -> { phone, name, time, status }
+  const [sentMap, setSentMap] = useState(() => {
+    try {
+      return new Map(JSON.parse(localStorage.getItem('wa_mass_sent_map') || '[]'));
+    } catch {
+      return new Map();
+    }
+  });
+
+  // Mapeamento de Votos Confirmados ("Cândido"): phoneSig -> { phone, name, timestamp, text }
+  const [voteConfirmations, setVoteConfirmations] = useState(() => {
+    try {
+      return new Map(JSON.parse(localStorage.getItem('wa_mass_votes_map') || '[]'));
+    } catch {
+      return new Map();
+    }
+  });
+  const [scanningVotes, setScanningVotes] = useState(false);
+
+  // Estado do Cronômetro Regressivo
+  const [countdownText, setCountdownText] = useState('');
+  const [nextTargetStr, setNextTargetStr] = useState('');
+  const [isTimerExpired, setIsTimerExpired] = useState(false);
+
+  // Filtros da Tabela de Contatos
+  const [tableFilter, setTableFilter] = useState('all'); // 'all' | 'confirmed' | 'sent' | 'pending'
+  const [tableSearch, setTableSearch] = useState('');
+  const [tablePage, setTablePage] = useState(1);
+  const PAGE_SIZE = 15;
+
+  function addLog(msg, type = 'info') {
+    const time = new Date().toLocaleTimeString('pt-BR');
+    setLogs(prev => [...prev.slice(-200), { time, msg, type }]);
+  }
+
+  useEffect(() => {
+    if (logBoxRef.current) {
+      logBoxRef.current.scrollTop = logBoxRef.current.scrollHeight;
+    }
+  }, [logs]);
+
+  useEffect(() => {
+    localStorage.setItem('wa_mass_date1', campaignDate1);
+    localStorage.setItem('wa_mass_date2', campaignDate2);
+    localStorage.setItem('wa_mass_time', scheduledTime);
+    localStorage.setItem('wa_mass_autostart', String(autoStartEnabled));
+    localStorage.setItem('wa_mass_msg', messageText);
+    localStorage.setItem('wa_mass_img_url', imageUrl);
+    localStorage.setItem('wa_mass_keyword', voteKeyword);
+  }, [campaignDate1, campaignDate2, scheduledTime, autoStartEnabled, messageText, imageUrl, voteKeyword]);
+
+  useEffect(() => {
+    function updateTimer() {
+      const now = new Date();
+      const [h, m] = (scheduledTime || '09:00').split(':').map(Number);
+
+      const t1 = new Date(`${campaignDate1}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`);
+      const t2 = new Date(`${campaignDate2}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`);
+
+      let target = t1;
+      let targetLabel = `Véspera (${t1.toLocaleDateString('pt-BR')})`;
+      if (now > t1) {
+        target = t2;
+        targetLabel = `Dia da Campanha (${t2.toLocaleDateString('pt-BR')})`;
+      }
+
+      const diff = target.getTime() - now.getTime();
+
+      if (diff <= 0) {
+        setIsTimerExpired(true);
+        setNextTargetStr(`${targetLabel} às ${scheduledTime}`);
+        setCountdownText('🚀 Horário da Campanha Atingido! Pronto para disparar.');
+
+        if (autoStartEnabled && !isRunning && diff > -60000 && status.connected) {
+          startMassDispatchAuto();
+        }
+        return;
+      }
+
+      setIsTimerExpired(false);
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+      const minutes = Math.floor((diff / (1000 * 60)) % 60);
+      const seconds = Math.floor((diff / 1000) % 60);
+
+      setNextTargetStr(`${targetLabel} às ${scheduledTime}`);
+      setCountdownText(`${days}d ${hours}h ${minutes}m ${seconds}s`);
+    }
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [campaignDate1, campaignDate2, scheduledTime, autoStartEnabled, isRunning, status.connected]);
+
+  async function handleImageUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Por favor, selecione um arquivo de imagem válido (JPG, PNG, WEBP).');
+      return;
+    }
+
+    setUploadingImage(true);
+    try {
+      const ext = file.name.split('.').pop() || 'jpg';
+      const filename = `mass_campaign_${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from('meetings').upload(filename, file, { upsert: true });
+
+      if (!error) {
+        const { data } = supabase.storage.from('meetings').getPublicUrl(filename);
+        if (data?.publicUrl) {
+          setImageUrl(data.publicUrl);
+          addLog('📷 Imagem anexada e enviada com sucesso para o servidor!', 'success');
+          setUploadingImage(false);
+          return;
+        }
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        setImageUrl(reader.result);
+        addLog('📷 Imagem convertida e anexada localmente.', 'info');
+        setUploadingImage(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      addLog(`⚠️ Erro ao enviar imagem: ${err.message}`, 'error');
+      setUploadingImage(false);
+    }
+  }
+
+  async function auditVoteConfirmations() {
+    if (!status.connected) {
+      alert('Conecte o WhatsApp antes de auditar a confirmação de votos!');
+      return;
+    }
+    setScanningVotes(true);
+    addLog(`🔍 Iniciando varredura das conversas no WhatsApp buscando "${voteKeyword}"...`, 'info');
+
+    try {
+      const foundMap = await scanChatsForVoteConfirmation(voteKeyword, 120);
+      const updatedVotes = new Map(voteConfirmations);
+      let newCount = 0;
+
+      foundMap.forEach((val, sig) => {
+        if (!updatedVotes.has(sig)) newCount++;
+        updatedVotes.set(sig, val);
+      });
+
+      setVoteConfirmations(updatedVotes);
+      localStorage.setItem('wa_mass_votes_map', JSON.stringify(Array.from(updatedVotes.entries())));
+      addLog(`✨ Auditoria de Votos Concluída! Total: ${updatedVotes.size} confirmação(ões) de voto registrada(s) (+${newCount} novos).`, 'success');
+    } catch (err) {
+      addLog(`⚠️ Erro na auditoria de votos: ${err.message}`, 'error');
+    } finally {
+      setScanningVotes(false);
+    }
+  }
+
+  function startMassDispatchAuto() {
+    if (isRunning) return;
+    startMassDispatch(true);
+  }
+
+  async function startMassDispatch(isAuto = false) {
+    if (!status.connected) {
+      alert('Atenção: O WhatsApp precisa estar CONECTADO para realizar os disparos!');
+      setShowConnectModal(true);
+      return;
+    }
+
+    const validTargetUsers = users.filter((u) => u.role !== 'admin' && u.role !== 'admin2');
+    if (validTargetUsers.length === 0) {
+      alert('Nenhum contato válido cadastrado para receber mensagens.');
+      return;
+    }
+
+    if (!isAuto) {
+      const confirmMsg = `🚀 Confirmar início do Disparo em Massa?\n\n` +
+        `• Contatos Alvo: ${validTargetUsers.length} cadastrados\n` +
+        `• Anexo de Imagem: ${imageUrl ? 'SIM (Imagem Anexada)' : 'NÃO (Apenas Texto)'}\n` +
+        `• Delay Anti-Ban: ${minDelaySec}s a ${maxDelaySec}s entre mensagens\n` +
+        `• Palavra-Chave de Voto: "${voteKeyword}"\n\nDeseja continuar?`;
+      if (!window.confirm(confirmMsg)) return;
+    }
+
+    setIsRunning(true);
+    setIsPaused(false);
+    abortRef.current = false;
+    pauseRef.current = false;
+    setProgress({ current: 0, total: validTargetUsers.length, success: 0, failed: 0 });
+
+    addLog(`🚀 [DISPARO INICIADO] Enviando para ${validTargetUsers.length} contatos...`, 'info');
+
+    const updatedSent = new Map(sentMap);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < validTargetUsers.length; i++) {
+      if (abortRef.current) {
+        addLog('⏹️ Disparo cancelado pelo operador.', 'warning');
+        break;
+      }
+
+      while (pauseRef.current) {
+        await new Promise(r => setTimeout(r, 1000));
+        if (abortRef.current) break;
+      }
+      if (abortRef.current) break;
+
+      const u = validTargetUsers[i];
+      const rawPhone = u.whatsapp || u.phone || '';
+      const firstName = (u.name || 'Amigo').trim().split(' ')[0];
+      const fullName = (u.name || 'Sem nome').trim();
+      const city = u.city || '';
+
+      const formattedText = messageText
+        .replace(/\{primeiro_nome\}/gi, firstName)
+        .replace(/\{nome\}/gi, fullName)
+        .replace(/\{cidade\}/gi, city);
+
+      if (!rawPhone || rawPhone.length < 8) {
+        addLog(`⚠️ [${i + 1}/${validTargetUsers.length}] ${fullName}: Telefone inválido. Pular.`, 'warning');
+        failCount++;
+        setProgress(p => ({ ...p, current: i + 1, failed: failCount }));
+        continue;
+      }
+
+      addLog(`📤 [${i + 1}/${validTargetUsers.length}] Enviando para ${fullName} (${rawPhone})...`, 'info');
+
+      try {
+        if (imageUrl) {
+          await sendWhatsAppMedia(rawPhone, imageUrl, formattedText, 'image');
+        } else {
+          await sendWhatsAppMessage(rawPhone, formattedText);
+        }
+
+        successCount++;
+        const timeStr = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const sigs = getPhoneSignatures(rawPhone);
+        const record = { phone: rawPhone, name: fullName, time: timeStr, status: 'ENVIADO' };
+        sigs.forEach(s => updatedSent.set(s, record));
+        setSentMap(new Map(updatedSent));
+
+        addLog(`✅ Enviado para ${fullName}!`, 'success');
+      } catch (err) {
+        failCount++;
+        addLog(`❌ Erro ao enviar para ${fullName}: ${err.message}`, 'error');
+      }
+
+      setProgress(p => ({ ...p, current: i + 1, success: successCount, failed: failCount }));
+
+      if (i < validTargetUsers.length - 1 && !abortRef.current) {
+        const delayMs = Math.floor(Math.random() * (maxDelaySec - minDelaySec + 1) * 1000) + (minDelaySec * 1000);
+        addLog(`🛡️ Delay Anti-Ban: aguardando ${(delayMs / 1000).toFixed(1)}s para o próximo envio...`, 'info');
+        await new Promise(r => setTimeout(r, delayMs));
+      }
+    }
+
+    localStorage.setItem('wa_mass_sent_map', JSON.stringify(Array.from(updatedSent.entries())));
+    setIsRunning(false);
+    addLog(`🏁 Disparo concluído! Enviadas: ${successCount}, Falhas: ${failCount}.`, 'success');
+
+    auditVoteConfirmations();
+  }
+
+  function handlePauseResume() {
+    if (!isRunning) return;
+    if (isPaused) {
+      pauseRef.current = false;
+      setIsPaused(false);
+      addLog('▶️ Disparo retomado.', 'info');
+    } else {
+      pauseRef.current = true;
+      setIsPaused(true);
+      addLog('⏸️ Disparo pausado temporariamente.', 'warning');
+    }
+  }
+
+  function handleStop() {
+    if (!isRunning) return;
+    if (window.confirm('Deseja realmente interromper o disparo em massa?')) {
+      abortRef.current = true;
+      pauseRef.current = false;
+      setIsPaused(false);
+      setIsRunning(false);
+    }
+  }
+
+  function exportConfirmedVotesCSV() {
+    const validUsersList = users.filter((u) => u.role !== 'admin' && u.role !== 'admin2');
+    const rows = [['Nome', 'Telefone', 'Cidade', 'Status Envio', 'Confirmação Voto ("Cândido")', 'Data/Hora Confirmação']];
+
+    validUsersList.forEach((u) => {
+      const rawPhone = u.whatsapp || u.phone || '';
+      const sigs = getPhoneSignatures(rawPhone);
+      const isConfirmed = sigs.some(s => voteConfirmations.has(s));
+      const isSent = sigs.some(s => sentMap.has(s));
+      const voteData = sigs.map(s => voteConfirmations.get(s)).find(Boolean);
+
+      rows.push([
+        `"${u.name || ''}"`,
+        `"${rawPhone}"`,
+        `"${u.city || ''}"`,
+        isSent ? 'Enviado' : 'Pendente',
+        isConfirmed ? 'SIM - Voto Confirmado' : 'Aguardando',
+        voteData?.formattedTime || voteData?.timestamp || ''
+      ]);
+    });
+
+    const csvContent = '\uFEFF' + rows.map(r => r.join(';')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `votos_confirmados_candido_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  const validTargetUsers = users.filter((u) => u.role !== 'admin' && u.role !== 'admin2');
+  
+  const evaluatedList = validTargetUsers.map((u) => {
+    const rawPhone = u.whatsapp || u.phone || '';
+    const sigs = getPhoneSignatures(rawPhone);
+    const voteData = sigs.map(s => voteConfirmations.get(s)).find(Boolean);
+    const sentData = sigs.map(s => sentMap.get(s)).find(Boolean);
+    const isConfirmed = Boolean(voteData);
+    const isSent = Boolean(sentData);
+
+    return {
+      user: u,
+      name: u.name || 'Sem nome',
+      phone: rawPhone,
+      city: u.city || '',
+      isConfirmed,
+      isSent,
+      voteData,
+      sentData
+    };
+  });
+
+  const confirmedCount = evaluatedList.filter(e => e.isConfirmed).length;
+  const sentCount = evaluatedList.filter(e => e.isSent).length;
+  const pendingCount = evaluatedList.filter(e => !e.isSent).length;
+  const confirmedPercent = validTargetUsers.length > 0 ? ((confirmedCount / validTargetUsers.length) * 100).toFixed(1) : '0.0';
+
+  const filteredList = evaluatedList.filter((item) => {
+    if (tableFilter === 'confirmed' && !item.isConfirmed) return false;
+    if (tableFilter === 'sent' && !item.isSent) return false;
+    if (tableFilter === 'pending' && item.isSent) return false;
+
+    if (tableSearch.trim()) {
+      const q = tableSearch.toLowerCase().trim();
+      const n = item.name.toLowerCase();
+      const p = item.phone.replace(/\D/g, '');
+      const c = item.city.toLowerCase();
+      return n.includes(q) || p.includes(q) || c.includes(q);
+    }
+    return true;
+  });
+
+  const totalPages = Math.ceil(filteredList.length / PAGE_SIZE) || 1;
+  const paginatedList = filteredList.slice((tablePage - 1) * PAGE_SIZE, tablePage * PAGE_SIZE);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      
+      {/* CARD 1: STATUS DE CONEXÃO DO ROBÔ */}
+      <div style={{
+        background: status.connected ? 'rgba(37, 211, 102, 0.08)' : 'rgba(240, 107, 76, 0.08)',
+        border: '1px solid ' + (status.connected ? 'rgba(37, 211, 102, 0.3)' : 'rgba(240, 107, 76, 0.3)'),
+        borderRadius: 14,
+        padding: '14px 18px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 10
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            width: 12,
+            height: 12,
+            borderRadius: '50%',
+            background: status.connected ? '#25D366' : '#FF8A65',
+            boxShadow: status.connected ? '0 0 10px #25D366' : '0 0 10px #FF8A65'
+          }} />
+          <div>
+            <div style={{ fontSize: 13.5, fontWeight: 900, color: '#fff' }}>
+              {status.connected 
+                ? `🟢 WhatsApp Conectado (Instância: ${config.instanceName})` 
+                : '🔴 WhatsApp Desconectado'}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--ink2)', marginTop: 2 }}>
+              {status.connected 
+                ? 'Pronto para envios em massa e monitoramento de respostas de voto' 
+                : 'Conecte o WhatsApp via QR Code ou Código de Pareamento para realizar envios'}
+            </div>
+          </div>
+        </div>
+
+        {!status.connected && (
+          <button
+            type="button"
+            className="btn btn-teal"
+            style={{ margin: 0, padding: '8px 14px', fontSize: 12, fontWeight: 800 }}
+            onClick={() => setShowConnectModal(true)}
+          >
+            📱 Conectar WhatsApp
+          </button>
+        )}
+      </div>
+
+      {/* CARD 2: AGENDAMENTO & CRONÔMETRO REGRESSIVO */}
+      <div style={{
+        background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(13, 17, 28, 0.95))',
+        border: '1px solid var(--teal)',
+        borderRadius: 16,
+        padding: 20,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        boxShadow: '0 4px 20px rgba(0,229,155,0.12)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 900, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>⏱️</span> Agendamento & Cronômetro Regressivo da Campanha
+          </h3>
+          <span style={{ fontSize: 11, background: 'rgba(0, 229, 155, 0.15)', color: 'var(--teal)', padding: '4px 10px', borderRadius: 20, fontWeight: 800 }}>
+            Disparo Automático Programado
+          </span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase' }}>
+              1. Data da Véspera (Disparo 1)
+            </label>
+            <input 
+              type="date"
+              value={campaignDate1}
+              onChange={(e) => setCampaignDate1(e.target.value)}
+              style={{ marginTop: 4, width: '100%', fontSize: 13, fontWeight: 700, padding: '8px 10px' }}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase' }}>
+              2. Data da Campanha (Disparo 2)
+            </label>
+            <input 
+              type="date"
+              value={campaignDate2}
+              onChange={(e) => setCampaignDate2(e.target.value)}
+              style={{ marginTop: 4, width: '100%', fontSize: 13, fontWeight: 700, padding: '8px 10px' }}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase' }}>
+              Horário do Disparo Automático
+            </label>
+            <input 
+              type="time"
+              value={scheduledTime}
+              onChange={(e) => setScheduledTime(e.target.value)}
+              style={{ marginTop: 4, width: '100%', fontSize: 13, fontWeight: 700, padding: '8px 10px' }}
+            />
+          </div>
+        </div>
+
+        <div style={{
+          background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.1), rgba(0, 180, 216, 0.05))',
+          border: '1px solid rgba(0, 229, 155, 0.4)',
+          borderRadius: 14,
+          padding: 18,
+          textAlign: 'center',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 8
+        }}>
+          <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>
+            🎯 Contagem Regressiva para: {nextTargetStr}
+          </div>
+          <div style={{ 
+            fontSize: 28, 
+            fontWeight: 900, 
+            color: '#00E59B', 
+            letterSpacing: '2px', 
+            fontFamily: 'monospace',
+            textShadow: '0 0 12px rgba(0, 229, 155, 0.5)'
+          }}>
+            {countdownText}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--ink2)' }}>
+            {isTimerExpired 
+              ? '⚡ O tempo regressivo chegou a 0! Clique em "Iniciar Disparo Manualmente" se quiser disparar agora.' 
+              : 'O robô fará o disparo automático quando a contagem atingir zero.'}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 12.5, color: '#fff' }}>
+            <input 
+              type="checkbox"
+              checked={autoStartEnabled}
+              onChange={(e) => setAutoStartEnabled(e.target.checked)}
+              style={{ width: 16, height: 16, accentColor: 'var(--teal)' }}
+            />
+            <span><strong>Disparo Automático Ativo</strong> (Inicia sozinho quando o cronômetro zerar)</span>
+          </label>
+
+          <button
+            type="button"
+            className="btn btn-teal"
+            disabled={isRunning}
+            onClick={() => startMassDispatch(false)}
+            style={{ margin: 0, padding: '10px 18px', fontSize: 13, fontWeight: 900, borderRadius: 10 }}
+          >
+            {isRunning ? '⏳ Disparando em Andamento...' : '🚀 Iniciar Disparo Manualmente'}
+          </button>
+        </div>
+      </div>
+
+      {/* CARD 3: CONTEÚDO DA MENSAGEM & ANEXO DE IMAGEM */}
+      <div style={{
+        background: 'rgba(15, 23, 42, 0.7)',
+        border: '1px solid var(--line)',
+        borderRadius: 16,
+        padding: 20,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 14
+      }}>
+        <h3 style={{ fontSize: 15, fontWeight: 900, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>📝</span> Conteúdo da Mensagem do Bot & Anexo de Imagem
+        </h3>
+
+        <div style={{
+          background: 'rgba(255, 255, 255, 0.03)',
+          border: '1px dashed var(--line)',
+          borderRadius: 12,
+          padding: 14,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+          flexWrap: 'wrap'
+        }}>
+          {imageUrl ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <img 
+                src={imageUrl} 
+                alt="Anexo de Imagem" 
+                style={{ width: 64, height: 64, borderRadius: 10, objectFit: 'cover', border: '1px solid var(--teal)' }}
+              />
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#25D366' }}>✅ Imagem Anexada</div>
+                <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 2 }}>O bot enviará esta imagem como mídia no WhatsApp.</div>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => { setImageUrl(''); localStorage.removeItem('wa_mass_img_url'); }}
+                  style={{ fontSize: 11, color: '#FF8A65', padding: 0, marginTop: 4, border: 'none', background: 'transparent', cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                  🗑️ Remover Imagem
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: '#fff' }}>📷 Anexar Imagem para a Mensagem</div>
+                <div style={{ fontSize: 11.5, color: 'var(--ink2)' }}>Selecione um banner ou foto para ser enviada junto com o texto.</div>
+              </div>
+              <label className="btn btn-teal" style={{ margin: 0, padding: '7px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+                {uploadingImage ? '⏳ Enviando...' : '📁 Escolher Imagem'}
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  onChange={handleImageUpload} 
+                  disabled={uploadingImage}
+                  style={{ display: 'none' }} 
+                />
+              </label>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: 'var(--ink3)', fontWeight: 800, textTransform: 'uppercase' }}>Variáveis:</span>
+          <button type="button" className="btn" style={{ fontSize: 10.5, padding: '2px 7px', margin: 0, background: 'rgba(255,255,255,0.06)' }} onClick={() => setMessageText(prev => prev + ' {primeiro_nome}')}>+ Primeiro Nome</button>
+          <button type="button" className="btn" style={{ fontSize: 10.5, padding: '2px 7px', margin: 0, background: 'rgba(255,255,255,0.06)' }} onClick={() => setMessageText(prev => prev + ' {nome}')}>+ Nome Completo</button>
+          <button type="button" className="btn" style={{ fontSize: 10.5, padding: '2px 7px', margin: 0, background: 'rgba(255,255,255,0.06)' }} onClick={() => setMessageText(prev => prev + ' {cidade}')}>+ Cidade</button>
+          <button type="button" className="btn" style={{ fontSize: 10.5, padding: '2px 7px', margin: 0, background: 'rgba(0, 229, 155, 0.15)', color: 'var(--teal)' }} onClick={() => setMessageText(prev => prev + ' "CÂNDIDO"')}>+ Palavra "CÂNDIDO"</button>
+        </div>
+
+        <textarea
+          rows={5}
+          value={messageText}
+          onChange={(e) => setMessageText(e.target.value)}
+          placeholder="Digite a mensagem que o robô enviará aos contatos..."
+          style={{
+            width: '100%',
+            padding: 12,
+            fontSize: 13,
+            lineHeight: 1.5,
+            borderRadius: 12,
+            background: 'rgba(255, 255, 255, 0.04)',
+            border: '1px solid var(--line)',
+            color: '#fff'
+          }}
+        />
+      </div>
+
+      {/* CARD 4: CONFIRMAÇÃO DE VOTO ("CÂNDIDO") & ANTI-BAN DELAY */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
+        
+        <div style={{
+          background: 'rgba(15, 23, 42, 0.7)',
+          border: '1px solid var(--line)',
+          borderRadius: 16,
+          padding: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10
+        }}>
+          <h4 style={{ fontSize: 13.5, fontWeight: 900, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>🗳️</span> Confirmação de Voto (Resposta)
+          </h4>
+          <p style={{ fontSize: 11.5, color: 'var(--ink2)', margin: 0, lineHeight: 1.4 }}>
+            O robô monitora as respostas dos contatos. Quando a pessoa digitar a palavra abaixo, o painel marca como <strong>Voto Confirmado</strong>!
+          </p>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input 
+              type="text"
+              value={voteKeyword}
+              onChange={(e) => setVoteKeyword(e.target.value)}
+              placeholder="Ex: Cândido"
+              style={{ flex: 1, fontSize: 13, fontWeight: 800, padding: '7px 10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}
+            />
+            <button
+              type="button"
+              className="btn btn-teal"
+              disabled={scanningVotes}
+              onClick={auditVoteConfirmations}
+              style={{ margin: 0, padding: '7px 12px', fontSize: 11.5, fontWeight: 800 }}
+            >
+              {scanningVotes ? '⏳ Auditando...' : '🔍 Auditar Respostas'}
+            </button>
+          </div>
+        </div>
+
+        <div style={{
+          background: 'rgba(15, 23, 42, 0.7)',
+          border: '1px solid var(--line)',
+          borderRadius: 16,
+          padding: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10
+        }}>
+          <h4 style={{ fontSize: 13.5, fontWeight: 900, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>🛡️</span> Sistema Anti-Ban do WhatsApp
+          </h4>
+          <p style={{ fontSize: 11.5, color: 'var(--ink2)', margin: 0, lineHeight: 1.4 }}>
+            Intervalo aleatório dinâmico a cada envio + digitação simulada para evitar bloqueios.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--teal)' }}>
+              ⏱️ Delay: {minDelaySec}s a {maxDelaySec}s por mensagem
+            </div>
+            <span style={{ fontSize: 10.5, background: 'rgba(37, 211, 102, 0.15)', color: '#25D366', padding: '3px 8px', borderRadius: 12, fontWeight: 700 }}>
+              Proteção Máxima
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* CARD 5: MÉTRICAS E PAINEL DE CONTROLE */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
+        gap: 12
+      }}>
+        <div style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid var(--line)', borderRadius: 14, padding: 14 }}>
+          <div style={{ fontSize: 11, color: 'var(--ink2)', fontWeight: 800, textTransform: 'uppercase' }}>📤 Mensagens Enviadas</div>
+          <div style={{ fontSize: 22, fontWeight: 900, color: '#fff', marginTop: 4 }}>
+            {sentCount} <span style={{ fontSize: 12, color: 'var(--ink3)' }}>/ {validTargetUsers.length}</span>
+          </div>
+          <div style={{ fontSize: 10.5, color: 'var(--teal)', marginTop: 2 }}>
+            {validTargetUsers.length > 0 ? ((sentCount / validTargetUsers.length) * 100).toFixed(1) : 0}% concluído
+          </div>
+        </div>
+
+        <div style={{ background: 'linear-gradient(135deg, rgba(37, 211, 102, 0.12), rgba(15, 23, 42, 0.8))', border: '1px solid rgba(37, 211, 102, 0.4)', borderRadius: 14, padding: 14 }}>
+          <div style={{ fontSize: 11, color: '#25D366', fontWeight: 800, textTransform: 'uppercase' }}>🗳️ Votos Confirmados ("{voteKeyword}")</div>
+          <div style={{ fontSize: 22, fontWeight: 900, color: '#25D366', marginTop: 4 }}>
+            {confirmedCount}
+          </div>
+          <div style={{ fontSize: 10.5, color: '#25D366', marginTop: 2 }}>
+            {confirmedPercent}% da lista de contatos
+          </div>
+        </div>
+
+        <div style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid var(--line)', borderRadius: 14, padding: 14 }}>
+          <div style={{ fontSize: 11, color: 'var(--ink2)', fontWeight: 800, textTransform: 'uppercase' }}>⚡ Status do Robô</div>
+          <div style={{ fontSize: 15, fontWeight: 900, color: isRunning ? '#00E59B' : '#fff', marginTop: 6 }}>
+            {isRunning ? (isPaused ? '⏸️ Pausado' : '🚀 Em Execução...') : '💤 Aguardando'}
+          </div>
+          {isRunning && (
+            <div style={{ fontSize: 10.5, color: 'var(--teal)', marginTop: 2 }}>
+              Progresso: {progress.current} / {progress.total}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {isRunning && (
+        <div style={{
+          background: 'rgba(0, 229, 155, 0.1)',
+          border: '1px solid var(--teal)',
+          borderRadius: 14,
+          padding: 14,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 10
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div className="dot" style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--teal)' }} />
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#fff' }}>
+              Progresso do Disparo: {progress.current} de {progress.total} ({progress.success} Sucesso(s), {progress.failed} Erro(s))
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={handlePauseResume}
+              style={{ margin: 0, padding: '6px 12px', fontSize: 12, fontWeight: 800 }}
+            >
+              {isPaused ? '▶️ Retomar' : '⏸️ Pausar'}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={handleStop}
+              style={{ margin: 0, padding: '6px 12px', fontSize: 12, fontWeight: 800, background: 'rgba(240, 107, 76, 0.2)', color: '#FF8A65', border: '1px solid #FF8A65' }}
+            >
+              ⏹️ Parar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* CARD 6: TABELA DE CONTATOS & CONFIRMAÇÃO DE VOTOS */}
+      <div style={{
+        background: 'rgba(15, 23, 42, 0.7)',
+        border: '1px solid var(--line)',
+        borderRadius: 16,
+        padding: 20,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 14
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 900, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>👥</span> Relação de Contatos & Confirmação de Voto
+          </h3>
+
+          <button
+            type="button"
+            className="btn btn-teal"
+            onClick={exportConfirmedVotesCSV}
+            style={{ margin: 0, padding: '7px 14px', fontSize: 11.5, fontWeight: 800 }}
+          >
+            📥 Exportar Votos (.csv)
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn"
+              style={{
+                fontSize: 11.5,
+                padding: '6px 12px',
+                margin: 0,
+                borderRadius: 8,
+                background: tableFilter === 'all' ? 'var(--teal)' : 'rgba(255,255,255,0.05)',
+                color: tableFilter === 'all' ? '#081018' : '#fff',
+                fontWeight: tableFilter === 'all' ? 800 : 500
+              }}
+              onClick={() => { setTableFilter('all'); setTablePage(1); }}
+            >
+              Todos ({validTargetUsers.length})
+            </button>
+
+            <button
+              type="button"
+              className="btn"
+              style={{
+                fontSize: 11.5,
+                padding: '6px 12px',
+                margin: 0,
+                borderRadius: 8,
+                background: tableFilter === 'confirmed' ? '#25D366' : 'rgba(37, 211, 102, 0.1)',
+                color: tableFilter === 'confirmed' ? '#081018' : '#25D366',
+                fontWeight: tableFilter === 'confirmed' ? 800 : 500,
+                border: '1px solid rgba(37, 211, 102, 0.3)'
+              }}
+              onClick={() => { setTableFilter('confirmed'); setTablePage(1); }}
+            >
+              🗳️ Votos Confirmados ({confirmedCount})
+            </button>
+
+            <button
+              type="button"
+              className="btn"
+              style={{
+                fontSize: 11.5,
+                padding: '6px 12px',
+                margin: 0,
+                borderRadius: 8,
+                background: tableFilter === 'sent' ? 'rgba(0, 229, 155, 0.2)' : 'rgba(255,255,255,0.05)',
+                color: tableFilter === 'sent' ? 'var(--teal)' : 'var(--ink2)',
+                fontWeight: tableFilter === 'sent' ? 800 : 500
+              }}
+              onClick={() => { setTableFilter('sent'); setTablePage(1); }}
+            >
+              📤 Enviados ({sentCount})
+            </button>
+
+            <button
+              type="button"
+              className="btn"
+              style={{
+                fontSize: 11.5,
+                padding: '6px 12px',
+                margin: 0,
+                borderRadius: 8,
+                background: tableFilter === 'pending' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.05)',
+                color: tableFilter === 'pending' ? '#fff' : 'var(--ink2)',
+                fontWeight: tableFilter === 'pending' ? 800 : 500
+              }}
+              onClick={() => { setTableFilter('pending'); setTablePage(1); }}
+            >
+              ⏳ Pendentes ({pendingCount})
+            </button>
+          </div>
+
+          <input 
+            type="text"
+            placeholder="🔍 Buscar por nome, whatsapp..."
+            value={tableSearch}
+            onChange={(e) => { setTableSearch(e.target.value); setTablePage(1); }}
+            style={{ width: 220, fontSize: 12, padding: '6px 10px', borderRadius: 8, margin: 0 }}
+          />
+        </div>
+
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'left' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--line)', color: 'var(--ink3)', textTransform: 'uppercase', fontSize: 10.5 }}>
+                <th style={{ padding: '8px 10px' }}>Contato / Nome</th>
+                <th style={{ padding: '8px 10px' }}>WhatsApp</th>
+                <th style={{ padding: '8px 10px' }}>Cidade</th>
+                <th style={{ padding: '8px 10px' }}>Status Envio</th>
+                <th style={{ padding: '8px 10px' }}>Confirmação de Voto ("{voteKeyword}")</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedList.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ padding: 20, textAlign: 'center', color: 'var(--ink3)' }}>
+                    Nenhum contato encontrado no filtro selecionado.
+                  </td>
+                </tr>
+              ) : (
+                paginatedList.map((item, idx) => (
+                  <tr key={item.user.id || idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                    <td style={{ padding: '10px 10px', fontWeight: 700, color: '#fff' }}>
+                      {item.name}
+                    </td>
+                    <td style={{ padding: '10px 10px', color: 'var(--ink2)' }}>
+                      {item.phone}
+                    </td>
+                    <td style={{ padding: '10px 10px', color: 'var(--ink2)' }}>
+                      {item.city || '-'}
+                    </td>
+                    <td style={{ padding: '10px 10px' }}>
+                      {item.isSent ? (
+                        <span style={{ color: '#00E59B', fontSize: 11, fontWeight: 700 }}>
+                          ✅ Enviado ({item.sentData?.time || ''})
+                        </span>
+                      ) : (
+                        <span style={{ opacity: 0.5, fontSize: 11 }}>
+                          ⏳ Pendente
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: '10px 10px' }}>
+                      {item.isConfirmed ? (
+                        <span style={{ 
+                          background: 'rgba(37, 211, 102, 0.18)', 
+                          color: '#25D366', 
+                          border: '1px solid #25D366', 
+                          padding: '3px 8px', 
+                          borderRadius: 12, 
+                          fontWeight: 800,
+                          fontSize: 11,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4
+                        }}>
+                          🗳️ Voto Confirmado ({item.voteData?.formattedTime || ''})
+                        </span>
+                      ) : (
+                        <span style={{ opacity: 0.4, fontSize: 11 }}>
+                          ⏳ Aguardando Voto
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+            <span style={{ fontSize: 11.5, color: 'var(--ink3)' }}>
+              Página {tablePage} de {totalPages} ({filteredList.length} contatos)
+            </span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={tablePage === 1}
+                onClick={() => setTablePage(p => p - 1)}
+                style={{ fontSize: 11, padding: '4px 10px', margin: 0 }}
+              >
+                ← Anterior
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={tablePage === totalPages}
+                onClick={() => setTablePage(p => p + 1)}
+                style={{ fontSize: 11, padding: '4px 10px', margin: 0 }}
+              >
+                Próxima →
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* CARD 7: JANELA DE LOGS DE EXECUÇÃO */}
+      {logs.length > 0 && (
+        <div style={{
+          background: '#080c14',
+          border: '1px solid var(--line)',
+          borderRadius: 14,
+          padding: 14,
+          fontFamily: 'monospace',
+          fontSize: 11.5,
+          lineHeight: 1.4
+        }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink3)', textTransform: 'uppercase', marginBottom: 8 }}>
+            📜 Logs de Execução em Tempo Real
+          </div>
+          <div ref={logBoxRef} style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {logs.map((l, i) => (
+              <div key={i} style={{
+                color: l.type === 'error' ? '#FF8A65' : l.type === 'success' ? '#25D366' : l.type === 'warning' ? '#FFD54F' : '#94A3B8'
+              }}>
+                <span style={{ opacity: 0.5 }}>[{l.time}]</span> {l.msg}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function EvolutionBotTab({ users, reload }) {
   const [config, setConfig] = useState(getEvolutionConfig());
+  const [mainMode, setMainMode] = useState('saved_numbers'); // 'saved_numbers' (Botão 1) | 'mass_dispatch' (Botão 2)
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [connectTab, setConnectTab] = useState('qr'); // 'qr' | 'pairing'
@@ -1232,7 +2257,118 @@ export function EvolutionBotTab({ users, reload }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-      {/* Barra de Progresso por Etapas (Estilo MassSignup / Cadastro de Folha) */}
+      {/* SELETOR DE BOTOES PRINCIPAIS SOLICITADOS PELO USUARIO */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+        gap: 12,
+        marginBottom: 8
+      }}>
+        <button
+          type="button"
+          onClick={() => setMainMode('saved_numbers')}
+          style={{
+            padding: '14px 18px',
+            borderRadius: 14,
+            border: mainMode === 'saved_numbers' ? '2px solid var(--teal)' : '1px solid var(--line)',
+            background: mainMode === 'saved_numbers' 
+              ? 'linear-gradient(135deg, rgba(0, 229, 155, 0.2), rgba(15, 23, 42, 0.95))' 
+              : 'rgba(15, 23, 42, 0.6)',
+            color: '#fff',
+            cursor: 'pointer',
+            textAlign: 'left',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            boxShadow: mainMode === 'saved_numbers' ? '0 4px 20px rgba(0, 229, 155, 0.25)' : 'none',
+            transition: 'all 0.25s ease'
+          }}
+        >
+          <div style={{
+            width: 42,
+            height: 42,
+            borderRadius: 12,
+            background: mainMode === 'saved_numbers' ? 'var(--teal)' : 'rgba(255, 255, 255, 0.08)',
+            color: mainMode === 'saved_numbers' ? '#081018' : 'var(--ink2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 18,
+            fontWeight: 900,
+            flexShrink: 0
+          }}>
+            1
+          </div>
+          <div>
+            <div style={{ fontSize: 14.5, fontWeight: 900, color: mainMode === 'saved_numbers' ? 'var(--teal)' : '#fff' }}>
+              1 - Descobrir Número Salvo
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 2, lineHeight: 1.3 }}>
+              Análise de transmissão, checagem de 1 e 2 traços no WhatsApp
+            </div>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMainMode('mass_dispatch')}
+          style={{
+            padding: '14px 18px',
+            borderRadius: 14,
+            border: mainMode === 'mass_dispatch' ? '2px solid #00E59B' : '1px solid var(--line)',
+            background: mainMode === 'mass_dispatch' 
+              ? 'linear-gradient(135deg, rgba(0, 229, 155, 0.2), rgba(15, 23, 42, 0.95))' 
+              : 'rgba(15, 23, 42, 0.6)',
+            color: '#fff',
+            cursor: 'pointer',
+            textAlign: 'left',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            boxShadow: mainMode === 'mass_dispatch' ? '0 4px 20px rgba(0, 229, 155, 0.25)' : 'none',
+            transition: 'all 0.25s ease'
+          }}
+        >
+          <div style={{
+            width: 42,
+            height: 42,
+            borderRadius: 12,
+            background: mainMode === 'mass_dispatch' ? '#00E59B' : 'rgba(255, 255, 255, 0.08)',
+            color: mainMode === 'mass_dispatch' ? '#081018' : 'var(--ink2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 18,
+            fontWeight: 900,
+            flexShrink: 0
+          }}>
+            2
+          </div>
+          <div>
+            <div style={{ fontSize: 14.5, fontWeight: 900, color: mainMode === 'mass_dispatch' ? '#00E59B' : '#fff' }}>
+              2 - Envio de Mensagem em Massa
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 2, lineHeight: 1.3 }}>
+              Disparos com cronômetro, imagens e confirmação de voto ("Cândido")
+            </div>
+          </div>
+        </button>
+      </div>
+
+      {mainMode === 'mass_dispatch' && (
+        <MassDispatchView 
+          users={users} 
+          status={status} 
+          setShowConnectModal={setShowConnectModal} 
+          config={config} 
+          getPhoneSignatures={getPhoneSignatures} 
+          extractCleanPhone={extractCleanPhone} 
+        />
+      )}
+
+      {mainMode === 'saved_numbers' && (
+        <>
+          {/* Barra de Progresso por Etapas (Estilo MassSignup / Cadastro de Folha) */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -3530,6 +4666,9 @@ export function EvolutionBotTab({ users, reload }) {
           </div>
         </div>
       )}
+        </>
+      )}
     </div>
   );
 }
+
