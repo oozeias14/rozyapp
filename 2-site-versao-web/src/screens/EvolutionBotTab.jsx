@@ -2116,11 +2116,28 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
       const isWith = contactFilterModal === 'with_number';
       const title = isWith ? 'com_numero_adicionado' : 'sem_numero_adicionado';
 
-      const headers = ['ID', 'Nome Completo', 'WhatsApp / Telefone', 'Cidade / RA', 'E-mail', 'Nick / Username', 'Data de Cadastro'];
+      const usersById = new Map((users || []).map((u) => [u.id, u]));
+
+      const headers = [
+        'ID',
+        'Nome Completo',
+        'WhatsApp / Telefone',
+        'Cidade / RA',
+        'E-mail',
+        'Nick / Username',
+        'Nome Indicador',
+        'Nick Indicador',
+        'ID Indicador',
+        'Data de Cadastro'
+      ];
       const rows = filteredModalUsers.map((u) => {
         const rawPhone = (u.whatsapp || u.phone || '').toString().trim();
         const formattedPhone = rawPhone ? `'${rawPhone}` : '';
         const formattedDate = u.created_at ? new Date(u.created_at).toLocaleDateString('pt-BR') : '';
+
+        const sponsor = u.referrer_id ? usersById.get(u.referrer_id) : null;
+        const sponsorName = sponsor ? (sponsor.name || '') : '';
+        const sponsorNick = sponsor ? (sponsor.username || '') : '';
 
         return [
           u.id || '',
@@ -2129,6 +2146,9 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
           `"${(u.city || '').replace(/"/g, '""')}"`,
           `"${(u.email || '').replace(/"/g, '""')}"`,
           `"${(u.username || '').replace(/"/g, '""')}"`,
+          `"${sponsorName.replace(/"/g, '""')}"`,
+          `"${sponsorNick.replace(/"/g, '""')}"`,
+          u.referrer_id || '',
           `"${formattedDate}"`
         ];
       });
@@ -2212,6 +2232,8 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
         return;
       }
 
+      const usersById = new Map((users || []).map((u) => [u.id, u]));
+
       const headers = [
         'ID',
         'Nome Completo',
@@ -2220,6 +2242,9 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
         'Cidade / RA',
         'E-mail',
         'Nick / Username',
+        'Nome Indicador',
+        'Nick Indicador',
+        'ID Indicador',
         'Data de Cadastro'
       ];
 
@@ -2230,6 +2255,10 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
         const formattedPhone = rawPhone ? `'${rawPhone}` : '';
         const formattedDate = u.created_at ? new Date(u.created_at).toLocaleDateString('pt-BR') : '';
 
+        const sponsor = u.referrer_id ? usersById.get(u.referrer_id) : null;
+        const sponsorName = sponsor ? (sponsor.name || '') : '';
+        const sponsorNick = sponsor ? (sponsor.username || '') : '';
+
         return [
           u.id || '',
           `"${(u.name || 'Sem Nome').replace(/"/g, '""')}"`,
@@ -2238,6 +2267,9 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
           `"${(u.city || '').replace(/"/g, '""')}"`,
           `"${(u.email || '').replace(/"/g, '""')}"`,
           `"${(u.username || '').replace(/"/g, '""')}"`,
+          `"${sponsorName.replace(/"/g, '""')}"`,
+          `"${sponsorNick.replace(/"/g, '""')}"`,
+          u.referrer_id || '',
           `"${formattedDate}"`
         ];
       });

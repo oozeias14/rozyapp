@@ -180,11 +180,14 @@ function Avatar({ person, size = 36 }) {
   );
 }
 
-function exportUsersToExcel(usersList = [], fileName = 'lista_contatos_orbita.csv') {
+function exportUsersToExcel(usersList = [], fileName = 'lista_contatos_orbita.csv', allUsers = []) {
   if (!usersList || usersList.length === 0) {
     alert('Nenhum contato encontrado para baixar.');
     return;
   }
+
+  const lookup = allUsers && allUsers.length > 0 ? allUsers : usersList;
+  const usersById = new Map(lookup.map((u) => [u.id, u]));
 
   const headers = [
     'ID',
@@ -194,6 +197,8 @@ function exportUsersToExcel(usersList = [], fileName = 'lista_contatos_orbita.cs
     'Nick / Username',
     'Cidade / RA',
     'Função / Role',
+    'Nome Indicador',
+    'Nick Indicador',
     'ID Indicador',
     'Data de Cadastro'
   ];
@@ -203,6 +208,10 @@ function exportUsersToExcel(usersList = [], fileName = 'lista_contatos_orbita.cs
     const formattedPhone = rawPhone ? `'${rawPhone}` : '';
     const formattedDate = u.created_at ? new Date(u.created_at).toLocaleDateString('pt-BR') : '';
 
+    const sponsor = u.referrer_id ? usersById.get(u.referrer_id) : null;
+    const sponsorName = sponsor ? (sponsor.name || '') : '';
+    const sponsorNick = sponsor ? (sponsor.username || '') : '';
+
     return [
       u.id || '',
       `"${(u.name || '').replace(/"/g, '""')}"`,
@@ -211,6 +220,8 @@ function exportUsersToExcel(usersList = [], fileName = 'lista_contatos_orbita.cs
       `"${(u.username || '').replace(/"/g, '""')}"`,
       `"${(u.city || '').replace(/"/g, '""')}"`,
       `"${u.role || 'user'}"`,
+      `"${sponsorName.replace(/"/g, '""')}"`,
+      `"${sponsorNick.replace(/"/g, '""')}"`,
       u.referrer_id || '',
       `"${formattedDate}"`
     ];
@@ -264,7 +275,7 @@ function UsersTab({ users, onSelect, reload }) {
             alignItems: 'center',
             gap: 6
           }}
-          onClick={() => exportUsersToExcel(filtered, `lista_contatos_excel_${new Date().toISOString().slice(0,10)}.csv`)}
+          onClick={() => exportUsersToExcel(filtered, `lista_contatos_excel_${new Date().toISOString().slice(0,10)}.csv`, users)}
         >
           📊 Baixar Lista em Excel ({filtered.length})
         </button>
@@ -841,7 +852,7 @@ function UserDetail({ user, sponsor, coord, placementParent, isAdmin, isTrueAdmi
     ['E-mail', user.email], ['Telefone', user.phone || '-'], ['Cidade / Região', user.city || '-'], ['Nascimento', user.birth || '-'],
     ['Instagram', user.instagram || '-'], ['Facebook', user.facebook || '-'], ['TikTok', user.tiktok || '-'], ['WhatsApp', user.whatsapp || '-'],
     ['Coordenador', coord ? `${coord.name} (#${coord.id})` : '-'],
-    ['Indicado por', sponsor ? `${sponsor.name} (#${sponsor.id})` : '-'],
+    ['Indicado por', sponsor ? `${sponsor.name} (${sponsor.username ? `@${sponsor.username} · ` : ''}ID #${sponsor.id})` : '-'],
     ['Posicionado abaixo de', placementParent ? `${placementParent.name} (#${placementParent.id})` : '-'],
   ];
 
@@ -1540,7 +1551,7 @@ function StatsTab({ users, meetings, messages }) {
                 <Avatar person={u} size={30} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</div>
-                  <div style={{ fontSize: '11px', color: 'var(--ink3)' }}>ID: #{u.id} · @{u.username} · Indicador: {sponsor ? <span style={{ color: '#ffa500', fontWeight: 600 }}>{`${sponsor.name} (#${sponsor.id})`}</span> : '-'}</div>
+                  <div style={{ fontSize: '11px', color: 'var(--ink3)' }}>ID: #{u.id} · @{u.username} · Indicador: {sponsor ? <span style={{ color: '#ffa500', fontWeight: 600 }}>{`${sponsor.name} (${sponsor.username ? `@${sponsor.username} · ` : ''}ID #${sponsor.id})`}</span> : '-'}</div>
                 </div>
               </div>
               <div style={{ fontSize: '11px', color: 'var(--teal)', fontWeight: 600, whiteSpace: 'nowrap' }}>
