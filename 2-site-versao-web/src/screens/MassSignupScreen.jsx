@@ -265,6 +265,46 @@ Acesse agora para acompanhar seus dados e indicações!`;
     }, 1000);
   }
 
+  function downloadExcelFile(contactsList, tag = 'Reunião') {
+    const valid = (contactsList || []).filter(c => c.name.trim() && c.phone.replace(/\D/g, ''));
+    if (valid.length === 0) {
+      alert('Nenhum contato encontrado para baixar em Excel.');
+      return;
+    }
+
+    const headers = [
+      'Nome Completo',
+      'WhatsApp / Telefone',
+      'Cidade / RA',
+      'Lista / Reunião'
+    ];
+
+    const rows = valid.map((c) => {
+      const phoneDigits = normalizePhoneWithDDD61(c.phone);
+      const formattedPhone = phoneDigits ? `'55${phoneDigits}` : '';
+      return [
+        `"${(c.name || '').replace(/"/g, '""')}"`,
+        `"${formattedPhone}"`,
+        `"${(c.city || batchDefaultCity || 'Brasília').replace(/"/g, '""')}"`,
+        `"${tag.replace(/"/g, '""')}"`
+      ];
+    });
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const cleanTag = tag.replace(/[^a-zA-Z0-9_\-]/g, '_');
+    link.setAttribute('download', `contatos_${cleanTag}_excel_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 500);
+  }
+
   async function handleManualDownloadContacts() {
     const listTag = batchResult?.listTag || broadcastListName.trim() || 'Reunião';
     const valid = (scannedContacts || []).filter(c => c.name.trim() && c.phone.replace(/\D/g, ''));
@@ -273,6 +313,11 @@ Acesse agora para acompanhar seus dados e indicações!`;
       return;
     }
     await downloadVCardFile(valid, listTag);
+  }
+
+  function handleManualDownloadExcel() {
+    const listTag = batchResult?.listTag || broadcastListName.trim() || 'Reunião';
+    downloadExcelFile(scannedContacts, listTag);
   }
 
   // --- BOTÃO MÁGICO: CADASTRAR NA REDE E SALVAR NO WHATSAPP DE UMA VEZ ---
@@ -1213,6 +1258,30 @@ Acesse agora para acompanhar seus dados e indicações!`;
             >
               <span style={{ fontSize: 22 }}>📲</span>
               <span>SALVAR CONTATOS NO MEU CELULAR</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn"
+              onClick={handleManualDownloadExcel}
+              style={{
+                width: '100%',
+                margin: 0,
+                padding: '13px',
+                fontSize: 14,
+                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                background: 'rgba(37, 211, 102, 0.15)',
+                color: '#25D366',
+                border: '1px solid rgba(37, 211, 102, 0.4)',
+                borderRadius: 12
+              }}
+            >
+              <span>📊</span>
+              <span>BAIXAR LISTA EM EXCEL (.CSV)</span>
             </button>
 
             <button

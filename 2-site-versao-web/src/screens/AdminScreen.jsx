@@ -180,15 +180,66 @@ function Avatar({ person, size = 36 }) {
   );
 }
 
+function exportUsersToExcel(usersList = [], fileName = 'lista_contatos_orbita.csv') {
+  if (!usersList || usersList.length === 0) {
+    alert('Nenhum contato encontrado para baixar.');
+    return;
+  }
+
+  const headers = [
+    'ID',
+    'Nome Completo',
+    'WhatsApp / Telefone',
+    'E-mail',
+    'Nick / Username',
+    'Cidade / RA',
+    'Função / Role',
+    'ID Indicador',
+    'Data de Cadastro'
+  ];
+
+  const rows = usersList.map((u) => {
+    const rawPhone = (u.whatsapp || u.phone || '').toString().trim();
+    const formattedPhone = rawPhone ? `'${rawPhone}` : '';
+    const formattedDate = u.created_at ? new Date(u.created_at).toLocaleDateString('pt-BR') : '';
+
+    return [
+      u.id || '',
+      `"${(u.name || '').replace(/"/g, '""')}"`,
+      `"${formattedPhone}"`,
+      `"${(u.email || '').replace(/"/g, '""')}"`,
+      `"${(u.username || '').replace(/"/g, '""')}"`,
+      `"${(u.city || '').replace(/"/g, '""')}"`,
+      `"${u.role || 'user'}"`,
+      u.referrer_id || '',
+      `"${formattedDate}"`
+    ];
+  });
+
+  const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', fileName);
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => {
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, 500);
+}
+
 /* ===== CADASTROS ===== */
 function UsersTab({ users, onSelect, reload }) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
 
   const filtered = users.filter((u) =>
-    u.name.toLowerCase().includes(search.toLowerCase()) ||
+    (u.name || '').toLowerCase().includes(search.toLowerCase()) ||
     String(u.id).includes(search) ||
-    (u.email || '').toLowerCase().includes(search.toLowerCase())
+    (u.email || '').toLowerCase().includes(search.toLowerCase()) ||
+    (u.whatsapp || u.phone || '').includes(search)
   );
 
   const ITEMS_PER_PAGE = 10;
@@ -197,16 +248,37 @@ function UsersTab({ users, onSelect, reload }) {
 
   return (
     <div>
-      <div className="card-title">Todos os cadastros ({users.length})</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+        <div className="card-title" style={{ margin: 0 }}>Todos os cadastros ({users.length})</div>
+        <button
+          type="button"
+          className="btn btn-teal"
+          style={{
+            width: 'auto',
+            padding: '8px 14px',
+            fontSize: 12,
+            fontWeight: 800,
+            margin: 0,
+            borderRadius: 10,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6
+          }}
+          onClick={() => exportUsersToExcel(filtered, `lista_contatos_excel_${new Date().toISOString().slice(0,10)}.csv`)}
+        >
+          📊 Baixar Lista em Excel ({filtered.length})
+        </button>
+      </div>
 
       <input 
-        placeholder="Buscar nome, e-mail ou ID..." 
+        placeholder="Buscar nome, e-mail, telefone ou ID..." 
         value={search} 
         onChange={(e) => {
           setSearch(e.target.value);
           setPage(1);
         }} 
       />
+
 
       {paginatedUsers.map((p) => (
         <div key={p.id} className="data-row" onClick={() => onSelect(p)}>

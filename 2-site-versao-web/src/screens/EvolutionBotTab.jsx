@@ -356,23 +356,24 @@ function MassDispatchView({ users, status, setShowConnectModal, config, getPhone
     const rows = [['Nome', 'Telefone', 'Cidade', 'Status Envio', 'Confirmação Voto ("Cândido")', 'Data/Hora Confirmação']];
 
     validUsersList.forEach((u) => {
-      const rawPhone = u.whatsapp || u.phone || '';
+      const rawPhone = (u.whatsapp || u.phone || '').toString().trim();
+      const formattedPhone = rawPhone ? `'${rawPhone}` : '';
       const sigs = getPhoneSignatures(rawPhone);
       const isConfirmed = sigs.some(s => voteConfirmations.has(s));
       const isSent = sigs.some(s => sentMap.has(s));
       const voteData = sigs.map(s => voteConfirmations.get(s)).find(Boolean);
 
       rows.push([
-        `"${u.name || ''}"`,
-        `"${rawPhone}"`,
-        `"${u.city || ''}"`,
+        `"${(u.name || '').replace(/"/g, '""')}"`,
+        `"${formattedPhone}"`,
+        `"${(u.city || '').replace(/"/g, '""')}"`,
         isSent ? 'Enviado' : 'Pendente',
         isConfirmed ? 'SIM - Voto Confirmado' : 'Aguardando',
         voteData?.formattedTime || voteData?.timestamp || ''
       ]);
     });
 
-    const csvContent = '\uFEFF' + rows.map(r => r.join(';')).join('\n');
+    const csvContent = '\uFEFF' + rows.map(r => r.join(';')).join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -380,7 +381,10 @@ function MassDispatchView({ users, status, setShowConnectModal, config, getPhone
     link.setAttribute('download', `votos_confirmados_candido_${new Date().toISOString().slice(0,10)}.csv`);
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 500);
   }
 
   const validTargetUsers = users.filter((u) => u.role !== 'admin' && u.role !== 'admin2');
@@ -2105,6 +2109,47 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
     }
   }
 
+  // Exportar Excel (.csv com BOM UTF-8) do modal de contatos
+  function handleExportModalUsersExcel() {
+    if (filteredModalUsers.length === 0) return;
+    try {
+      const isWith = contactFilterModal === 'with_number';
+      const title = isWith ? 'com_numero_adicionado' : 'sem_numero_adicionado';
+
+      const headers = ['ID', 'Nome Completo', 'WhatsApp / Telefone', 'Cidade / RA', 'E-mail', 'Nick / Username', 'Data de Cadastro'];
+      const rows = filteredModalUsers.map((u) => {
+        const rawPhone = (u.whatsapp || u.phone || '').toString().trim();
+        const formattedPhone = rawPhone ? `'${rawPhone}` : '';
+        const formattedDate = u.created_at ? new Date(u.created_at).toLocaleDateString('pt-BR') : '';
+
+        return [
+          u.id || '',
+          `"${(u.name || 'Sem Nome').replace(/"/g, '""')}"`,
+          `"${formattedPhone}"`,
+          `"${(u.city || '').replace(/"/g, '""')}"`,
+          `"${(u.email || '').replace(/"/g, '""')}"`,
+          `"${(u.username || '').replace(/"/g, '""')}"`,
+          `"${formattedDate}"`
+        ];
+      });
+
+      const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `contatos_${title}_excel_${new Date().toISOString().slice(0,10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 500);
+    } catch (err) {
+      alert('Erro ao exportar lista em Excel: ' + err.message);
+    }
+  }
+
   // Exportar formato oficial CSV para Google Contatos (sem limites de importação)
   function handleExportGoogleContactsCsv() {
     try {
@@ -2156,6 +2201,61 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
       }, 200);
     } catch (err) {
       alert('Erro ao exportar CSV do Google Contatos: ' + err.message);
+    }
+  }
+
+  // Exportar Lista Completa de Contatos formatada para Excel (.csv com BOM UTF-8 e separador ;)
+  function handleExportExcelCsv() {
+    try {
+      if (!validUsers || validUsers.length === 0) {
+        alert('Nenhum contato encontrado para baixar em Excel.');
+        return;
+      }
+
+      const headers = [
+        'ID',
+        'Nome Completo',
+        'Lista / Transmissão',
+        'WhatsApp / Telefone',
+        'Cidade / RA',
+        'E-mail',
+        'Nick / Username',
+        'Data de Cadastro'
+      ];
+
+      const rows = validUsers.map((u, i) => {
+        const batchNum = Math.floor(i / 100) + 1;
+        const batchPrefix = `T${batchNum}`;
+        const rawPhone = (u.whatsapp || u.phone || '').toString().trim();
+        const formattedPhone = rawPhone ? `'${rawPhone}` : '';
+        const formattedDate = u.created_at ? new Date(u.created_at).toLocaleDateString('pt-BR') : '';
+
+        return [
+          u.id || '',
+          `"${(u.name || 'Sem Nome').replace(/"/g, '""')}"`,
+          `"${batchPrefix}"`,
+          `"${formattedPhone}"`,
+          `"${(u.city || '').replace(/"/g, '""')}"`,
+          `"${(u.email || '').replace(/"/g, '""')}"`,
+          `"${(u.username || '').replace(/"/g, '""')}"`,
+          `"${formattedDate}"`
+        ];
+      });
+
+      const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `contatos_excel_dr_candido_${new Date().toISOString().slice(0,10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 500);
+    } catch (err) {
+      alert('Erro ao exportar lista para Excel: ' + err.message);
     }
   }
 
@@ -2927,30 +3027,54 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
               />
             </div>
 
-            {/* Sub-header de contagem e botão de exportar */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 8 }}>
+            {/* Sub-header de contagem e botões de exportar */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 8, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 11.5, color: 'var(--ink2)' }}>
                 Exibindo <strong>{filteredModalUsers.length}</strong> resultado(s)
               </span>
-              <button
-                type="button"
-                className="btn btn-teal"
-                style={{
-                  width: 'auto',
-                  padding: '6px 12px',
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  margin: 0,
-                  borderRadius: 8,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 5
-                }}
-                onClick={handleExportModalUsers}
-                title="Baixar lista filtrada em arquivo .vcf"
-              >
-                📥 Baixar Lista (.vcf)
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{
+                    width: 'auto',
+                    padding: '6px 12px',
+                    fontSize: 11.5,
+                    fontWeight: 800,
+                    margin: 0,
+                    borderRadius: 8,
+                    background: 'rgba(37, 211, 102, 0.18)',
+                    color: '#25D366',
+                    border: '1px solid rgba(37, 211, 102, 0.4)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5
+                  }}
+                  onClick={handleExportModalUsersExcel}
+                  title="Baixar lista em planilha Excel (.csv)"
+                >
+                  📊 Baixar Excel (.csv)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-teal"
+                  style={{
+                    width: 'auto',
+                    padding: '6px 12px',
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    margin: 0,
+                    borderRadius: 8,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5
+                  }}
+                  onClick={handleExportModalUsers}
+                  title="Baixar lista filtrada em arquivo .vcf"
+                >
+                  📥 Baixar (.vcf)
+                </button>
+              </div>
             </div>
 
             {/* Lista de Contatos com Rolagem */}
@@ -3201,7 +3325,25 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                   <strong style={{ color: '#FF8A65' }}>Atenção:</strong> Arquivos <strong style={{ color: '#fff' }}>.csv</strong> só funcionam quando importados <strong>dentro do site do Google Contatos</strong> no computador ou navegador. O celular não abre arquivos .csv diretamente.
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8, marginTop: 2 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginTop: 2 }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{
+                      padding: '9px 12px',
+                      fontSize: 12,
+                      fontWeight: 800,
+                      margin: 0,
+                      borderRadius: 10,
+                      background: 'rgba(37, 211, 102, 0.18)',
+                      color: '#25D366',
+                      border: '1px solid rgba(37, 211, 102, 0.4)'
+                    }}
+                    onClick={handleExportExcelCsv}
+                  >
+                    📊 Baixar Planilha Excel (.csv)
+                  </button>
+
                   <button
                     type="button"
                     className="btn"
@@ -3217,7 +3359,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                     }}
                     onClick={handleExportGoogleContactsCsv}
                   >
-                    📥 Baixar Planilha (.csv)
+                    📥 Google Contatos (.csv)
                   </button>
 
                   <a
