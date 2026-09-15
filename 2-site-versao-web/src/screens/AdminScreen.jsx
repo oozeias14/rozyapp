@@ -72,6 +72,7 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
   const [selected, setSelected] = useState(null);
   const [editing, setEditing] = useState(null);
   const [modalPerson, setModalPerson] = useState(null);
+  const [robotSubMode, setRobotSubMode] = useState(null);
   const tabsRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -133,7 +134,19 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         ))}
       </div>
 
-      <button className="btn btn-ghost" style={{ marginTop: 10, marginBottom: 10, width: '100%' }} onClick={onBack}>← Voltar ao aplicativo</button>
+      <button 
+        className="btn btn-ghost" 
+        style={{ marginTop: 10, marginBottom: 10, width: '100%' }} 
+        onClick={() => {
+          if (tab === 'evolution' && robotSubMode !== null) {
+            setRobotSubMode(null);
+          } else {
+            onBack();
+          }
+        }}
+      >
+        {tab === 'evolution' && robotSubMode !== null ? '← Voltar para as Opções do Robô' : '← Voltar ao aplicativo'}
+      </button>
 
       <div style={{ flex: 1 }}>
         {loading && <div style={{ fontSize: 12, color: 'var(--teal)', textAlign: 'center', margin: '8px 0' }}>⏳ Carregando dados...</div>}
@@ -141,8 +154,9 @@ export default function AdminScreen({ profile, onBack, initialTab }) {
         {tab === 'ranking' && <RankingTab users={users} meetings={meetings} onSelect={(u) => setModalPerson(u)} />}
         {tab === 'access_ranking' && <AccessRankingTab users={users} currentProfile={profile} onSelect={(u) => setModalPerson(u)} />}
         {tab === 'messages' && <MessagesTab messages={messages} profile={profile} reload={load} />}
-        {tab === 'evolution' && isAdmin && <EvolutionBotTab users={users} reload={load} />}
+        {tab === 'evolution' && isAdmin && <EvolutionBotTab users={users} reload={load} subMode={robotSubMode} onSubModeChange={setRobotSubMode} />}
         {tab === 'owner' && isAdmin && owner && <OwnerTab owner={owner} reload={load} />}
+
         {tab === 'stats' && <StatsTab users={users} meetings={meetings} messages={messages} />}
         {tab === 'settings' && isAdmin && settings && <SettingsTab settings={settings} profile={profile} reload={load} users={users} />}
       </div>

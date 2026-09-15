@@ -1055,9 +1055,18 @@ function MassDispatchView({ users, status, setShowConnectModal, config, getPhone
   );
 }
 
-export function EvolutionBotTab({ users, reload }) {
+export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
   const [config, setConfig] = useState(getEvolutionConfig());
-  const [mainMode, setMainMode] = useState(null); // null (Menu de Opções) | 'saved_numbers' (Botão 1) | 'mass_dispatch' (Botão 2)
+  const [mainMode, setMainModeState] = useState(subMode || null);
+
+  useEffect(() => {
+    setMainModeState(subMode !== undefined ? subMode : null);
+  }, [subMode]);
+
+  const setMainMode = (mode) => {
+    setMainModeState(mode);
+    if (onSubModeChange) onSubModeChange(mode);
+  };
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [connectTab, setConnectTab] = useState('qr'); // 'qr' | 'pairing'

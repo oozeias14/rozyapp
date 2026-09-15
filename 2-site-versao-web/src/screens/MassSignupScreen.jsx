@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase, CITIES } from '../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
 import TopBar from '../components/TopBar';
-import { fetchTotalUsersCount } from '../lib/api';
+import { fetchTotalUsersCount, fetchAllProfiles } from '../lib/api';
 import { 
   getGeminiApiKey, 
   setGeminiApiKey, 
@@ -14,6 +14,10 @@ export default function MassSignupScreen({ profile }) {
   const fileInputRef = useRef(null);
 
   const [totalUsers, setTotalUsers] = useState(0);
+  const [allProfiles, setAllProfiles] = useState([]);
+  const [selectedIndicatorProfile, setSelectedIndicatorProfile] = useState(null);
+  const [indicatorSearchQuery, setIndicatorSearchQuery] = useState('');
+  const [showIndicatorDropdown, setShowIndicatorDropdown] = useState(false);
   const [step, setStep] = useState(1); // 1: Foto, 2: Detalhes, 3: Confirmar, 4: Concluído
 
   // Estados da Leitura de Folha com IA
@@ -48,10 +52,26 @@ Acesse agora para acompanhar seus dados e indicações!`;
 
   useEffect(() => {
     (async () => {
-      const count = await fetchTotalUsersCount();
+      const [count, profs] = await Promise.all([
+        fetchTotalUsersCount(),
+        fetchAllProfiles().catch(() => [])
+      ]);
       setTotalUsers(count);
+      setAllProfiles(profs || []);
     })();
   }, []);
+
+  const matchingIndicators = (allProfiles || []).filter((p) => {
+    if (!indicatorSearchQuery.trim()) return false;
+    const q = indicatorSearchQuery.toLowerCase().trim();
+    const digitsQ = q.replace(/\D/g, '');
+
+    const matchUser = (p.username || '').toLowerCase().includes(q);
+    const matchName = (p.name || '').toLowerCase().includes(q);
+    const matchPhone = digitsQ && (p.whatsapp || p.phone || '').replace(/\D/g, '').includes(digitsQ);
+
+    return matchUser || matchName || matchPhone;
+  }).slice(0, 8);
 
   function normalizePhoneWithDDD61(raw) {
     let digits = (raw || '').replace(/\D/g, '');
@@ -270,11 +290,12 @@ Acesse agora para acompanhar seus dados e indicações!`;
       return;
     }
 
-    const targetIndicator = profile;
+    const targetIndicator = selectedIndicatorProfile || profile;
     if (!targetIndicator?.id) {
-      alert('Erro: Usuário autenticado não encontrado.');
+      alert('Erro: Usuário responsável pelo cadastro não encontrado.');
       return;
     }
+
 
     setBatchLoading(true);
     let successCount = 0;
@@ -669,7 +690,7 @@ Acesse agora para acompanhar seus dados e indicações!`;
                   {validContactsCount} Contatos Identificados!
                 </div>
                 <div style={{ fontSize: 11.5, color: 'var(--teal)' }}>
-                  Sob a sua indicação: <strong>@{profile?.username || 'você'}</strong>
+                  Indicador Ativo: <strong>@{selectedIndicatorProfile?.username || profile?.username || 'você'}</strong>
                 </div>
               </div>
             </div>
@@ -677,6 +698,141 @@ Acesse agora para acompanhar seus dados e indicações!`;
               Prontos
             </span>
           </div>
+
+          {/* Campo de Busca de Indicador (Cadastro para Terceiros) */}
+          <div style={{ position: 'relative' }}>
+            <label className="lbl" style={{ fontSize: 11.5, color: '#00E59B', fontWeight: 800, marginBottom: 5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>👤 INDICADOR DOS CADASTROS (OPCIONAL):</span>
+              <span style={{ color: 'var(--teal)', fontSize: 10, background: 'rgba(0, 229, 155, 0.15)', padding: '2px 6px', borderRadius: 4, fontWeight: 800 }}>PARA TERCEIROS</span>
+            </label>
+
+            {/* Card de exibição do indicador ativo */}
+            <div style={{
+              background: selectedIndicatorProfile ? 'rgba(0, 229, 155, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+              border: '1.5px solid ' + (selectedIndicatorProfile ? '#00E59B' : 'var(--line)'),
+              borderRadius: 10,
+              padding: '10px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              marginBottom: 8
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+                <span style={{ fontSize: 18 }}>{selectedIndicatorProfile ? '🎯' : '👤'}</span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {selectedIndicatorProfile 
+                      ? `${selectedIndicatorProfile.name || 'Sem nome'} (@${selectedIndicatorProfile.username || ''})` 
+                      : `Seu perfil (@${profile?.username || 'você'})`}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink2)' }}>
+                    {selectedIndicatorProfile 
+                      ? `WhatsApp: ${selectedIndicatorProfile.whatsapp || selectedIndicatorProfile.phone || 'N/A'}` 
+                      : 'Deixe em branco para cadastrar no seu próprio perfil'}
+                  </div>
+                </div>
+              </div>
+
+              {selectedIndicatorProfile && (
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => { setSelectedIndicatorProfile(null); setIndicatorSearchQuery(''); }}
+                  style={{ fontSize: 11, color: '#FF8A65', border: '1px solid rgba(240,107,76,0.3)', padding: '4px 8px', borderRadius: 6, margin: 0, cursor: 'pointer' }}
+                >
+                  ✕ Meu Perfil
+                </button>
+              )}
+            </div>
+
+            {/* Input de Busca por Nick ou WhatsApp */}
+            <div style={{ position: 'relative' }}>
+              <input
+                type="text"
+                placeholder="Digite o Nick ou WhatsApp para buscar o indicador..."
+                value={indicatorSearchQuery}
+                onChange={(e) => {
+                  setIndicatorSearchQuery(e.target.value);
+                  setShowIndicatorDropdown(true);
+                }}
+                onFocus={() => setShowIndicatorDropdown(true)}
+                style={{
+                  width: '100%',
+                  margin: 0,
+                  padding: '10px 12px',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid var(--line)',
+                  borderRadius: 10,
+                  color: '#fff'
+                }}
+              />
+
+              {/* Dropdown com os Resultados */}
+              {showIndicatorDropdown && indicatorSearchQuery.trim().length >= 1 && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  zIndex: 100,
+                  background: '#0d1322',
+                  border: '1px solid var(--teal)',
+                  borderRadius: 10,
+                  marginTop: 4,
+                  maxHeight: 200,
+                  overflowY: 'auto',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                  padding: 4
+                }}>
+                  {matchingIndicators.length === 0 ? (
+                    <div style={{ padding: '10px', fontSize: 12, color: 'var(--ink3)', textAlign: 'center' }}>
+                      Nenhum usuário encontrado para "{indicatorSearchQuery}"
+                    </div>
+                  ) : (
+                    matchingIndicators.map((p) => (
+                      <div
+                        key={p.id}
+                        onClick={() => {
+                          setSelectedIndicatorProfile(p);
+                          setIndicatorSearchQuery('');
+                          setShowIndicatorDropdown(false);
+                        }}
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: 8,
+                          background: 'rgba(255,255,255,0.03)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 8
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: 12.5, fontWeight: 700, color: '#fff' }}>
+                            {p.name || 'Sem nome'} <span style={{ color: 'var(--teal)', fontSize: 11 }}>(@{p.username || 'sem_nick'})</span>
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--ink2)' }}>
+                            📱 {p.whatsapp || p.phone || 'Sem tel'} {p.city ? `• 📍 ${p.city}` : ''}
+                          </div>
+                        </div>
+                        <span style={{ fontSize: 10.5, background: 'rgba(0, 229, 155, 0.15)', color: 'var(--teal)', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
+                          Selecionar ➔
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
 
           {/* Campo 1: Nome da Reunião */}
           <div>
