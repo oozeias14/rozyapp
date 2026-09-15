@@ -180,6 +180,26 @@ function Avatar({ person, size = 36 }) {
   );
 }
 
+function calculateUserNetwork(userId, lookupList) {
+  const directCount = lookupList.filter((u) => u.referrer_id === userId).length;
+  
+  let totalNetworkCount = 0;
+  let currentLevel = lookupList.filter((u) => u.referrer_id === userId);
+  let depth = 1;
+  while (currentLevel.length > 0 && depth <= 20) {
+    totalNetworkCount += currentLevel.length;
+    const nextLevelIds = currentLevel.map((u) => u.id);
+    currentLevel = lookupList.filter((u) => nextLevelIds.includes(u.referrer_id));
+    depth++;
+  }
+
+  const networkStatus = (directCount > 0 || totalNetworkCount > 0)
+    ? 'Ativo (Dando Continuidade)' 
+    : 'Sem Indicações (Zerado)';
+
+  return { directCount, totalNetworkCount, networkStatus };
+}
+
 function exportUsersToExcel(usersList = [], fileName = 'lista_contatos_orbita.csv', allUsers = []) {
   if (!usersList || usersList.length === 0) {
     alert('Nenhum contato encontrado para baixar.');
@@ -197,6 +217,9 @@ function exportUsersToExcel(usersList = [], fileName = 'lista_contatos_orbita.cs
     'Nick / Username',
     'Cidade / RA',
     'Função / Role',
+    'Status na Rede',
+    'Indicações Diretas',
+    'Total Rede Acumulada',
     'Nome Indicador',
     'Nick Indicador',
     'ID Indicador',
@@ -212,6 +235,8 @@ function exportUsersToExcel(usersList = [], fileName = 'lista_contatos_orbita.cs
     const sponsorName = sponsor ? (sponsor.name || '') : '';
     const sponsorNick = sponsor ? (sponsor.username || '') : '';
 
+    const { directCount, totalNetworkCount, networkStatus } = calculateUserNetwork(u.id, lookup);
+
     return [
       u.id || '',
       `"${(u.name || '').replace(/"/g, '""')}"`,
@@ -220,6 +245,9 @@ function exportUsersToExcel(usersList = [], fileName = 'lista_contatos_orbita.cs
       `"${(u.username || '').replace(/"/g, '""')}"`,
       `"${(u.city || '').replace(/"/g, '""')}"`,
       `"${u.role || 'user'}"`,
+      `"${networkStatus}"`,
+      directCount,
+      totalNetworkCount,
       `"${sponsorName.replace(/"/g, '""')}"`,
       `"${sponsorNick.replace(/"/g, '""')}"`,
       u.referrer_id || '',

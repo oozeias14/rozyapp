@@ -2109,6 +2109,25 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
     }
   }
 
+  function calculateNetworkStats(userId, usersList = []) {
+    const directCount = usersList.filter((u) => u.referrer_id === userId).length;
+    let networkCount = 0;
+    let currentLevel = usersList.filter((u) => u.referrer_id === userId);
+    let depth = 1;
+    while (currentLevel.length > 0 && depth <= 20) {
+      networkCount += currentLevel.length;
+      const nextLevelIds = currentLevel.map((u) => u.id);
+      currentLevel = usersList.filter((u) => nextLevelIds.includes(u.referrer_id));
+      depth++;
+    }
+
+    const networkStatus = (directCount > 0 || networkCount > 0)
+      ? 'Ativo (Dando Continuidade)'
+      : 'Sem Indicações (Zerado)';
+
+    return { directCount, networkCount, networkStatus };
+  }
+
   // Exportar Excel (.csv com BOM UTF-8) do modal de contatos
   function handleExportModalUsersExcel() {
     if (filteredModalUsers.length === 0) return;
@@ -2125,6 +2144,9 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
         'Cidade / RA',
         'E-mail',
         'Nick / Username',
+        'Status na Rede',
+        'Indicações Diretas',
+        'Total Rede Acumulada',
         'Nome Indicador',
         'Nick Indicador',
         'ID Indicador',
@@ -2139,6 +2161,8 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
         const sponsorName = sponsor ? (sponsor.name || '') : '';
         const sponsorNick = sponsor ? (sponsor.username || '') : '';
 
+        const { directCount, networkCount, networkStatus } = calculateNetworkStats(u.id, users || []);
+
         return [
           u.id || '',
           `"${(u.name || 'Sem Nome').replace(/"/g, '""')}"`,
@@ -2146,6 +2170,9 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
           `"${(u.city || '').replace(/"/g, '""')}"`,
           `"${(u.email || '').replace(/"/g, '""')}"`,
           `"${(u.username || '').replace(/"/g, '""')}"`,
+          `"${networkStatus}"`,
+          directCount,
+          networkCount,
           `"${sponsorName.replace(/"/g, '""')}"`,
           `"${sponsorNick.replace(/"/g, '""')}"`,
           u.referrer_id || '',
@@ -2242,6 +2269,9 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
         'Cidade / RA',
         'E-mail',
         'Nick / Username',
+        'Status na Rede',
+        'Indicações Diretas',
+        'Total Rede Acumulada',
         'Nome Indicador',
         'Nick Indicador',
         'ID Indicador',
@@ -2259,6 +2289,8 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
         const sponsorName = sponsor ? (sponsor.name || '') : '';
         const sponsorNick = sponsor ? (sponsor.username || '') : '';
 
+        const { directCount, networkCount, networkStatus } = calculateNetworkStats(u.id, users || []);
+
         return [
           u.id || '',
           `"${(u.name || 'Sem Nome').replace(/"/g, '""')}"`,
@@ -2267,6 +2299,9 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
           `"${(u.city || '').replace(/"/g, '""')}"`,
           `"${(u.email || '').replace(/"/g, '""')}"`,
           `"${(u.username || '').replace(/"/g, '""')}"`,
+          `"${networkStatus}"`,
+          directCount,
+          networkCount,
           `"${sponsorName.replace(/"/g, '""')}"`,
           `"${sponsorNick.replace(/"/g, '""')}"`,
           u.referrer_id || '',
