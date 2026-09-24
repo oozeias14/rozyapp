@@ -1130,6 +1130,42 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
   const testPauseRef = useRef(false);
   const logContainerRef = useRef(null);
 
+  // 🔄 ESTADOS DA RECHECAGEM AUTOMÁTICA (a cada 25 minutos) E HISTÓRICO DE AUDITORIAS
+  const [recheckTimerActive, setRecheckTimerActive] = useState(false);
+  const [recheckSecondsLeft, setRecheckSecondsLeft] = useState(25 * 60);
+  const [recheckCycleCount, setRecheckCycleCount] = useState(0);
+  const [auditHistory, setAuditHistory] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('wa_audit_history') || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('wa_audit_history', JSON.stringify(auditHistory));
+    } catch (e) {}
+  }, [auditHistory]);
+
+  useEffect(() => {
+    let timer = null;
+    if (recheckTimerActive && !isTestingRunning) {
+      timer = setInterval(() => {
+        setRecheckSecondsLeft((prev) => {
+          if (prev <= 1) {
+            handleTriggerRecheck(true);
+            return 25 * 60;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [recheckTimerActive, isTestingRunning]);
+
   function addLog(msg, type = 'info') {
     const time = new Date().toLocaleTimeString('pt-BR');
     setTestLogs(prev => [...prev.slice(-150), { time, msg, type }]);
@@ -1553,12 +1589,134 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
         });
       }
 
+      // Salva o snapshot da Auditoria 1 (Inicial) no histórico e ativa o temporizador de 25 min para as próximas 2h
+      const savedList = evaluated.filter((x) => x.checks === 2);
+      const pendingList = evaluated.filter((x) => x.checks !== 2);
+
+      const initialSnapshot = {
+        id: `initial_${Date.now()}`,
+        name: 'Auditoria 1 (Inicial)',
+        timestamp: new Date().toLocaleTimeString('pt-BR'),
+        savedCount: savedList.length,
+        pendingCount: pendingList.length,
+        savedUsers: savedList.map(x => x.user || x),
+        pendingUsers: pendingList.map(x => x.user || x)
+      };
+
+      setAuditHistory((prev) => [initialSnapshot, ...prev]);
+      setRecheckCycleCount(0);
+      setRecheckSecondsLeft(25 * 60);
+      setRecheckTimerActive(true);
+      addLog('⏱️ Temporizador de Rechecagem Automática (25 min) ativado para as próximas 2 horas!', 'info');
+
     } catch (err) {
       addLog(`❌ Erro durante a auditoria da transmissão: ${err.message}`, 'error');
       alert('Erro na auditoria: ' + err.message);
     } finally {
       setIsTestingRunning(false);
       setIsTestingPaused(false);
+    }
+  }
+
+  // 🔄 EXECUTAR RECHECAGEM AUTOMÁTICA OU MANUAL (a cada 25 min nas próximas 2h)
+  async function handleTriggerRecheck(isAuto = false) {
+    if (!status.connected) {
+      if (!isAuto) alert('Conecte o WhatsApp antes de realizar a rechecagem!');
+      return;
+    }
+
+    const targetUsers = getSelectedTargetUsers();
+    if (targetUsers.length === 0) return;
+
+    const nextCycle = recheckCycleCount + 1;
+    if (nextCycle > 5 && isAuto) {
+      setRecheckTimerActive(false);
+      addLog('⏱️ Período máximo de 2 horas de rechecagem encerrado.', 'info');
+      return;
+    }
+
+    setIsTestingRunning(true);
+    testAbortRef.current = false;
+    const cycleTitle = `Checagem ${nextCycle} (${nextCycle * 25} min)`;
+
+    addLog(`🔄 [${cycleTitle.toUpperCase()}] Iniciando rechecagem das entregas no WhatsApp...`, 'info');
+
+    try {
+      const receiptsData = await fetchAllWhatsAppTransmissionReceipts(phraseTimeHours || 2);
+      const auditResult = auditBroadcastDeliveryReceipts(receiptsData, targetUsers);
+
+      let savedCount = 0;
+      let notSavedCount = 0;
+      const evaluated = [];
+
+      for (let i = 0; i < auditResult.evaluatedUsers.length; i++) {
+        if (testAbortRef.current) break;
+
+        let item = auditResult.evaluatedUsers[i];
+        const u = targetUsers[i];
+
+        if (item.checks !== 2 && (u.whatsapp || u.phone)) {
+          const directCheck = await getContactDeliveryStatusDirect(u.whatsapp || u.phone, phraseTimeHours || 2);
+          if (directCheck.has2Checks) {
+            item = {
+              ...item,
+              checks: 2,
+              status: directCheck.status || 'DELIVERY_ACK',
+              label: directCheck.label || '✓✓ 2 Traços (Entregue no WhatsApp)',
+              isSaved: true
+            };
+          }
+        }
+
+        if (item.checks === 2) {
+          savedCount++;
+        } else {
+          notSavedCount++;
+        }
+
+        evaluated.push(item);
+      }
+
+      setTestResults(evaluated);
+      setRecheckCycleCount(nextCycle);
+      setRecheckSecondsLeft(25 * 60);
+
+      const savedList = evaluated.filter((x) => x.checks === 2);
+      const pendingList = evaluated.filter((x) => x.checks !== 2);
+
+      const newSnapshot = {
+        id: `check_${nextCycle}_${Date.now()}`,
+        name: cycleTitle,
+        timestamp: new Date().toLocaleTimeString('pt-BR'),
+        savedCount: savedList.length,
+        pendingCount: pendingList.length,
+        savedUsers: savedList.map(x => x.user || x),
+        pendingUsers: pendingList.map(x => x.user || x)
+      };
+
+      setAuditHistory((prev) => [newSnapshot, ...prev]);
+
+      addLog(`✨ [${cycleTitle}] Concluída! Salvos (2 Traços): ${savedCount} | Pendentes (1 Traço): ${notSavedCount}`, 'success');
+
+      const confirmedSavedPhones = savedList
+        .map((item) => normalizePhone(item.phone))
+        .filter(Boolean);
+
+      if (confirmedSavedPhones.length > 0) {
+        setSavedPhones((prev) => {
+          const next = Array.from(new Set([...prev, ...confirmedSavedPhones]));
+          localStorage.setItem('wa_saved_phones', JSON.stringify(next));
+          return next;
+        });
+      }
+
+      if (!recheckTimerActive && !isAuto) {
+        setRecheckTimerActive(true);
+      }
+    } catch (err) {
+      addLog(`⚠️ Erro durante rechecagem: ${err.message}`, 'error');
+    } finally {
+      setIsTestingRunning(false);
     }
   }
 
@@ -4939,14 +5097,15 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                 3. Se o contato recebeu a mensagem enviada, ele é confirmado com <strong>2 traços (✓✓ Salvo na Agenda)</strong>. Se não recebeu, permanece com <strong>1 traço (⏱ Pendente)</strong>.
               </div>
 
-              {/* Ações de Auditoria: Executar e Limpar posicionado abaixo */}
+              {/* Ações de Auditoria: Executar, Rechecar Azul (25 min) e Limpar */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
-                <div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+                  {/* Botão Verde Principal */}
                   <button
                     type="button"
                     className="btn btn-teal"
                     style={{
-                      padding: '13px 24px',
+                      padding: '13px 22px',
                       fontSize: 14,
                       fontWeight: 900,
                       margin: 0,
@@ -4960,6 +5119,82 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                     onClick={() => setShowBroadcastTestModal(true)}
                   >
                     <span style={{ fontWeight: 900 }}>✓✓</span> Executar Auditoria de 2 Horas
+                  </button>
+
+                  {/* Botão Azul de Rechecagem (25 Minutos) */}
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{
+                      padding: '13px 20px',
+                      fontSize: 13.5,
+                      fontWeight: 800,
+                      margin: 0,
+                      borderRadius: 12,
+                      background: 'linear-gradient(135deg, #00B4D8 0%, #0077B6 100%)',
+                      color: '#fff',
+                      border: 'none',
+                      boxShadow: '0 4px 16px rgba(0, 180, 216, 0.35)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      cursor: isTestingRunning ? 'not-allowed' : 'pointer',
+                      opacity: isTestingRunning ? 0.7 : 1
+                    }}
+                    onClick={() => {
+                      handleTriggerRecheck(false);
+                      setRecheckTimerActive(true);
+                    }}
+                    disabled={isTestingRunning}
+                    title="Executar rechecagem manual imediata e ativar temporizador de 25 minutos"
+                  >
+                    <span>🔵</span> Rechecar Agora (a cada 25 min)
+                  </button>
+                </div>
+
+                {/* Banner do Temporizador de 25 Minutos */}
+                <div style={{
+                  background: recheckTimerActive ? 'rgba(0, 180, 216, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                  border: `1px solid ${recheckTimerActive ? 'rgba(0, 180, 216, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
+                  borderRadius: 10,
+                  padding: '10px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 10
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>⏱️</span>
+                    <div>
+                      <div style={{ fontSize: 12.5, fontWeight: 800, color: recheckTimerActive ? '#00B4D8' : 'var(--ink2)' }}>
+                        Temporizador de Rechecagem Automática (25 min)
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--ink3)' }}>
+                        {recheckTimerActive
+                          ? `Próxima rechecagem em ${Math.floor(recheckSecondsLeft / 60)}m ${String(recheckSecondsLeft % 60).padStart(2, '0')}s (Ciclo #${recheckCycleCount + 1})`
+                          : 'Temporizador inativo. Clique no botão azul ou inicie a auditoria para ativar.'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{
+                      padding: '5px 12px',
+                      fontSize: 11,
+                      fontWeight: 800,
+                      borderRadius: 8,
+                      background: recheckTimerActive ? 'rgba(240, 107, 76, 0.2)' : 'rgba(0, 180, 216, 0.2)',
+                      color: recheckTimerActive ? '#FF8A65' : '#00B4D8',
+                      border: `1px solid ${recheckTimerActive ? 'rgba(240, 107, 76, 0.4)' : 'rgba(0, 180, 216, 0.4)'}`,
+                      cursor: 'pointer',
+                      margin: 0
+                    }}
+                    onClick={() => setRecheckTimerActive(!recheckTimerActive)}
+                  >
+                    {recheckTimerActive ? '⏸️ Pausar Rechecagem' : '▶️ Ativar Temporizador (25 min)'}
                   </button>
                 </div>
 
@@ -5234,6 +5469,88 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                   <span>📊</span> Baixar Excel: 1 Traço (Pendentes - {withoutNumberUsers.length})
                 </button>
               </div>
+
+              {/* Histórico e Planilhas Excel por Checagem (Auditoria 1, Checagem 1, Checagem 2...) */}
+              {auditHistory.length > 0 && (
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: '#fff', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>📁 Planilhas Excel por Checagem Realizada ({auditHistory.length}):</span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ fontSize: 10.5, padding: '2px 8px', margin: 0, color: '#FF8A65' }}
+                      onClick={() => setAuditHistory([])}
+                    >
+                      Limpar Histórico
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {auditHistory.map((item, idx) => (
+                      <div key={item.id || idx} style={{
+                        background: 'rgba(255, 255, 255, 0.03)',
+                        border: '1px solid rgba(255, 255, 255, 0.07)',
+                        borderRadius: 10,
+                        padding: '10px 14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: 10
+                      }}>
+                        <div>
+                          <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--teal)' }}>
+                            {item.name} <span style={{ fontSize: 11, color: 'var(--ink3)', fontWeight: 400 }}>({item.timestamp})</span>
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 2 }}>
+                            Salvos (2 Traços): <strong style={{ color: '#25D366' }}>{item.savedCount}</strong> | Pendentes (1 Traço): <strong style={{ color: '#FF8A65' }}>{item.pendingCount}</strong>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            className="btn"
+                            style={{
+                              padding: '5px 10px',
+                              fontSize: 11,
+                              fontWeight: 800,
+                              borderRadius: 8,
+                              background: 'rgba(37, 211, 102, 0.2)',
+                              color: '#25D366',
+                              border: '1px solid rgba(37, 211, 102, 0.4)',
+                              cursor: 'pointer',
+                              margin: 0
+                            }}
+                            onClick={() => exportContactsListToExcel(item.savedUsers, `contatos_2_tracos_${item.name.toLowerCase().replace(/\s+/g, '_')}`, `2 Traços (${item.name})`)}
+                          >
+                            📊 Excel Salvos ({item.savedCount})
+                          </button>
+
+                          <button
+                            type="button"
+                            className="btn"
+                            style={{
+                              padding: '5px 10px',
+                              fontSize: 11,
+                              fontWeight: 800,
+                              borderRadius: 8,
+                              background: 'rgba(240, 107, 76, 0.2)',
+                              color: '#FF8A65',
+                              border: '1px solid rgba(240, 107, 76, 0.4)',
+                              cursor: 'pointer',
+                              margin: 0
+                            }}
+                            onClick={() => exportContactsListToExcel(item.pendingUsers, `contatos_1_traco_${item.name.toLowerCase().replace(/\s+/g, '_')}`, `1 Traço (${item.name})`)}
+                          >
+                            📊 Excel Pendentes ({item.pendingCount})
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Rodapé de Navegação da Etapa 3 */}
