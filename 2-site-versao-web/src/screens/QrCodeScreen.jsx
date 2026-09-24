@@ -626,13 +626,13 @@ export default function QrCodeScreen({ profile }) {
             maxWidth: '400px',
             margin: '0 auto 40px auto'
           }}>
-            <h3 style={{ fontSize: 16, color: '#fff', fontWeight: 700, margin: 0 }}>Seu Código QR</h3>
+            <h3 style={{ fontSize: 16, color: 'var(--ink1)', fontWeight: 700, margin: 0 }}>Seu Código QR</h3>
             
             <div style={{ 
-              background: '#090d16', 
+              background: 'var(--panel2)', 
               padding: '12px', 
               borderRadius: '16px', 
-              border: '1.5px solid rgba(0, 242, 254, 0.25)',
+              border: '1.5px solid var(--line)',
               boxShadow: '0 0 20px rgba(0, 242, 254, 0.1)',
               display: 'inline-block'
             }}>

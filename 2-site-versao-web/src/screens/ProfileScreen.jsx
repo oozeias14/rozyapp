@@ -184,22 +184,22 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
                 top: '100%',
                 left: 0,
                 right: 0,
-                background: '#090d16',
-                border: '1px solid var(--line)',
+                background: 'var(--panel)',
+                border: '1.5px solid var(--line)',
                 borderRadius: '12px',
                 maxHeight: '200px',
                 overflowY: 'auto',
                 zIndex: 1001,
-                boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
                 marginTop: '4px'
               }}>
-                <div style={{ padding: '8px', borderBottom: '1px solid var(--line)', display: 'flex', gap: '6px', background: '#05070d', position: 'sticky', top: 0, zIndex: 2 }}>
+                <div style={{ padding: '8px', borderBottom: '1px solid var(--line)', display: 'flex', gap: '6px', background: 'var(--panel2)', position: 'sticky', top: 0, zIndex: 2 }}>
                   <input
                     type="text"
                     placeholder="Buscar cidade (min. 3 letras)..."
                     value={citySearch}
                     onChange={(e) => setCitySearch(e.target.value)}
-                    style={{ padding: '6px 10px', fontSize: '12px', margin: 0, width: '100%', background: 'rgba(255,255,255,0.02)', color: '#fff' }}
+                    style={{ padding: '6px 10px', fontSize: '12px', margin: 0, width: '100%', color: 'var(--ink1)' }}
                     autoFocus
                   />
                   {citySearch && (
@@ -236,9 +236,9 @@ export default function ProfileScreen({ profile, onProfileUpdated, onOpenAdmin, 
                         padding: '10px 14px',
                         fontSize: '13px',
                         cursor: 'pointer',
-                        color: city === c ? 'var(--teal)' : '#fff',
-                        background: city === c ? 'rgba(0, 242, 254, 0.05)' : 'transparent',
-                        borderBottom: '1px solid rgba(255,255,255,0.02)',
+                        color: city === c ? 'var(--teal)' : 'var(--ink1)',
+                        background: city === c ? 'var(--teal-dim)' : 'transparent',
+                        borderBottom: '1px solid var(--line)',
                         textAlign: 'left'
                       }}
                     >
