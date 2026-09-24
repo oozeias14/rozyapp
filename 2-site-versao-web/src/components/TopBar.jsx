@@ -54,7 +54,7 @@ export default function TopBar({ totalUsers }) {
   }
 
   return (
-    <div className="topbar" style={{ alignItems: 'flex-start' }}>
+    <div className="topbar" style={{ alignItems: 'flex-start', position: 'relative', zIndex: 100 }}>
       <div className="brand" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
           <div className="dot" />

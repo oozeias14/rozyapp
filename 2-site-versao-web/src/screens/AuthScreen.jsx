@@ -473,8 +473,8 @@ export default function AuthScreen({ onLoggedIn }) {
   return (
     <div className="screen" style={{ paddingTop: 12 }}>
       <TopBar />
-      <div style={{ textAlign: 'center', marginTop: -45, marginBottom: -55 }}>
-        <img src="/logo.png" alt="Amigos Dr Candido" style={{ width: 350, height: 350, objectFit: 'contain', margin: '0 auto', display: 'block' }} />
+      <div style={{ textAlign: 'center', marginTop: -45, marginBottom: -55, pointerEvents: 'none' }}>
+        <img src="/logo.png" alt="Amigos Dr Candido" style={{ width: 350, height: 350, objectFit: 'contain', margin: '0 auto', display: 'block', pointerEvents: 'none' }} />
       </div>
 
       <div className="tabs">
