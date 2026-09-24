@@ -2411,8 +2411,79 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
         URL.revokeObjectURL(url);
       }, 200);
     } catch (err) {
-      alert('Erro ao gerar arquivo ZIP: ' + err.message);
+      alert('Erro ao gerar arquivo ZIP das listas: ' + err.message);
     }
+  }
+
+  // Função genérica para exportar lista de contatos em planilha Excel (.csv formatado em UTF-8 com BOM e ponto-e-vírgula)
+  function exportContactsListToExcel(userList, filenamePrefix, statusLabel) {
+    if (!userList || userList.length === 0) {
+      alert('Nenhum contato nesta lista para exportar em Excel.');
+      return;
+    }
+    try {
+      const headers = [
+        'ID',
+        'Nome Completo',
+        'WhatsApp / Telefone',
+        'Status de Entrega (Traços)',
+        'Cidade / RA',
+        'Cargo / Função'
+      ];
+
+      const rows = userList.map((u) => {
+        const rawPhone = u.whatsapp || u.phone || '';
+        const cleanPhone = rawPhone.replace(/\D/g, '');
+        const formattedPhone = cleanPhone ? `'${cleanPhone}` : '';
+        const city = (u.city || 'Brasília').replace(/;/g, ' ');
+        const role = u.role === 'admin' ? 'Administrador' : u.role === 'coord' ? 'Coordenador' : 'Membro';
+
+        return [
+          `"${u.id || ''}"`,
+          `"${(u.name || u.full_name || 'Sem Nome').replace(/"/g, '""')}"`,
+          `"${formattedPhone}"`,
+          `"${statusLabel}"`,
+          `"${city.replace(/"/g, '""')}"`,
+          `"${role}"`
+        ].join(';');
+      });
+
+      const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${filenamePrefix}_${Date.now()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 300);
+    } catch (err) {
+      alert('Erro ao exportar planilha Excel: ' + err.message);
+    }
+  }
+
+  // Baixar Excel apenas de contatos com 2 Traços (Salvos na Agenda)
+  function handleExportExcel2Tracos() {
+    exportContactsListToExcel(withNumberUsers, 'contatos_2_tracos_salvos_agenda', '2 Traços (Salvo na Agenda)');
+  }
+
+  // Baixar Excel apenas de contatos com 1 Traço (Pendentes / Não Salvos)
+  function handleExportExcel1Traco() {
+    exportContactsListToExcel(withoutNumberUsers, 'contatos_1_traco_pendentes', '1 Traço (Pendente / Não Salvo)');
+  }
+
+  function handleExportModalUsersExcel() {
+    const isWith = contactFilterModal === 'with_number';
+    const prefix = isWith ? 'contatos_2_tracos_salvos' : 'contatos_1_traco_pendentes';
+    const label = isWith ? '2 Traços (Salvo na Agenda)' : '1 Traço (Pendente / Não Salvo)';
+    exportContactsListToExcel(filteredModalUsers, prefix, label);
+  }
+
+  function handleExportExcelCsv() {
+    exportContactsListToExcel(validUsers, 'contatos_todos_excel', 'Cadastrado no Sistema');
   }
 
   return (
@@ -4974,8 +5045,33 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                 <div style={{ fontSize: 24, fontWeight: 900, color: '#25D366', marginTop: 6 }}>
                   {withNumberUsers.length.toLocaleString('pt-BR')}
                 </div>
-                <div style={{ fontSize: 11, color: 'rgba(37, 211, 102, 0.8)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span>✓</span> Aptos para transmissão
+                <div style={{ fontSize: 11, color: 'rgba(37, 211, 102, 0.8)', marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 }}>
+                  <span>✓ Aptos para transmissão</span>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: 10.5,
+                      fontWeight: 800,
+                      borderRadius: 6,
+                      background: 'rgba(37, 211, 102, 0.25)',
+                      color: '#25D366',
+                      border: '1px solid rgba(37, 211, 102, 0.5)',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      margin: 0
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleExportExcel2Tracos();
+                    }}
+                    title="Baixar planilha Excel com contatos salvos (2 Traços)"
+                  >
+                    📊 Excel
+                  </button>
                 </div>
               </div>
 
@@ -5005,8 +5101,33 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                 <div style={{ fontSize: 24, fontWeight: 900, color: '#FF8A65', marginTop: 6 }}>
                   {withoutNumberUsers.length.toLocaleString('pt-BR')}
                 </div>
-                <div style={{ fontSize: 11, color: 'rgba(240, 107, 76, 0.8)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span>⏱</span> Sem o número salvo
+                <div style={{ fontSize: 11, color: 'rgba(240, 107, 76, 0.8)', marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 4 }}>
+                  <span>⏱ Sem o número salvo</span>
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: 10.5,
+                      fontWeight: 800,
+                      borderRadius: 6,
+                      background: 'rgba(240, 107, 76, 0.25)',
+                      color: '#FF8A65',
+                      border: '1px solid rgba(240, 107, 76, 0.5)',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      margin: 0
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleExportExcel1Traco();
+                    }}
+                    title="Baixar planilha Excel com contatos pendentes (1 Traço)"
+                  >
+                    📊 Excel
+                  </button>
                 </div>
               </div>
 
@@ -5032,6 +5153,86 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                 <div style={{ marginTop: 6, width: '100%', height: 5, background: 'rgba(255, 255, 255, 0.08)', borderRadius: 3, overflow: 'hidden' }}>
                   <div style={{ width: `${Math.min(parseFloat(coveragePercent) || 0, 100)}%`, height: '100%', background: 'linear-gradient(90deg, #25D366, var(--teal))', borderRadius: 3, transition: 'width 0.4s ease' }} />
                 </div>
+              </div>
+            </div>
+
+            {/* Bloco de Download das Listas em Excel Separadas (1 Traço vs 2 Traços) */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(8, 12, 20, 0.95))',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: 16,
+              padding: '16px 18px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              marginTop: 4
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 18 }}>📊</span>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: '#fff' }}>
+                      Baixar Planilhas Excel da Análise (Separadas)
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--ink2)', marginTop: 2 }}>
+                      Baixar relatórios das listas auditadas separadamente em formato de planilha Excel (.csv)
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginTop: 4 }}>
+                {/* Botão Excel 2 Traços (Salvos na Agenda) */}
+                <button
+                  type="button"
+                  className="btn"
+                  style={{
+                    padding: '12px 16px',
+                    fontSize: 13,
+                    fontWeight: 800,
+                    margin: 0,
+                    borderRadius: 12,
+                    background: 'linear-gradient(135deg, rgba(37, 211, 102, 0.25), rgba(37, 211, 102, 0.1))',
+                    color: '#25D366',
+                    border: '1.5px solid rgba(37, 211, 102, 0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(37, 211, 102, 0.15)'
+                  }}
+                  onClick={handleExportExcel2Tracos}
+                  title="Baixar planilha Excel com os contatos confirmados com 2 Traços (Salvos na Agenda)"
+                >
+                  <span>📊</span> Baixar Excel: 2 Traços (Salvos - {withNumberUsers.length})
+                </button>
+
+                {/* Botão Excel 1 Traço (Pendentes / Não Salvos) */}
+                <button
+                  type="button"
+                  className="btn"
+                  style={{
+                    padding: '12px 16px',
+                    fontSize: 13,
+                    fontWeight: 800,
+                    margin: 0,
+                    borderRadius: 12,
+                    background: 'linear-gradient(135deg, rgba(240, 107, 76, 0.25), rgba(240, 107, 76, 0.1))',
+                    color: '#FF8A65',
+                    border: '1.5px solid rgba(240, 107, 76, 0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(240, 107, 76, 0.15)'
+                  }}
+                  onClick={handleExportExcel1Traco}
+                  title="Baixar planilha Excel com os contatos pendentes com 1 Traço (Não Salvos / Pendentes)"
+                >
+                  <span>📊</span> Baixar Excel: 1 Traço (Pendentes - {withoutNumberUsers.length})
+                </button>
               </div>
             </div>
 
