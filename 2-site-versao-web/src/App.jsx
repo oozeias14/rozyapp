@@ -107,6 +107,7 @@ export default function App() {
     }
     const isStaff = profile.role === 'admin' || profile.role === 'admin2' || profile.role === 'coord';
     const limitSeconds = isStaff ? 30 * 60 : 10 * 60;
+    localStorage.setItem('is_staff_user', isStaff ? 'true' : 'false');
 
     let startTime = localStorage.getItem('session_start_time');
     if (!startTime) {

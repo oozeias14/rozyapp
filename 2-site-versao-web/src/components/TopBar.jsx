@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 export default function TopBar({ totalUsers }) {
   const [theme, setThemeState] = useState(() => {
@@ -20,7 +21,20 @@ export default function TopBar({ totalUsers }) {
       const elapsedSeconds = Math.floor((Date.now() - parseInt(startTime, 10)) / 1000);
       const isStaff = localStorage.getItem('is_staff_user') === 'true';
       const limitSeconds = isStaff ? 30 * 60 : 10 * 60;
-      const remainingSeconds = Math.max(0, limitSeconds - elapsedSeconds);
+      const remainingSeconds = limitSeconds - elapsedSeconds;
+
+      if (remainingSeconds <= 0) {
+        setSessionTimeStr('00:00');
+        // Desloga o usuário automaticamente ao zerar o tempo da sessão
+        localStorage.removeItem('session_start_time');
+        localStorage.removeItem('active_tab');
+        localStorage.removeItem('app_mode');
+        localStorage.removeItem('admin_active_tab');
+        supabase.auth.signOut().then(() => {
+          window.location.reload();
+        });
+        return;
+      }
       
       const m = Math.floor(remainingSeconds / 60).toString().padStart(2, '0');
       const s = (remainingSeconds % 60).toString().padStart(2, '0');
@@ -51,25 +65,26 @@ export default function TopBar({ totalUsers }) {
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: '4px',
-              padding: '2px 7px',
+              gap: '3px',
+              padding: '1px 5px',
               background: 'var(--panel2)',
               border: '1px solid var(--line)',
-              borderRadius: '12px',
-              fontSize: '9.5px',
+              borderRadius: '8px',
+              fontSize: '8px',
               fontWeight: '600',
               color: 'var(--ink2)',
-              marginLeft: '16px',
+              marginLeft: '0',
+              marginTop: '1px',
               letterSpacing: '0.02em',
               userSelect: 'none'
             }}
           >
             <div style={{
-              width: '4px',
-              height: '4px',
+              width: '3px',
+              height: '3px',
               borderRadius: '50%',
               backgroundColor: 'var(--teal)',
-              boxShadow: '0 0 5px var(--teal)',
+              boxShadow: '0 0 4px var(--teal)',
               animation: 'timerPulse 1.5s infinite'
             }} />
             <span>Sessão: {sessionTimeStr}</span>
