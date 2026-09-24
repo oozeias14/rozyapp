@@ -781,8 +781,8 @@ export function extractPhonesFromMessage(m, lidToPhone = new Map()) {
   return phones;
 }
 
-// Helper para verificar se a mensagem foi enviada/recebida dentro da janela especificada (padrão 10 min / (10/60)h)
-export function isMessageWithinHours(msg, maxHours = (10 / 60)) {
+// Helper para verificar se a mensagem foi enviada/recebida dentro da janela especificada (padrão 2h / maxHours = 2)
+export function isMessageWithinHours(msg, maxHours = 2) {
   if (!msg) return false;
   
   let ts = msg.messageTimestamp || msg.createdAt || msg.updatedAt;
@@ -809,18 +809,18 @@ export function isMessageWithinHours(msg, maxHours = (10 / 60)) {
 
   const nowSec = Math.floor(Date.now() / 1000);
   const diffSec = nowSec - ts;
-  // Janela estrita de 10 minutos (600s), com tolerância de no máximo 30 segundos (<= 630s).
-  // Se a mensagem foi enviada há mais de 10 minutos (ex: 11, 15, 23 min atrás),
-  // retorna estritamente false para que o sistema se mantenha limpo/zerado.
-  const baseSec = Math.round((maxHours || (10 / 60)) * 3600);
-  const maxSec = baseSec <= 600 ? 630 : baseSec;
+  // Janela de auditoria de 2 horas (7200s).
+  // Se a mensagem foi enviada há mais de 2 horas,
+  // retorna estritamente false para que o sistema se mantenha limpo.
+  const baseSec = Math.round((maxHours || 2) * 3600);
+  const maxSec = baseSec;
 
   return diffSec >= -60 && diffSec <= maxSec;
 }
 
 // ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO ────
 
-export async function scanAllChatsForPhrase(phraseText = '', maxHours = (10 / 60)) {
+export async function scanAllChatsForPhrase(phraseText = '', maxHours = 2) {
   const targetPhrase = (phraseText || '').toLowerCase().trim().replace(/^["']|["']$/g, '');
   const matchedSigs = new Set();
 
@@ -1083,7 +1083,7 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = (10 / 60
   return matchedSigs;
 }
 
-export async function checkContactHasBroadcastPhrase(phone, phraseText = '', preScannedSigs = null, maxHours = (10 / 60)) {
+export async function checkContactHasBroadcastPhrase(phone, phraseText = '', preScannedSigs = null, maxHours = 2) {
   const cleanPhone = extractCleanPhone(phone);
   if (!cleanPhone) {
     return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem telefone)', status: 'PENDING' };

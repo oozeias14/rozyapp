@@ -1110,7 +1110,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
   const [selectedTestBatch, setSelectedTestBatch] = useState('T01');
   const [verificationMethod, setVerificationMethod] = useState('phrase_track'); // 'phrase_track' | 'auto_broadcast' | 'paste'
   const [broadcastPhraseText, setBroadcastPhraseText] = useState('');
-  const [phraseTimeHours, setPhraseTimeHours] = useState(10 / 60); // Janela estrita de 10 minutos a partir do clique
+  const [phraseTimeHours, setPhraseTimeHours] = useState(2); // Janela de 2 horas a partir do clique
   const [detectedBroadcastLists, setDetectedBroadcastLists] = useState([]);
   const [selectedBroadcastJid, setSelectedBroadcastJid] = useState('');
   const [foundBroadcastMessage, setFoundBroadcastMessage] = useState(null);
@@ -4267,7 +4267,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                           }}
                           onClick={handleAuditByPhraseLive}
                         >
-                          ⚡ Rastrear Transmissão dos Últimos 10 Min ({getSelectedTargetUsers().length} Contatos)
+                          ⚡ Rastrear Transmissão das Últimas 2 Horas ({getSelectedTargetUsers().length} Contatos)
                         </button>
 
                         <button
@@ -4338,7 +4338,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
               </h2>
               <div style={{ fontSize: 13, color: 'var(--ink2)', lineHeight: 1.5, maxWidth: 440, margin: '0 auto' }}>
                 {status.connected 
-                  ? `Sessão ativa na instância ${config.instanceName}. O robô está apto a cruzar listas e auditar mensagens entregues nos últimos 10 minutos.`
+                  ? `Sessão ativa na instância ${config.instanceName}. O robô está apto a cruzar listas e auditar mensagens entregues nas últimas 2 horas.`
                   : 'Conecte o WhatsApp do Dr. Cândido Teles para sincronizar agendas e checar entregas da lista de transmissão.'}
               </div>
             </div>
@@ -4912,7 +4912,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                   </span>
                   <div>
                     <div style={{ fontSize: 15, fontWeight: 900, color: '#fff' }}>
-                      Auditoria de Entrega Automática (Últimos 10 Minutos)
+                      Auditoria de Entrega Automática (Últimas 2 Horas)
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
                       Identifique instantaneamente quem recebeu sua transmissão e quem ainda não tem o número salvo
@@ -4929,13 +4929,13 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                   fontWeight: 800,
                   border: '1px solid var(--teal)'
                 }}>
-                  ⏱ JANELA 10 MIN
+                  ⏱ JANELA 2 HORAS
                 </span>
               </div>
 
               <div style={{ fontSize: 12.5, color: 'var(--ink2)', lineHeight: 1.6 }}>
                 1. Dispare sua mensagem na Lista de Transmissão oficial no WhatsApp do Dr. Cândido.<br />
-                2. Clique no botão abaixo: o robô examina os últimos <strong>10 minutos</strong> e cruza os números.<br />
+                2. Clique no botão abaixo: o robô examina as últimas <strong>2 horas</strong> e cruza os números.<br />
                 3. Se o contato recebeu a mensagem enviada, ele é confirmado com <strong>2 traços (✓✓ Salvo na Agenda)</strong>. Se não recebeu, permanece com <strong>1 traço (⏱ Pendente)</strong>.
               </div>
 
@@ -4959,7 +4959,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                     }}
                     onClick={() => setShowBroadcastTestModal(true)}
                   >
-                    <span style={{ fontWeight: 900 }}>✓✓</span> Executar Auditoria de 10 Minutos
+                    <span style={{ fontWeight: 900 }}>✓✓</span> Executar Auditoria de 2 Horas
                   </button>
                 </div>
 
