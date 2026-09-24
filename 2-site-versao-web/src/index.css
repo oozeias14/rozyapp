@@ -462,25 +462,25 @@ label.lbl { font-size: 10.5px; color: var(--ink2); margin: 0 0 4px 2px; display:
 }
 
 /* ==========================================================================
-   Modo Claro / White & Light Blue Theme with Soft Purple Borders
+   Modo Claro / White Theme Design System - 1px Black Border & High Legibility
    ========================================================================== */
 html, body, .app-shell, .screen {
   transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 [data-theme="light"] {
-  --bg: #F0F4F9;                    /* Fundo suave limpo (Branco com toque de azul claro) */
+  --bg: #F0F4F9;                    /* Fundo suave limpo */
   --panel: #FFFFFF;                 /* Painéis e cartões em branco puro */
-  --panel2: #E6F0FA;                /* Subpainéis e campos secundários em tom azul claro */
-  --line: #C4B5FD;                  /* Bordas elegantes em tom Roxo/Violeta suave */
-  --line-purple: #8B5CF6;           /* Roxo em destaque nas bordas */
+  --panel2: #E6F0FA;                /* Subpainéis e campos secundários em azul claro suave */
+  --line: #000000;                  /* Bordas em preto 1px */
+  --line-purple: #000000;
   --ink1: #0F172A;                  /* Texto principal escuro profundo (100% legível) */
   --ink2: #334155;                  /* Texto secundário em tom ardósia */
   --ink3: #475569;                  /* Texto desbotado/muted legível */
   --teal: #0284C7;                  /* Azul claro vibrante */
-  --teal-dim: rgba(2, 132, 199, 0.12); /* Tom de azul claro */
+  --teal-dim: rgba(2, 132, 199, 0.12);
   --violet: #7C3AED;                /* Roxo vibrante */
-  --violet-dim: rgba(124, 58, 237, 0.12); /* Tom de roxo */
+  --violet-dim: rgba(124, 58, 237, 0.12);
   --warn: #E11D48;
   --warn-dim: rgba(225, 29, 72, 0.12);
   --gold: #D97706;
@@ -493,19 +493,27 @@ html, body, .app-shell, .screen {
   color: #0F172A !important;
 }
 
-/* Forçar substituição de cartões com gradiente escuro inline */
+/* Forçar substituição de cartões com gradiente ou fundo escuro inline */
 [data-theme="light"] .card,
 [data-theme="light"] .card-gradient,
 [data-theme="light"] .stat-card-premium,
 [data-theme="light"] .msg-bubble-premium,
 [data-theme="light"] .meet-card,
 [data-theme="light"] .meet-card-premium,
-[data-theme="light"] div[style*="linear-gradient(135deg, rgba(22, 28, 44"],
+[data-theme="light"] div[style*="linear-gradient"],
 [data-theme="light"] div[style*="background: 'linear-gradient"],
-[data-theme="light"] div[style*="background: linear-gradient"] {
+[data-theme="light"] div[style*="background: linear-gradient"],
+[data-theme="light"] div[style*="background: 'rgba("],
+[data-theme="light"] div[style*="background: rgba("],
+[data-theme="light"] div[style*="background: '#090d16'"],
+[data-theme="light"] div[style*="background: #090d16"],
+[data-theme="light"] div[style*="background: '#05070d'"],
+[data-theme="light"] div[style*="background: #05070d"],
+[data-theme="light"] div[style*="background: '#000'"],
+[data-theme="light"] div[style*="background: #000"] {
   background: #FFFFFF !important;
-  border: 1.5px solid #C4B5FD !important; /* Bordas roxas claras suaves */
-  box-shadow: 0 4px 20px rgba(139, 92, 246, 0.08), 0 2px 6px rgba(0, 0, 0, 0.03) !important;
+  border: 1px solid #000000 !important; /* Borda preta de 1px */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
   color: #0F172A !important;
 }
 
@@ -513,29 +521,40 @@ html, body, .app-shell, .screen {
 [data-theme="light"] .stat-card-premium:hover,
 [data-theme="light"] .msg-bubble-premium:hover,
 [data-theme="light"] .meet-card-premium:hover {
-  border-color: #8B5CF6 !important; /* Roxo em destaque ao passar o mouse */
-  box-shadow: 0 8px 24px rgba(139, 92, 246, 0.16) !important;
+  border-color: #000000 !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1) !important;
 }
 
-/* Textos e Títulos */
+/* Textos e Títulos em todas as telas */
 [data-theme="light"] h1, 
 [data-theme="light"] h2, 
 [data-theme="light"] h3, 
 [data-theme="light"] h4,
+[data-theme="light"] h5,
 [data-theme="light"] .card-title,
 [data-theme="light"] label.lbl,
-[data-theme="light"] .muted,
 [data-theme="light"] p {
+  color: #0F172A !important;
+}
+
+[data-theme="light"] .muted {
+  color: #475569 !important;
+}
+
+[data-theme="light"] label.lbl {
   color: #334155 !important;
 }
 
 [data-theme="light"] h1, 
 [data-theme="light"] h2, 
 [data-theme="light"] h3,
+[data-theme="light"] h4,
 [data-theme="light"] div[style*="color: '#fff'"],
 [data-theme="light"] div[style*="color: #fff"],
 [data-theme="light"] span[style*="color: '#fff'"],
-[data-theme="light"] span[style*="color: #fff"] {
+[data-theme="light"] span[style*="color: #fff"],
+[data-theme="light"] button[style*="color: '#fff'"],
+[data-theme="light"] button[style*="color: #fff"] {
   color: #0F172A !important;
 }
 
@@ -544,29 +563,29 @@ html, body, .app-shell, .screen {
 [data-theme="light"] select,
 [data-theme="light"] textarea {
   background: #FFFFFF !important;
-  border: 1.5px solid #C4B5FD !important; /* Borda roxa nos campos */
+  border: 1px solid #000000 !important; /* Borda preta de 1px nos campos */
   color: #0F172A !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 [data-theme="light"] input::placeholder,
 [data-theme="light"] textarea::placeholder {
-  color: #94A3B8 !important;
+  color: #64748B !important;
 }
 
 [data-theme="light"] input:focus,
 [data-theme="light"] select:focus,
 [data-theme="light"] textarea:focus {
-  border-color: #8B5CF6 !important; /* Roxo intenso no foco */
+  border-color: #0284C7 !important;
   background: #FFFFFF !important;
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.18) !important;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15) !important;
 }
 
-/* Modais, Popups e Caixas de Seleção */
+/* Modais, Popups, Dropdowns */
 [data-theme="light"] .modal {
   background: #FFFFFF !important;
-  border: 1.5px solid #A78BFA !important; /* Borda roxa no modal */
-  box-shadow: 0 20px 50px rgba(139, 92, 246, 0.2) !important;
+  border: 1px solid #000000 !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15) !important;
   color: #0F172A !important;
 }
 
@@ -574,20 +593,10 @@ html, body, .app-shell, .screen {
   background: rgba(15, 23, 42, 0.45) !important;
 }
 
-[data-theme="light"] div[style*="background: '#090d16'"],
-[data-theme="light"] div[style*="background: #090d16"],
-[data-theme="light"] div[style*="background: '#05070d'"],
-[data-theme="light"] div[style*="background: #05070d"],
-[data-theme="light"] div[style*="background: 'rgba(13, 17, 28"] {
-  background: #FFFFFF !important;
-  border-color: #C4B5FD !important;
-  color: #0F172A !important;
-}
-
 /* Abas (Tabs) */
 [data-theme="light"] .tabs {
-  background: #E6F0FA !important; /* Fundo azul claro */
-  border: 1.5px solid #C4B5FD !important;
+  background: #E6F0FA !important;
+  border: 1px solid #000000 !important;
 }
 
 [data-theme="light"] .tab {
@@ -595,16 +604,16 @@ html, body, .app-shell, .screen {
 }
 
 [data-theme="light"] .tab.on {
-  background: #0284C7 !important; /* Azul claro para aba selecionada */
+  background: #0284C7 !important;
   color: #FFFFFF !important;
   box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3) !important;
 }
 
 /* Navegação Inferior (BottomNav) */
 [data-theme="light"] .bnav {
-  background: rgba(255, 255, 255, 0.96) !important;
-  border-top: 1.5px solid #DDD6FE !important; /* Borda roxa superior */
-  box-shadow: 0 -4px 20px rgba(139, 92, 246, 0.08) !important;
+  background: rgba(255, 255, 255, 0.98) !important;
+  border-top: 1px solid #000000 !important;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.06) !important;
 }
 
 [data-theme="light"] .ni {
@@ -612,37 +621,53 @@ html, body, .app-shell, .screen {
 }
 
 [data-theme="light"] .ni.on {
-  color: #0284C7 !important; /* Azul claro ativo no ícone */
+  color: #0284C7 !important;
 }
 
-/* Botões */
+/* Botões no Modo Claro */
 [data-theme="light"] .btn-teal {
   background: linear-gradient(135deg, #0284C7, #0369A1) !important;
   color: #FFFFFF !important;
   box-shadow: 0 4px 14px rgba(2, 132, 199, 0.25) !important;
+  border: 1px solid #000000 !important;
 }
 
 [data-theme="light"] .btn-violet {
   background: linear-gradient(135deg, #7C3AED, #6D28D9) !important;
   color: #FFFFFF !important;
   box-shadow: 0 4px 14px rgba(124, 58, 237, 0.25) !important;
+  border: 1px solid #000000 !important;
 }
 
 [data-theme="light"] .btn-ghost {
   background: #E6F0FA !important;
   color: #0F172A !important;
-  border: 1.5px solid #C4B5FD !important;
+  border: 1px solid #000000 !important;
 }
 
 [data-theme="light"] .btn-ghost:hover {
-  background: #DDD6FE !important;
+  background: #CBD5E1 !important;
+}
+
+[data-theme="light"] button {
+  color: #0F172A;
+}
+
+[data-theme="light"] button[style*="background: 'rgba(255, 255, 255"],
+[data-theme="light"] button[style*="background: rgba(255, 255, 255"],
+[data-theme="light"] button[style*="linear-gradient(135deg, rgba(0, 229, 155"],
+[data-theme="light"] button[style*="rgba(15, 23, 42"] {
+  background: #FFFFFF !important;
+  color: #0F172A !important;
+  border: 1px solid #000000 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
 }
 
 /* Badges e Elementos de Lista */
 [data-theme="light"] .id-badge {
   background: #E6F0FA !important;
   color: #334155 !important;
-  border: 1px solid #C4B5FD !important;
+  border: 1px solid #000000 !important;
 }
 
 [data-theme="light"] .data-row,
@@ -650,38 +675,39 @@ html, body, .app-shell, .screen {
 [data-theme="light"] .sc,
 [data-theme="light"] .lbox {
   background: #FFFFFF !important;
-  border: 1.5px solid #DDD6FE !important;
-  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.04) !important;
+  border: 1px solid #000000 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
   color: #0F172A !important;
 }
 
 [data-theme="light"] .msg-bubble {
   background: #FFFFFF !important;
-  border: 1.5px solid #C4B5FD !important;
+  border: 1px solid #000000 !important;
   border-left: 4px solid #7C3AED !important;
 }
 
 /* Painel Admin Tabs */
 [data-theme="light"] .adm-tabs {
   background: #E6F0FA !important;
-  border-color: #8B5CF6 !important;
+  border: 1px solid #000000 !important;
 }
 
 [data-theme="light"] .adm-tab {
   background: #FFFFFF !important;
   color: #0F172A !important;
-  border-color: #C4B5FD !important;
+  border: 1px solid #000000 !important;
 }
 
 [data-theme="light"] .adm-tab.on {
   background: linear-gradient(135deg, #7C3AED, #6D28D9) !important;
   color: #FFFFFF !important;
+  border: 1px solid #000000 !important;
 }
 
 /* TopBar Pills */
 [data-theme="light"] .pill {
   background: #E6F0FA !important;
-  border: 1px solid #C4B5FD !important;
+  border: 1px solid #000000 !important;
   color: #334155 !important;
 }
 
@@ -689,28 +715,6 @@ html, body, .app-shell, .screen {
   color: #0284C7 !important;
 }
 
-/* Robô de WhatsApp & Botões Especiais no Modo Claro */
-[data-theme="light"] button[style*="linear-gradient(135deg, rgba(0, 229, 155"],
-[data-theme="light"] button[style*="rgba(15, 23, 42"],
-[data-theme="light"] div[style*="rgba(15, 23, 42"] {
-  background: #FFFFFF !important;
-  color: #0F172A !important;
-  border: 1.5px solid #C4B5FD !important;
-  box-shadow: 0 4px 16px rgba(139, 92, 246, 0.08) !important;
-}
-
-[data-theme="light"] button[style*="linear-gradient(135deg, rgba(0, 229, 155"]:hover,
-[data-theme="light"] button[style*="rgba(15, 23, 42"]:hover {
-  background: #E6F0FA !important;
-  border-color: #8B5CF6 !important;
-}
-
-[data-theme="light"] div[style*="background: '#090d16'"],
-[data-theme="light"] div[style*="background: #090d16"] {
-  background: #E6F0FA !important;
-  border: 1.5px solid #C4B5FD !important;
-  color: #0F172A !important;
-}
 
 
 

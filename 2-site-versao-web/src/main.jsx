@@ -3,6 +3,10 @@ import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
 import './index.css';
 
+// Aplica o tema salvo no localStorage antes da renderização para persistir ao dar F5
+const savedTheme = localStorage.getItem('app_theme') || 'dark';
+document.documentElement.setAttribute('data-theme', savedTheme);
+
 // Limpa automaticamente caches e service workers do PWA antigo sem forçar recarregamento infinito
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then((registrations) => {

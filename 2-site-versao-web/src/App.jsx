@@ -96,6 +96,8 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('app_mode', mode);
+    const currentTheme = localStorage.getItem('app_theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', currentTheme);
   }, [mode]);
 
   useEffect(() => {
