@@ -461,4 +461,201 @@ label.lbl { font-size: 10.5px; color: var(--ink2); margin: 0 0 4px 2px; display:
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4) !important;
 }
 
+/* ==========================================================================
+   Modo Claro / White Theme Design System
+   ========================================================================== */
+html, body, .app-shell {
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+[data-theme="light"] {
+  --bg: #F1F5F9;
+  --panel: #FFFFFF;
+  --panel2: #E2E8F0;
+  --line: #CBD5E1;
+  --ink1: #0F172A;
+  --ink2: #475569;
+  --ink3: #64748B;
+  --teal: #0D9488;
+  --teal-dim: rgba(13, 148, 136, 0.12);
+  --violet: #6366F1;
+  --violet-dim: rgba(99, 102, 241, 0.12);
+  --warn: #E11D48;
+  --warn-dim: rgba(225, 29, 72, 0.12);
+  --gold: #D97706;
+}
+
+[data-theme="light"] body,
+[data-theme="light"] .app-shell {
+  background-color: #F1F5F9;
+  color: #0F172A;
+}
+
+[data-theme="light"] input,
+[data-theme="light"] select,
+[data-theme="light"] textarea {
+  background: #FFFFFF !important;
+  border-color: #CBD5E1 !important;
+  color: #0F172A !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder {
+  color: #94A3B8;
+}
+
+[data-theme="light"] input:disabled {
+  background: #F8FAFC !important;
+  border-color: #E2E8F0 !important;
+  color: #94A3B8 !important;
+}
+
+[data-theme="light"] input:focus,
+[data-theme="light"] select:focus,
+[data-theme="light"] textarea:focus {
+  border-color: #0D9488 !important;
+  background: #FFFFFF !important;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15) !important;
+}
+
+[data-theme="light"] .card {
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .card-gradient {
+  background: #FFFFFF !important;
+  border: 1.5px solid var(--violet) !important;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.1) !important;
+}
+
+[data-theme="light"] .card-title,
+[data-theme="light"] .muted,
+[data-theme="light"] label.lbl {
+  color: #475569;
+}
+
+[data-theme="light"] .btn-teal {
+  background: #0D9488;
+  color: #FFFFFF;
+}
+
+[data-theme="light"] .btn-ghost {
+  background: #FFFFFF;
+  color: #0F172A;
+  border: 1.5px solid #CBD5E1;
+}
+
+[data-theme="light"] .btn-ghost:hover {
+  background: #F1F5F9;
+}
+
+[data-theme="light"] .tabs {
+  background: #E2E8F0;
+}
+
+[data-theme="light"] .tab {
+  color: #475569;
+}
+
+[data-theme="light"] .tab.on {
+  background: #0D9488;
+  color: #FFFFFF;
+}
+
+[data-theme="light"] .bnav {
+  background: rgba(255, 255, 255, 0.96);
+  border-top-color: #E2E8F0;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .ni {
+  color: #64748B;
+}
+
+[data-theme="light"] .ni.on {
+  color: #0D9488;
+}
+
+[data-theme="light"] .modal {
+  background: #FFFFFF;
+  border-color: #E2E8F0;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
+  color: #0F172A;
+}
+
+[data-theme="light"] .modal-bg {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+[data-theme="light"] .toast {
+  background: #FFFFFF;
+  border-color: #0D9488;
+  color: #0F172A;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .data-row,
+[data-theme="light"] .stat-box,
+[data-theme="light"] .sc,
+[data-theme="light"] .lbox {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+}
+
+[data-theme="light"] .msg-bubble {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-left: 3px solid var(--violet);
+}
+
+[data-theme="light"] .msg-bubble-premium {
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  border-left: 4px solid var(--violet);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .meet-card,
+[data-theme="light"] .meet-card-premium {
+  background: #FFFFFF !important;
+  border: 1.5px solid #E2E8F0 !important;
+  border-left: 4px solid var(--teal) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04) !important;
+}
+
+[data-theme="light"] .adm-tabs {
+  background: #F1F5F9;
+  border-color: var(--violet);
+}
+
+[data-theme="light"] .adm-tab {
+  background: #FFFFFF;
+  color: #0F172A;
+  border-color: #CBD5E1;
+}
+
+[data-theme="light"] .adm-tab.on {
+  background: linear-gradient(135deg, #6366F1, #4F46E5);
+  color: #FFFFFF;
+}
+
+[data-theme="light"] .photo-ring {
+  background: #F1F5F9;
+  border-color: var(--teal);
+}
+
+[data-theme="light"] .id-badge {
+  background: #E2E8F0;
+  color: #334155;
+}
+
+[data-theme="light"] .orbit-center {
+  background: linear-gradient(135deg, #6366F1, #0D9488);
+}
+
+
 

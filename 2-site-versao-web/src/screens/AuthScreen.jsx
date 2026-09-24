@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase, CITIES } from '../lib/supabase';
+import TopBar from '../components/TopBar';
 
 function translateError(err) {
   if (!err) return '';
@@ -470,7 +471,8 @@ export default function AuthScreen({ onLoggedIn }) {
   const showButton = isIOS || !!deferredPrompt;
 
   return (
-    <div className="screen" style={{ paddingTop: 0 }}>
+    <div className="screen" style={{ paddingTop: 12 }}>
+      <TopBar />
       <div style={{ textAlign: 'center', marginTop: -45, marginBottom: -55 }}>
         <img src="/logo.png" alt="Amigos Dr Candido" style={{ width: 350, height: 350, objectFit: 'contain', margin: '0 auto', display: 'block' }} />
       </div>
