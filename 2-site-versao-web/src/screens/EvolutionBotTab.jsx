@@ -2225,31 +2225,38 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
     }
   }
 
-  // Exportar todos os lotes combinados (T1, T2, T3...) em formato vCard (.vcf) compatível com iOS e Android
+  // Lista completa de 100% dos usuários atuais cadastrados no sistema que possuem telefone válido
+  const allUsersWithPhone = (users || []).filter((u) => {
+    const raw = u.whatsapp || u.phone || '';
+    const clean = raw.replace(/\D/g, '');
+    return clean.length >= 8;
+  });
+
+  // Exportar todos os lotes combinados (T1, T2, T3...) em formato vCard (.vcf) garantindo 100% dos contatos atuais
   async function handleExportAllBatches() {
     try {
       const allCards = [];
-      batches.forEach((b) => {
-        b.users.forEach((u) => {
-          const cleanName = (u.name || 'Sem Nome').trim();
-          const fullName = `${b.id} ${cleanName}`;
-          const tel = (u.phone || u.whatsapp || '').replace(/\D/g, '');
-          let intlTel = tel;
-          if (!intlTel.startsWith('55') && (intlTel.length === 10 || intlTel.length === 11)) {
-            intlTel = '55' + intlTel;
-          }
-          if (intlTel && !intlTel.startsWith('+')) {
-            intlTel = '+' + intlTel;
-          }
-          allCards.push([
-            'BEGIN:VCARD',
-            'VERSION:3.0',
-            `N:;${fullName};;;`,
-            `FN:${fullName}`,
-            ...(intlTel ? [`TEL;TYPE=CELL;TYPE=PREF:${intlTel}`, `TEL;TYPE=CELL,VOICE:${intlTel}`] : []),
-            'END:VCARD'
-          ].join('\r\n'));
-        });
+      allUsersWithPhone.forEach((u, idx) => {
+        const batchNum = Math.floor(idx / 250) + 1;
+        const tag = `T${batchNum}`;
+        const cleanName = (u.name || u.full_name || 'Sem Nome').trim();
+        const fullName = `${tag} ${cleanName}`;
+        const tel = (u.phone || u.whatsapp || '').replace(/\D/g, '');
+        let intlTel = tel;
+        if (!intlTel.startsWith('55') && (intlTel.length === 10 || intlTel.length === 11)) {
+          intlTel = '55' + intlTel;
+        }
+        if (intlTel && !intlTel.startsWith('+')) {
+          intlTel = '+' + intlTel;
+        }
+        allCards.push([
+          'BEGIN:VCARD',
+          'VERSION:3.0',
+          `N:;${fullName};;;`,
+          `FN:${fullName}`,
+          ...(intlTel ? [`TEL;TYPE=CELL;TYPE=PREF:${intlTel}`, `TEL;TYPE=CELL,VOICE:${intlTel}`] : []),
+          'END:VCARD'
+        ].join('\r\n'));
       });
 
       const vcfContent = allCards.join('\r\n');
@@ -2290,15 +2297,14 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
 
   const [selectedChunk250Index, setSelectedChunk250Index] = useState(0);
 
-  // Calcula os lotes fracionados de 250 em 250 (T1, T2, T3...)
+  // Calcula os lotes fracionados de 250 em 250 (T1, T2, T3...) sobre 100% da base atual
   const CHUNK_SIZE_250 = 250;
   const chunks250 = [];
-  const targetUsersFor250 = (typeof validUsers !== 'undefined' && validUsers && validUsers.length > 0) ? validUsers : (users || []);
-  if (targetUsersFor250 && targetUsersFor250.length > 0) {
-    const totalChunks = Math.ceil(targetUsersFor250.length / CHUNK_SIZE_250);
+  if (allUsersWithPhone && allUsersWithPhone.length > 0) {
+    const totalChunks = Math.ceil(allUsersWithPhone.length / CHUNK_SIZE_250);
     for (let i = 0; i < totalChunks; i++) {
       const start = i * CHUNK_SIZE_250;
-      const end = Math.min((i + 1) * CHUNK_SIZE_250, targetUsersFor250.length);
+      const end = Math.min((i + 1) * CHUNK_SIZE_250, allUsersWithPhone.length);
       const tag = `T${i + 1}`;
       chunks250.push({
         index: i,
@@ -2306,7 +2312,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
         name: `Lista ${tag} (${start + 1} a ${end})`,
         start: start + 1,
         end,
-        users: targetUsersFor250.slice(start, end)
+        users: allUsersWithPhone.slice(start, end)
       });
     }
   }
@@ -4597,7 +4603,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
               </div>
 
               <div style={{ fontSize: 12.5, color: 'var(--ink2)', lineHeight: 1.5 }}>
-                Gera o arquivo oficial de agenda (.vcf) com todos os <strong>{validUsers.length} contatos</strong> unificados e já organizados com os prefixos dos lotes (T1, T2, T3...).<br />
+                Gera o arquivo oficial de agenda (.vcf) com todos os <strong>{allUsersWithPhone.length} contatos atuais do sistema</strong> unificados e já organizados com os prefixos dos lotes (T1, T2, T3...).<br />
                 Ao clicar abaixo no seu celular, ele abre <strong>direto o app de Contatos do iPhone ou Android</strong> perguntando se deseja salvar todos de uma só vez!
               </div>
 
