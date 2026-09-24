@@ -2288,6 +2288,127 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
     }
   }
 
+  const [selectedChunk250Index, setSelectedChunk250Index] = useState(0);
+
+  // Calcula os lotes fracionados de 250 em 250 (T1, T2, T3...)
+  const CHUNK_SIZE_250 = 250;
+  const chunks250 = [];
+  const targetUsersFor250 = (typeof validUsers !== 'undefined' && validUsers && validUsers.length > 0) ? validUsers : (users || []);
+  if (targetUsersFor250 && targetUsersFor250.length > 0) {
+    const totalChunks = Math.ceil(targetUsersFor250.length / CHUNK_SIZE_250);
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE_250;
+      const end = Math.min((i + 1) * CHUNK_SIZE_250, targetUsersFor250.length);
+      const tag = `T${i + 1}`;
+      chunks250.push({
+        index: i,
+        id: tag,
+        name: `Lista ${tag} (${start + 1} a ${end})`,
+        start: start + 1,
+        end,
+        users: targetUsersFor250.slice(start, end)
+      });
+    }
+  }
+
+  // Baixar 1 lista individual de 250 em formato .VCF
+  function handleExportSingleChunk250Vcf(chunk) {
+    if (!chunk || !chunk.users || chunk.users.length === 0) {
+      alert('Nenhum contato nesta lista selecionada.');
+      return;
+    }
+    try {
+      const cards = chunk.users.map((u) => {
+        const cleanName = (u.name || 'Sem Nome').trim();
+        const fullName = `${chunk.id} ${cleanName}`;
+        const tel = (u.phone || u.whatsapp || '').replace(/\D/g, '');
+        let intlTel = tel;
+        if (!intlTel.startsWith('55') && (intlTel.length === 10 || intlTel.length === 11)) {
+          intlTel = '55' + intlTel;
+        }
+        if (intlTel && !intlTel.startsWith('+')) {
+          intlTel = '+' + intlTel;
+        }
+        return [
+          'BEGIN:VCARD',
+          'VERSION:3.0',
+          `N:;${fullName};;;`,
+          `FN:${fullName}`,
+          ...(intlTel ? [`TEL;TYPE=CELL;TYPE=PREF:${intlTel}`, `TEL;TYPE=CELL,VOICE:${intlTel}`] : []),
+          'END:VCARD'
+        ].join('\r\n');
+      });
+
+      const vcfContent = cards.join('\r\n');
+      const blob = new Blob([vcfContent], { type: 'text/vcard;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `contatos_${chunk.id}_${chunk.start}_a_${chunk.end}.vcf`);
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 200);
+    } catch (err) {
+      alert('Erro ao exportar lista de 250: ' + err.message);
+    }
+  }
+
+  // Baixar TODAS as listas de 250 empacotadas em um único arquivo .ZIP
+  async function handleExportAllChunks250Zip() {
+    if (!chunks250 || chunks250.length === 0) {
+      alert('Nenhuma lista de 250 para exportar em ZIP.');
+      return;
+    }
+    try {
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+
+      chunks250.forEach((chunk) => {
+        const cards = chunk.users.map((u) => {
+          const cleanName = (u.name || 'Sem Nome').trim();
+          const fullName = `${chunk.id} ${cleanName}`;
+          const tel = (u.phone || u.whatsapp || '').replace(/\D/g, '');
+          let intlTel = tel;
+          if (!intlTel.startsWith('55') && (intlTel.length === 10 || intlTel.length === 11)) {
+            intlTel = '55' + intlTel;
+          }
+          if (intlTel && !intlTel.startsWith('+')) {
+            intlTel = '+' + intlTel;
+          }
+          return [
+            'BEGIN:VCARD',
+            'VERSION:3.0',
+            `N:;${fullName};;;`,
+            `FN:${fullName}`,
+            ...(intlTel ? [`TEL;TYPE=CELL;TYPE=PREF:${intlTel}`, `TEL;TYPE=CELL,VOICE:${intlTel}`] : []),
+            'END:VCARD'
+          ].join('\r\n');
+        });
+
+        const vcfContent = cards.join('\r\n');
+        const filename = `contatos_${chunk.id}_${chunk.start}_a_${chunk.end}.vcf`;
+        zip.file(filename, vcfContent);
+      });
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `contatos_todas_listas_250_${Date.now()}.zip`);
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 200);
+    } catch (err) {
+      alert('Erro ao gerar arquivo ZIP: ' + err.message);
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
@@ -4500,6 +4621,120 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                 onClick={handleExportAllBatches}
               >
                 <span>📥</span> Salvar Todos no Celular (.vcf - 1 Toque)
+              </button>
+            </div>
+
+            {/* OPÇÃO 2: SALVAR EM LISTAS FRACIONADAS DE 250 (MENU + VCF INDIVIDUAL + ZIP COMPACTADO) */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(123, 108, 244, 0.15), rgba(15, 23, 42, 0.7))',
+              border: '1.5px solid var(--violet)',
+              borderRadius: 16,
+              padding: '20px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+              boxShadow: '0 6px 24px rgba(123, 108, 244, 0.15)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 20 }}>📁</span>
+                  <span style={{ fontSize: 15, fontWeight: 900, color: '#fff' }}>
+                    Salvar por Listas de 250 Contatos (T1, T2, T3...)
+                  </span>
+                </div>
+                <span style={{
+                  fontSize: 10.5,
+                  fontWeight: 900,
+                  background: 'var(--violet)',
+                  color: '#fff',
+                  padding: '3px 10px',
+                  borderRadius: 20,
+                  letterSpacing: '0.5px'
+                }}>
+                  LOTE 250 · SELEÇÃO & ZIP
+                </span>
+              </div>
+
+              <div style={{ fontSize: 12.5, color: 'var(--ink2)', lineHeight: 1.5 }}>
+                Baixe os contatos fracionados em blocos de <strong>250 contatos</strong>. Escolha uma lista específica no menu abaixo para baixar seu arquivo <code>.vcf</code> individual ou baixe <strong>todas as listas compactadas em ZIP</strong> de uma só vez!
+              </div>
+
+              {/* Menu de Seleção de Lista de 250 */}
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                <select
+                  value={selectedChunk250Index}
+                  onChange={(e) => setSelectedChunk250Index(Number(e.target.value))}
+                  style={{
+                    flex: 1,
+                    minWidth: 200,
+                    padding: '11px 14px',
+                    borderRadius: 10,
+                    border: '1px solid var(--line)',
+                    background: 'var(--panel2)',
+                    color: 'var(--ink1)',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    outline: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {chunks250.length > 0 ? (
+                    chunks250.map((chunk, idx) => (
+                      <option key={chunk.id} value={idx}>
+                        {chunk.name} — ({chunk.users.length} contatos)
+                      </option>
+                    ))
+                  ) : (
+                    <option value={0}>Nenhum contato disponível</option>
+                  )}
+                </select>
+
+                <button
+                  type="button"
+                  className="btn"
+                  style={{
+                    padding: '11px 18px',
+                    fontSize: 13,
+                    fontWeight: 800,
+                    background: 'rgba(123, 108, 244, 0.25)',
+                    border: '1px solid var(--violet)',
+                    color: '#fff',
+                    borderRadius: 10,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                  onClick={() => handleExportSingleChunk250Vcf(chunks250[selectedChunk250Index])}
+                >
+                  <span>📥</span> Baixar Selecionada (.vcf)
+                </button>
+              </div>
+
+              {/* Botão para Baixar Todas as Listas de 250 em ZIP */}
+              <button
+                type="button"
+                className="btn"
+                style={{
+                  width: '100%',
+                  padding: '13px 20px',
+                  fontSize: 13.5,
+                  fontWeight: 900,
+                  background: 'linear-gradient(135deg, #7B6CF4, #5B4BD4)',
+                  border: 'none',
+                  color: '#fff',
+                  borderRadius: 12,
+                  boxShadow: '0 6px 20px rgba(123, 108, 244, 0.35)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 10,
+                  cursor: 'pointer',
+                  marginTop: 4
+                }}
+                onClick={handleExportAllChunks250Zip}
+              >
+                <span>📦</span> Baixar TODAS as Listas de 250 em ZIP (.zip)
               </button>
             </div>
 
