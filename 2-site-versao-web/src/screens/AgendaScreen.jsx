@@ -436,7 +436,7 @@ export default function AgendaScreen({ profile }) {
                 <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
                   <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '8px 10px', fontSize: 12 }} onClick={() => startWebCamera('event')}>📸 Tirar Foto</button>
                   <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '8px 10px', fontSize: 12 }} onClick={() => fileInputEventGallery.current?.click()}>🖼️ Escolher Galeria</button>
-                  <input ref={fileInputEventGallery} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => setMeetingPhotoFiles(e.target.files ? [e.target.files[0]] : [])} />
+                  <input ref={fileInputEventGallery} type="file" accept="image/*,application/pdf,.pdf" style={{ display: 'none' }} onChange={(e) => setMeetingPhotoFiles(e.target.files ? [e.target.files[0]] : [])} />
                 </div>
               )}
 
@@ -452,7 +452,7 @@ export default function AgendaScreen({ profile }) {
                 <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
                   <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '8px 10px', fontSize: 12 }} onClick={() => startWebCamera('presence')}>📸 Tirar Foto da Lista</button>
                   <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '8px 10px', fontSize: 12 }} onClick={() => fileInputPresenceGallery.current?.click()}>🖼️ Escolher Galeria</button>
-                  <input ref={fileInputPresenceGallery} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => setPresencePhotoFile(e.target.files ? e.target.files[0] : null)} />
+                  <input ref={fileInputPresenceGallery} type="file" accept="image/*,application/pdf,.pdf" style={{ display: 'none' }} onChange={(e) => setPresencePhotoFile(e.target.files ? e.target.files[0] : null)} />
                 </div>
               )}
 
@@ -632,7 +632,7 @@ export default function AgendaScreen({ profile }) {
                     <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                       <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '6px 8px', fontSize: 11 }} onClick={() => startWebCamera('edit_event')}>📸 Tirar</button>
                       <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '6px 8px', fontSize: 11 }} onClick={() => editFileInputEventGallery.current?.click()}>🖼️ Galeria</button>
-                      <input ref={editFileInputEventGallery} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => setEditMeetingPhotoFiles(e.target.files ? [e.target.files[0]] : [])} />
+                      <input ref={editFileInputEventGallery} type="file" accept="image/*,application/pdf,.pdf" style={{ display: 'none' }} onChange={(e) => setEditMeetingPhotoFiles(e.target.files ? [e.target.files[0]] : [])} />
                     </div>
                   )}
                 </div>
@@ -650,7 +650,7 @@ export default function AgendaScreen({ profile }) {
                     <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                       <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '6px 8px', fontSize: 11 }} onClick={() => startWebCamera('edit_presence')}>📸 Tirar</button>
                       <button type="button" className="btn btn-ghost btn-sm" style={{ flex: 1, margin: 0, padding: '6px 8px', fontSize: 11 }} onClick={() => editFileInputPresenceGallery.current?.click()}>🖼️ Galeria</button>
-                      <input ref={editFileInputPresenceGallery} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => setEditPresencePhotoFile(e.target.files ? e.target.files[0] : null)} />
+                      <input ref={editFileInputPresenceGallery} type="file" accept="image/*,application/pdf,.pdf" style={{ display: 'none' }} onChange={(e) => setEditPresencePhotoFile(e.target.files ? e.target.files[0] : null)} />
                     </div>
                   )}
                 </div>

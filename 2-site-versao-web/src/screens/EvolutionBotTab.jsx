@@ -644,10 +644,10 @@ function MassDispatchView({ users, status, setShowConnectModal, config, getPhone
                 <div style={{ fontSize: 11.5, color: 'var(--ink2)' }}>Selecione um banner ou foto para ser enviada junto com o texto.</div>
               </div>
               <label className="btn btn-teal" style={{ margin: 0, padding: '7px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                {uploadingImage ? '⏳ Enviando...' : '📁 Escolher Imagem'}
+                {uploadingImage ? '⏳ Enviando...' : '📁 Escolher Imagem / PDF'}
                 <input 
                   type="file" 
-                  accept="image/*" 
+                  accept="image/*,application/pdf,.pdf" 
                   onChange={handleImageUpload} 
                   disabled={uploadingImage}
                   style={{ display: 'none' }} 

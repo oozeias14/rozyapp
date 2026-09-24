@@ -705,8 +705,8 @@ Acesse agora para acompanhar seus dados e indicações!`;
                 width: '100%'
               }}
             >
-              <span style={{ fontSize: 20 }}>🖼️</span>
-              <span>Buscar Imagem da Galeria</span>
+              <span style={{ fontSize: 20 }}>🖼️ / 📄</span>
+              <span>Buscar Imagem / PDF da Galeria</span>
             </button>
 
             <button
@@ -746,7 +746,7 @@ Acesse agora para acompanhar seus dados e indicações!`;
           <input
             ref={galleryInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,application/pdf,.pdf"
             style={{ display: 'none' }}
             onChange={handleAttendanceSheetCapture}
           />

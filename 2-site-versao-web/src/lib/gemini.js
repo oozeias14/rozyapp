@@ -44,6 +44,9 @@ export function fileToBase64(file) {
  * Redimensiona a foto para OCR com alta resolução e fidelidade
  */
 export function prepareImageForOCR(file, maxDimension = 1800, quality = 0.88) {
+  if (file.type === 'application/pdf' || (file.name && file.name.toLowerCase().endsWith('.pdf'))) {
+    return Promise.resolve(file);
+  }
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -91,7 +94,7 @@ export function prepareImageForOCR(file, maxDimension = 1800, quality = 0.88) {
 }
 
 /**
- * Envia a imagem para a API Gemini 1.5 Flash para extrair contatos
+ * Envia a imagem ou arquivo PDF para a API Gemini 1.5 Flash para extrair contatos
  */
 export async function extractContactsFromAttendanceSheet(imageBlobOrFile, customApiKey = null) {
   const apiKey = customApiKey || getGeminiApiKey();
@@ -101,6 +104,9 @@ export async function extractContactsFromAttendanceSheet(imageBlobOrFile, custom
   }
 
   const base64Data = await fileToBase64(imageBlobOrFile);
+  const mimeType = (imageBlobOrFile.type === 'application/pdf' || (imageBlobOrFile.name && imageBlobOrFile.name.toLowerCase().endsWith('.pdf')))
+    ? 'application/pdf'
+    : 'image/jpeg';
 
   // 1. Tenta primeiro pelo endpoint seguro serverless (/api/gemini-ocr)
   try {
@@ -112,7 +118,7 @@ export async function extractContactsFromAttendanceSheet(imageBlobOrFile, custom
       },
       body: JSON.stringify({
         base64Image: base64Data,
-        mimeType: 'image/jpeg'
+        mimeType
       })
     });
 
@@ -129,9 +135,9 @@ export async function extractContactsFromAttendanceSheet(imageBlobOrFile, custom
   // 2. Fallback para chamada direta do cliente
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
 
-  const promptText = `Você é um assistente especialista em OCR e transcrição de listas de presença físicas (manuscritas ou impressas) em eventos no Brasil.
-Analise detalhadamente a foto da folha de presença enviada.
-Identifique e extraia TODOS os nomes e números de telefone / WhatsApp presentes na folha.
+  const promptText = `Você é um assistente especialista em OCR e transcrição de listas de presença físicas ou digitais (manuscritas, impressas ou em documento PDF) em eventos no Brasil.
+Analise detalhadamente a foto ou documento PDF da folha de presença enviado.
+Identifique e extraia TODOS os nomes e números de telefone / WhatsApp presentes no documento/imagem.
 
 Instruções rigorosas:
 1. 'name': Nome completo da pessoa (corrija capitalização inicial de cada palavra, ex: 'Maria Silva').
@@ -160,7 +166,7 @@ Retorne EXCLUSIVAMENTE um objeto JSON válido com a seguinte estrutura:
           { text: promptText },
           {
             inlineData: {
-              mimeType: "image/jpeg",
+              mimeType,
               data: base64Data
             }
           }
