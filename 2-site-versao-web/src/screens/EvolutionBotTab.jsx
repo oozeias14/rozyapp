@@ -2302,7 +2302,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
             textAlign: 'center',
             boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
           }}>
-            <h2 style={{ fontSize: 20, fontWeight: 900, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 900, color: 'var(--ink1)', margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
               <span>🤖</span> Robô de WhatsApp
             </h2>
             <p style={{ fontSize: 13, color: 'var(--ink2)', marginTop: 6, marginBottom: 0 }}>
@@ -2355,7 +2355,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
               </div>
 
               <div>
-                <div style={{ fontSize: 18, fontWeight: 900, color: '#fff' }}>
+                <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--ink1)' }}>
                   1 - Descobrir Número Salvo
                 </div>
                 <div style={{ fontSize: 12.5, color: 'var(--ink2)', marginTop: 6, lineHeight: 1.4 }}>
@@ -2404,7 +2404,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
               </div>
 
               <div>
-                <div style={{ fontSize: 18, fontWeight: 900, color: '#fff' }}>
+                <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--ink1)' }}>
                   2 - Envio de Mensagem em Massa
                 </div>
                 <div style={{ fontSize: 12.5, color: 'var(--ink2)', marginTop: 6, lineHeight: 1.4 }}>

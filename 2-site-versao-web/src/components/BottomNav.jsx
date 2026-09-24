@@ -39,16 +39,20 @@ export default function BottomNav({ active, onChange, profile, hasNewMuralMessag
   return (
     <div className="bnav" style={{ flexDirection: 'column', padding: 0 }}>
       {/* Texto de Campanha fixado acima dos botões */}
-      <div style={{
-        width: '100%',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: '9px 0',
-        background: 'rgba(9, 13, 22, 0.95)',
-        borderBottom: '1px solid var(--line)',
-        userSelect: 'none'
-      }}>
+      {/* Texto de Campanha fixado acima dos botões */}
+      <div 
+        className="campaign-vote-bar"
+        style={{
+          width: '100%',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: '9px 0',
+          background: '#090D16',
+          borderBottom: '1px solid #000000',
+          userSelect: 'none'
+        }}
+      >
         <span style={{
           fontFamily: "'Space Grotesk', sans-serif",
           fontSize: '15.8px',

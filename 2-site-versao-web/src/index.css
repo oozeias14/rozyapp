@@ -715,6 +715,17 @@ html, body, .app-shell, .screen {
   color: #0284C7 !important;
 }
 
+/* Barra de Campanha (VOTE DR. CANDIDO 15.678) permanece destacada em fundo escuro com texto dourado */
+[data-theme="light"] .campaign-vote-bar {
+  background: #090D16 !important;
+  border-bottom: 1px solid #000000 !important;
+}
+[data-theme="light"] .campaign-vote-bar span {
+  color: #FFA000 !important;
+  text-shadow: 0 0 10px rgba(255, 160, 0, 0.4) !important;
+}
+
+
 
 
 
