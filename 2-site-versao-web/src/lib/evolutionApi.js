@@ -1177,9 +1177,10 @@ export function generateTransmissionBatches(users, maxPerBatch = 250) {
   for (let i = 0; i < totalBatches; i++) {
     const chunk = validUsers.slice(i * maxPerBatch, (i + 1) * maxPerBatch);
     const listIndex = i + 1;
+    const tag = `T${String(listIndex).padStart(2, '0')}`;
     batches.push({
-      id: `T${listIndex}`,
-      name: `Candido lista T${listIndex}`,
+      id: tag,
+      name: `Candido lista ${tag}`,
       count: chunk.length,
       users: chunk,
       startNumber: i * maxPerBatch + 1,

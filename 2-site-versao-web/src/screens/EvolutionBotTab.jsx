@@ -1107,7 +1107,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
   const [testTargetType, setTestTargetType] = useState('custom'); // 'custom' | 'batch' | 'all_pending' | 'all'
   const [customSelectedUserIds, setCustomSelectedUserIds] = useState([]);
   const [customContactSearch, setCustomContactSearch] = useState('');
-  const [selectedTestBatch, setSelectedTestBatch] = useState('T1');
+  const [selectedTestBatch, setSelectedTestBatch] = useState('T01');
   const [verificationMethod, setVerificationMethod] = useState('phrase_track'); // 'phrase_track' | 'auto_broadcast' | 'paste'
   const [broadcastPhraseText, setBroadcastPhraseText] = useState('');
   const [phraseTimeHours, setPhraseTimeHours] = useState(10 / 60); // Janela estrita de 10 minutos a partir do clique
@@ -2144,7 +2144,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
 
       const rows = validUsers.map((u, i) => {
         const batchNum = Math.floor(i / 100) + 1;
-        const batchPrefix = `T${batchNum}`;
+        const batchPrefix = `T${String(batchNum).padStart(2, '0')}`;
         const cleanName = (u.name || 'Sem Nome').trim();
         const fullName = `${batchPrefix} ${cleanName}`;
         let phone = normalizePhone(u.whatsapp || u.phone);
@@ -2184,7 +2184,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
 
 
 
-  // Exportar vCard da Lista T1, T2, etc. com prefixo no nome
+  // Exportar vCard da Lista T01, T02, etc. com prefixo no nome
   function handleExportBatchVcf(batch) {
     try {
       const cards = batch.users.map((u) => {
@@ -2232,13 +2232,13 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
     return clean.length >= 8;
   });
 
-  // Exportar todos os lotes combinados (T1, T2, T3...) em formato vCard (.vcf) garantindo 100% dos contatos atuais
+  // Exportar todos os lotes combinados (T01, T02, T03...) em formato vCard (.vcf) garantindo 100% dos contatos atuais
   async function handleExportAllBatches() {
     try {
       const allCards = [];
       allUsersWithPhone.forEach((u, idx) => {
         const batchNum = Math.floor(idx / 250) + 1;
-        const tag = `T${batchNum}`;
+        const tag = `T${String(batchNum).padStart(2, '0')}`;
         const cleanName = (u.name || u.full_name || 'Sem Nome').trim();
         const fullName = `${tag} ${cleanName}`;
         const tel = (u.phone || u.whatsapp || '').replace(/\D/g, '');
@@ -2297,7 +2297,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
 
   const [selectedChunk250Index, setSelectedChunk250Index] = useState(0);
 
-  // Calcula os lotes fracionados de 250 em 250 (T1, T2, T3...) sobre 100% da base atual
+  // Calcula os lotes fracionados de 250 em 250 (T01, T02, T03...) sobre 100% da base atual
   const CHUNK_SIZE_250 = 250;
   const chunks250 = [];
   if (allUsersWithPhone && allUsersWithPhone.length > 0) {
@@ -2305,7 +2305,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
     for (let i = 0; i < totalChunks; i++) {
       const start = i * CHUNK_SIZE_250;
       const end = Math.min((i + 1) * CHUNK_SIZE_250, allUsersWithPhone.length);
-      const tag = `T${i + 1}`;
+      const tag = `T${String(i + 1).padStart(2, '0')}`;
       chunks250.push({
         index: i,
         id: tag,
