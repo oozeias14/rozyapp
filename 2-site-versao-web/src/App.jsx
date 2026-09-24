@@ -13,7 +13,7 @@ import SupportScreen from './screens/SupportScreen';
 import QrCodeScreen from './screens/QrCodeScreen';
 import BottomNav from './components/BottomNav';
 import FirstAccessModal from './components/FirstAccessModal';
-import { recordUserAccess, addUsageTime, loadCloudAccessData, syncCloudAccessImmediately } from './lib/accessTracker';
+import { recordUserAccess, addUsageTime, loadCloudAccessData, syncCloudAccessImmediately, syncCloudSessionStartTime, clearCloudSessionStartTime } from './lib/accessTracker';
 
 // Data e hora limite fixa da campanha (ex: até dia 24/08/2026 às 00:04:00 no fuso de Brasília, totalizando 48h)
 const POPUP_EXPIRATION_DATE = new Date('2026-08-24T00:04:00-03:00');
@@ -304,6 +304,7 @@ export default function App() {
     });
     setLoading(false);
     if (data) {
+      await syncCloudSessionStartTime(data);
       checkForNewMessages(data.id);
       recordUserAccess(data);
       loadCloudAccessData();
@@ -313,6 +314,7 @@ export default function App() {
   async function handleLogout() {
     if (profile) {
       await syncCloudAccessImmediately(profile);
+      await clearCloudSessionStartTime(profile);
       sessionStorage.removeItem(`popup_shown_session_${profile.id}`);
       sessionStorage.removeItem(`user_access_recorded_${profile.id}`);
     }

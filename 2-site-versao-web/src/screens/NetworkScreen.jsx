@@ -347,7 +347,7 @@ export default function NetworkScreen({ profile }) {
         marginBottom: 10
       }}>
         <div style={{ fontSize: 20, flexShrink: 0 }}>💡</div>
-        <div style={{ fontSize: 12.5, color: '#D5CFFE', lineHeight: 1.5, fontWeight: 500 }}>
+        <div style={{ fontSize: 12.5, color: 'var(--ink2)', lineHeight: 1.5, fontWeight: 500 }}>
           O <strong>11º indicado em diante</strong> entra automaticamente na primeira vaga livre da rede (spillover automático).
         </div>
       </div>

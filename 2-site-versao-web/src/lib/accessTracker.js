@@ -100,6 +100,68 @@ export async function syncCloudAccessImmediately(profile) {
 }
 
 /**
+ * Sincroniza o horário de início da sessão do usuário na nuvem (Supabase)
+ * garantindo que qualquer dispositivo (celular, PC, tablet) conectado na mesma conta
+ * exiba exatamente o mesmo tempo restante no temporizador.
+ */
+export async function syncCloudSessionStartTime(profile) {
+  if (!profile || !profile.id) return localStorage.getItem('session_start_time');
+
+  const isStaff = profile.role === 'admin' || profile.role === 'admin2' || profile.role === 'coord';
+  const limitSeconds = isStaff ? 30 * 60 : 10 * 60;
+  const now = Date.now();
+
+  try {
+    const { data } = await supabase.from('owner_profile').select('facebook').eq('id', 1).maybeSingle();
+    let sessionsMap = {};
+    if (data && data.facebook) {
+      try { sessionsMap = JSON.parse(data.facebook); } catch {}
+    }
+
+    const cloudStartTime = Number(sessionsMap[profile.id]);
+
+    if (cloudStartTime && !isNaN(cloudStartTime) && (now - cloudStartTime < limitSeconds * 1000)) {
+      // Usa a sessão em andamento já gravada na nuvem para manter 100% de sincronia
+      localStorage.setItem('session_start_time', cloudStartTime.toString());
+      return cloudStartTime.toString();
+    } else {
+      // Cria novo horário de início e registra na nuvem
+      const newStartTime = now;
+      sessionsMap[profile.id] = newStartTime;
+      localStorage.setItem('session_start_time', newStartTime.toString());
+
+      await supabase.from('owner_profile').update({ facebook: JSON.stringify(sessionsMap) }).eq('id', 1);
+      return newStartTime.toString();
+    }
+  } catch (e) {
+    console.warn('Erro ao sincronizar sessão com a nuvem:', e);
+    let local = localStorage.getItem('session_start_time');
+    if (!local) {
+      local = now.toString();
+      localStorage.setItem('session_start_time', local);
+    }
+    return local;
+  }
+}
+
+/**
+ * Remove o horário da sessão do usuário da nuvem ao realizar logout
+ */
+export async function clearCloudSessionStartTime(profile) {
+  if (!profile || !profile.id) return;
+  try {
+    const { data } = await supabase.from('owner_profile').select('facebook').eq('id', 1).maybeSingle();
+    if (data && data.facebook) {
+      let sessionsMap = JSON.parse(data.facebook);
+      delete sessionsMap[profile.id];
+      await supabase.from('owner_profile').update({ facebook: JSON.stringify(sessionsMap) }).eq('id', 1);
+    }
+  } catch (e) {
+    console.warn('Erro ao limpar sessão da nuvem:', e);
+  }
+}
+
+/**
  * Agenda salvamento dos dados na nuvem a cada 30 segundos (evita sobrecarga de rede)
  */
 export function queueCloudSync(profile) {
