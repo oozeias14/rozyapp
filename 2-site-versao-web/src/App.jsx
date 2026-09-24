@@ -408,19 +408,6 @@ export default function App() {
           onClose={() => setShowFirstAccessModal(false)} 
         />
       )}
-      {timeLeft !== null && (
-        <div style={timerStyle}>
-          <style>{`
-            @keyframes timerPulse {
-              0% { opacity: 0.4; }
-              50% { opacity: 1; }
-              100% { opacity: 0.4; }
-            }
-          `}</style>
-          <div style={dotStyle} />
-          <span>Sessão: {formatTime(timeLeft)}</span>
-        </div>
-      )}
       {mode === 'admin' ? (
         <AdminScreen profile={profile} initialTab={adminInitialTab} onBack={() => setMode('app')} />
       ) : (

@@ -4,10 +4,33 @@ export default function TopBar({ totalUsers }) {
   const [theme, setThemeState] = useState(() => {
     return localStorage.getItem('app_theme') || 'dark';
   });
+  const [sessionTimeStr, setSessionTimeStr] = useState('');
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    const updateTime = () => {
+      const startTime = localStorage.getItem('session_start_time');
+      if (!startTime) {
+        setSessionTimeStr('');
+        return;
+      }
+      const elapsedSeconds = Math.floor((Date.now() - parseInt(startTime, 10)) / 1000);
+      const isStaff = localStorage.getItem('is_staff_user') === 'true';
+      const limitSeconds = isStaff ? 30 * 60 : 10 * 60;
+      const remainingSeconds = Math.max(0, limitSeconds - elapsedSeconds);
+      
+      const m = Math.floor(remainingSeconds / 60).toString().padStart(2, '0');
+      const s = (remainingSeconds % 60).toString().padStart(2, '0');
+      setSessionTimeStr(`${m}:${s}`);
+    };
+
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   function toggleTheme() {
     const nextTheme = theme === 'dark' ? 'light' : 'dark';
@@ -17,11 +40,43 @@ export default function TopBar({ totalUsers }) {
   }
 
   return (
-    <div className="topbar">
-      <div className="brand">
-        <div className="dot" />
-        <span style={{ fontSize: 13 }}>Amigos Dr Candido</span>
+    <div className="topbar" style={{ alignItems: 'flex-start' }}>
+      <div className="brand" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+          <div className="dot" />
+          <span style={{ fontSize: 13, fontWeight: 700 }}>Amigos Dr Candido</span>
+        </div>
+        {sessionTimeStr && (
+          <div 
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '2px 7px',
+              background: 'var(--panel2)',
+              border: '1px solid var(--line)',
+              borderRadius: '12px',
+              fontSize: '9.5px',
+              fontWeight: '600',
+              color: 'var(--ink2)',
+              marginLeft: '16px',
+              letterSpacing: '0.02em',
+              userSelect: 'none'
+            }}
+          >
+            <div style={{
+              width: '4px',
+              height: '4px',
+              borderRadius: '50%',
+              backgroundColor: 'var(--teal)',
+              boxShadow: '0 0 5px var(--teal)',
+              animation: 'timerPulse 1.5s infinite'
+            }} />
+            <span>Sessão: {sessionTimeStr}</span>
+          </div>
+        )}
       </div>
+
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <button
           type="button"
