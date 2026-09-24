@@ -643,7 +643,7 @@ Acesse agora para acompanhar seus dados e indicações!`;
               fontSize: 17,
               fontWeight: 900,
               letterSpacing: '0.8px',
-              color: '#fff',
+              color: 'var(--ink1)',
               textTransform: 'uppercase',
               margin: '0 0 6px 0'
             }}>
@@ -697,8 +697,8 @@ Acesse agora para acompanhar seus dados e indicações!`;
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 10,
-                background: 'rgba(255, 255, 255, 0.08)',
-                color: '#fff',
+                background: 'var(--panel2)',
+                color: 'var(--ink1)',
                 border: '1px solid var(--line)',
                 borderRadius: 14,
                 cursor: 'pointer',
