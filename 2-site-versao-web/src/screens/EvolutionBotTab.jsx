@@ -2144,7 +2144,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
 
       const rows = validUsers.map((u, i) => {
         const batchNum = Math.floor(i / 100) + 1;
-        const batchPrefix = `T${String(batchNum).padStart(2, '0')}`;
+        const batchPrefix = `T0${batchNum}`;
         const cleanName = (u.name || 'Sem Nome').trim();
         const fullName = `${batchPrefix} ${cleanName}`;
         let phone = normalizePhone(u.whatsapp || u.phone);
@@ -2238,7 +2238,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
       const allCards = [];
       allUsersWithPhone.forEach((u, idx) => {
         const batchNum = Math.floor(idx / 250) + 1;
-        const tag = `T${String(batchNum).padStart(2, '0')}`;
+        const tag = `T0${batchNum}`;
         const cleanName = (u.name || u.full_name || 'Sem Nome').trim();
         const fullName = `${tag} ${cleanName}`;
         const tel = (u.phone || u.whatsapp || '').replace(/\D/g, '');
@@ -2305,7 +2305,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
     for (let i = 0; i < totalChunks; i++) {
       const start = i * CHUNK_SIZE_250;
       const end = Math.min((i + 1) * CHUNK_SIZE_250, allUsersWithPhone.length);
-      const tag = `T${String(i + 1).padStart(2, '0')}`;
+      const tag = `T0${i + 1}`;
       chunks250.push({
         index: i,
         id: tag,
