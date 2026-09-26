@@ -105,9 +105,11 @@ export default function App() {
       setTimeLeft(null);
       return;
     }
-    const isStaff = profile.role === 'admin' || profile.role === 'admin2' || profile.role === 'coord';
-    const limitSeconds = isStaff ? 30 * 60 : 10 * 60;
+    const isAdmin = profile.role === 'admin' || profile.role === 'admin2';
+    const isStaff = isAdmin || profile.role === 'coord';
+    const limitSeconds = isAdmin ? 4 * 60 * 60 : (isStaff ? 30 * 60 : 10 * 60);
     localStorage.setItem('is_staff_user', isStaff ? 'true' : 'false');
+    localStorage.setItem('session_limit_seconds', limitSeconds.toString());
 
     let startTime = localStorage.getItem('session_start_time');
     if (!startTime) {

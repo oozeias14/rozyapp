@@ -107,8 +107,9 @@ export async function syncCloudAccessImmediately(profile) {
 export async function syncCloudSessionStartTime(profile) {
   if (!profile || !profile.id) return localStorage.getItem('session_start_time');
 
-  const isStaff = profile.role === 'admin' || profile.role === 'admin2' || profile.role === 'coord';
-  const limitSeconds = isStaff ? 30 * 60 : 10 * 60;
+  const isAdmin = profile.role === 'admin' || profile.role === 'admin2';
+  const isStaff = isAdmin || profile.role === 'coord';
+  const limitSeconds = isAdmin ? 4 * 60 * 60 : (isStaff ? 30 * 60 : 10 * 60);
   const now = Date.now();
 
   try {

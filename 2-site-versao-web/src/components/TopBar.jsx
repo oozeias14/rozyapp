@@ -19,8 +19,7 @@ export default function TopBar({ totalUsers }) {
         return;
       }
       const elapsedSeconds = Math.floor((Date.now() - parseInt(startTime, 10)) / 1000);
-      const isStaff = localStorage.getItem('is_staff_user') === 'true';
-      const limitSeconds = isStaff ? 30 * 60 : 10 * 60;
+      const limitSeconds = parseInt(localStorage.getItem('session_limit_seconds') || (localStorage.getItem('is_staff_user') === 'true' ? '1800' : '600'), 10);
       const remainingSeconds = limitSeconds - elapsedSeconds;
 
       if (remainingSeconds <= 0) {
@@ -36,9 +35,10 @@ export default function TopBar({ totalUsers }) {
         return;
       }
       
-      const m = Math.floor(remainingSeconds / 60).toString().padStart(2, '0');
+      const hours = Math.floor(remainingSeconds / 3600);
+      const m = Math.floor((remainingSeconds % 3600) / 60).toString().padStart(2, '0');
       const s = (remainingSeconds % 60).toString().padStart(2, '0');
-      setSessionTimeStr(`${m}:${s}`);
+      setSessionTimeStr(hours > 0 ? `${hours}:${m}:${s}` : `${m}:${s}`);
     };
 
     updateTime();
