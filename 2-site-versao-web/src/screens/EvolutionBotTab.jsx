@@ -1110,7 +1110,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
   const [selectedTestBatch, setSelectedTestBatch] = useState('T01');
   const [verificationMethod, setVerificationMethod] = useState('phrase_track'); // 'phrase_track' | 'auto_broadcast' | 'paste'
   const [broadcastPhraseText, setBroadcastPhraseText] = useState('');
-  const [phraseTimeHours, setPhraseTimeHours] = useState(2); // Janela de 2 horas a partir do clique
+  const [phraseTimeHours, setPhraseTimeHours] = useState(3); // Janela de 3 horas a partir do clique
   const [detectedBroadcastLists, setDetectedBroadcastLists] = useState([]);
   const [selectedBroadcastJid, setSelectedBroadcastJid] = useState('');
   const [foundBroadcastMessage, setFoundBroadcastMessage] = useState(null);
@@ -1589,7 +1589,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
         });
       }
 
-      // Salva o snapshot da Auditoria 1 (Inicial) no histórico e ativa o temporizador de 25 min para as próximas 2h
+      // Salva o snapshot da Auditoria 1 (Inicial) no histórico e ativa o temporizador de 25 min para as próximas 3h
       const savedList = evaluated.filter((x) => x.checks === 2);
       const pendingList = evaluated.filter((x) => x.checks !== 2);
 
@@ -1607,7 +1607,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
       setRecheckCycleCount(0);
       setRecheckSecondsLeft(25 * 60);
       setRecheckTimerActive(true);
-      addLog('⏱️ Temporizador de Rechecagem Automática (25 min) ativado para as próximas 2 horas!', 'info');
+      addLog('⏱️ Temporizador de Rechecagem Automática (25 min) ativado para as próximas 3 horas!', 'info');
 
     } catch (err) {
       addLog(`❌ Erro durante a auditoria da transmissão: ${err.message}`, 'error');
@@ -1618,7 +1618,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
     }
   }
 
-  // 🔄 EXECUTAR RECHECAGEM AUTOMÁTICA OU MANUAL (a cada 25 min nas próximas 2h)
+  // 🔄 EXECUTAR RECHECAGEM AUTOMÁTICA OU MANUAL (a cada 25 min nas próximas 3h)
   async function handleTriggerRecheck(isAuto = false) {
     if (!status.connected) {
       if (!isAuto) alert('Conecte o WhatsApp antes de realizar a rechecagem!');
@@ -1629,9 +1629,9 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
     if (targetUsers.length === 0) return;
 
     const nextCycle = recheckCycleCount + 1;
-    if (nextCycle > 5 && isAuto) {
+    if (nextCycle > 7 && isAuto) {
       setRecheckTimerActive(false);
-      addLog('⏱️ Período máximo de 2 horas de rechecagem encerrado.', 'info');
+      addLog('⏱️ Período máximo de 3 horas de rechecagem encerrado.', 'info');
       return;
     }
 
@@ -1642,7 +1642,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
     addLog(`🔄 [${cycleTitle.toUpperCase()}] Iniciando rechecagem das entregas no WhatsApp...`, 'info');
 
     try {
-      const receiptsData = await fetchAllWhatsAppTransmissionReceipts(phraseTimeHours || 2);
+      const receiptsData = await fetchAllWhatsAppTransmissionReceipts(phraseTimeHours || 3);
       const auditResult = auditBroadcastDeliveryReceipts(receiptsData, targetUsers);
 
       let savedCount = 0;
@@ -1656,7 +1656,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
         const u = targetUsers[i];
 
         if (item.checks !== 2 && (u.whatsapp || u.phone)) {
-          const directCheck = await getContactDeliveryStatusDirect(u.whatsapp || u.phone, phraseTimeHours || 2);
+          const directCheck = await getContactDeliveryStatusDirect(u.whatsapp || u.phone, phraseTimeHours || 3);
           if (directCheck.has2Checks) {
             item = {
               ...item,
@@ -4425,7 +4425,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                           }}
                           onClick={handleAuditByPhraseLive}
                         >
-                          ⚡ Rastrear Transmissão das Últimas 2 Horas ({getSelectedTargetUsers().length} Contatos)
+                          ⚡ Rastrear Transmissão das Últimas 3 Horas ({getSelectedTargetUsers().length} Contatos)
                         </button>
 
                         <button
@@ -4496,7 +4496,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
               </h2>
               <div style={{ fontSize: 13, color: 'var(--ink2)', lineHeight: 1.5, maxWidth: 440, margin: '0 auto' }}>
                 {status.connected 
-                  ? `Sessão ativa na instância ${config.instanceName}. O robô está apto a cruzar listas e auditar mensagens entregues nas últimas 2 horas.`
+                  ? `Sessão ativa na instância ${config.instanceName}. O robô está apto a cruzar listas e auditar mensagens entregues nas últimas 3 horas.`
                   : 'Conecte o WhatsApp do Dr. Cândido Teles para sincronizar agendas e checar entregas da lista de transmissão.'}
               </div>
             </div>
@@ -5070,7 +5070,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                   </span>
                   <div>
                     <div style={{ fontSize: 15, fontWeight: 900, color: '#fff' }}>
-                      Auditoria de Entrega Automática (Últimas 2 Horas)
+                      Auditoria de Entrega Automática (Últimas 3 Horas)
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
                       Identifique instantaneamente quem recebeu sua transmissão e quem ainda não tem o número salvo
@@ -5087,13 +5087,13 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                   fontWeight: 800,
                   border: '1px solid var(--teal)'
                 }}>
-                  ⏱ JANELA 2 HORAS
+                  ⏱ JANELA 3 HORAS
                 </span>
               </div>
 
               <div style={{ fontSize: 12.5, color: 'var(--ink2)', lineHeight: 1.6 }}>
                 1. Dispare sua mensagem na Lista de Transmissão oficial no WhatsApp do Dr. Cândido.<br />
-                2. Clique no botão abaixo: o robô examina as últimas <strong>2 horas</strong> e cruza os números.<br />
+                2. Clique no botão abaixo: o robô examina as últimas <strong>3 horas</strong> e cruza os números.<br />
                 3. Se o contato recebeu a mensagem enviada, ele é confirmado com <strong>2 traços (✓✓ Salvo na Agenda)</strong>. Se não recebeu, permanece com <strong>1 traço (⏱ Pendente)</strong>.
               </div>
 
@@ -5118,7 +5118,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                     }}
                     onClick={() => setShowBroadcastTestModal(true)}
                   >
-                    <span style={{ fontWeight: 900 }}>✓✓</span> Executar Auditoria de 2 Horas
+                    <span style={{ fontWeight: 900 }}>✓✓</span> Executar Auditoria de 3 Horas
                   </button>
 
                   {/* Botão Azul de Rechecagem (25 Minutos) */}

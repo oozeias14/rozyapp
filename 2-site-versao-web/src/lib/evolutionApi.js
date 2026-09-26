@@ -781,8 +781,8 @@ export function extractPhonesFromMessage(m, lidToPhone = new Map()) {
   return phones;
 }
 
-// Helper para verificar se a mensagem foi enviada/recebida dentro da janela especificada (padrão 2h / maxHours = 2)
-export function isMessageWithinHours(msg, maxHours = 2) {
+// Helper para verificar se a mensagem foi enviada/recebida dentro da janela especificada (padrão 3h / maxHours = 3)
+export function isMessageWithinHours(msg, maxHours = 3) {
   if (!msg) return false;
   
   let ts = msg.messageTimestamp || msg.createdAt || msg.updatedAt;
@@ -809,10 +809,10 @@ export function isMessageWithinHours(msg, maxHours = 2) {
 
   const nowSec = Math.floor(Date.now() / 1000);
   const diffSec = nowSec - ts;
-  // Janela de auditoria de 2 horas (7200s).
-  // Se a mensagem foi enviada há mais de 2 horas,
+  // Janela de auditoria de 3 horas (10800s).
+  // Se a mensagem foi enviada há mais de 3 horas,
   // retorna estritamente false para que o sistema se mantenha limpo.
-  const baseSec = Math.round((maxHours || 2) * 3600);
+  const baseSec = Math.round((maxHours || 3) * 3600);
   const maxSec = baseSec;
 
   return diffSec >= -60 && diffSec <= maxSec;
@@ -820,7 +820,7 @@ export function isMessageWithinHours(msg, maxHours = 2) {
 
 // ── RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO ────
 
-export async function scanAllChatsForPhrase(phraseText = '', maxHours = 2) {
+export async function scanAllChatsForPhrase(phraseText = '', maxHours = 3) {
   const targetPhrase = (phraseText || '').toLowerCase().trim().replace(/^["']|["']$/g, '');
   const matchedSigs = new Set();
 
@@ -1083,7 +1083,7 @@ export async function scanAllChatsForPhrase(phraseText = '', maxHours = 2) {
   return matchedSigs;
 }
 
-export async function checkContactHasBroadcastPhrase(phone, phraseText = '', preScannedSigs = null, maxHours = 2) {
+export async function checkContactHasBroadcastPhrase(phone, phraseText = '', preScannedSigs = null, maxHours = 3) {
   const cleanPhone = extractCleanPhone(phone);
   if (!cleanPhone) {
     return { has2Checks: false, checks: 1, label: '✓ 1 Traço (Sem telefone)', status: 'PENDING' };
