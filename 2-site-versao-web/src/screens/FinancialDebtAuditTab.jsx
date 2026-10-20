@@ -3,6 +3,9 @@ import * as XLSX from 'xlsx';
 import { 
   getEvolutionConfig,
   fetchInstanceStatus,
+  createOrConnectInstance,
+  getPairingCode,
+  resetAndRecreateInstance,
   fetchWhatsAppChats,
   fetchFullChatHistory,
   fetchMediaBase64FromMessage,
@@ -10,6 +13,17 @@ import {
 } from '../lib/evolutionApi';
 
 export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
+  // ── ESTADOS DE CONEXÃO WHATSAPP WEB INTEGRADA ──
+  const [showConnectModalLocal, setShowConnectModalLocal] = useState(false);
+  const [connectTab, setConnectTab] = useState('qr'); // 'qr' | 'pairing'
+  const [qrCodeData, setQrCodeData] = useState(null);
+  const [pairingPhone, setPairingPhone] = useState('');
+  const [pairingCodeResult, setPairingCodeResult] = useState(null);
+  const [generatingPairing, setGeneratingPairing] = useState(false);
+  const [loadingQr, setLoadingQr] = useState(false);
+  const [resettingInstance, setResettingInstance] = useState(false);
+  const [connStatus, setConnStatus] = useState(status || { connected: false });
+
   // ── SELEÇÃO DE CONTATO / CREDOR ──
   const [chats, setChats] = useState([]);
   const [loadingChats, setLoadingChats] = useState(false);
@@ -17,7 +31,10 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   const [manualPhone, setManualPhone] = useState('');
   const [contactSearch, setContactSearch] = useState('');
 
-  // ── PARÂMETROS DO EMPRÉSTIMO / DÍVIDA E GASTOS NO CARTÃO (MÚLTIPLOS) ──
+  // ── PASSO 2: MODO MANUAL VS MODO AUTOMÁTICO ──
+  const [step2Mode, setStep2Mode] = useState('manual'); // 'manual' | 'auto'
+
+  // MODO MANUAL: Débitos cadastrados pelo usuário
   const [debtConditions, setDebtConditions] = useState(() => {
     try {
       const saved = localStorage.getItem('wa_audit_debt_conditions');
@@ -31,9 +48,21 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     type: 'loan', // 'loan' | 'credit_card'
     amount: '',
     date: new Date().toISOString().slice(0, 10),
-    monthlyRate: '10',
+    monthlyRate: '10', // padrão 10% empréstimo, 5% cartão
     description: ''
   });
+
+  // MODO AUTOMÁTICO: Débitos detectados pelo robô / IA
+  const [autoDetectedDebts, setAutoDetectedDebts] = useState(() => {
+    try {
+      const saved = localStorage.getItem('wa_audit_auto_debts');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isScanningAuto, setIsScanningAuto] = useState(false);
+  const [autoScanSummary, setAutoScanSummary] = useState('');
 
   useEffect(() => {
     try {
@@ -41,56 +70,30 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     } catch (e) {}
   }, [debtConditions]);
 
-  function handleAddCondition(e) {
-    if (e) e.preventDefault();
-    const val = parseFloat(conditionForm.amount);
-    if (!val || val <= 0) {
-      alert('Por favor, digite um valor maior que zero.');
-      return;
+  useEffect(() => {
+    try {
+      localStorage.setItem('wa_audit_auto_debts', JSON.stringify(autoDetectedDebts));
+    } catch (e) {}
+  }, [autoDetectedDebts]);
+
+  // Monitoramento contínuo de conexão
+  useEffect(() => {
+    async function checkStatus() {
+      try {
+        const st = await fetchInstanceStatus();
+        setConnStatus(st);
+        if (st.connected && chats.length === 0) {
+          loadChats();
+        }
+      } catch (e) {}
     }
-    const rate = parseFloat(conditionForm.monthlyRate);
-    if (isNaN(rate) || rate < 0) {
-      alert('Por favor, informe a taxa de juros cobrada ao mês.');
-      return;
-    }
-
-    const newCond = {
-      id: Date.now() + Math.random().toString(36).substr(2, 5),
-      type: conditionForm.type,
-      amount: val,
-      date: conditionForm.date || new Date().toISOString().slice(0, 10),
-      monthlyRate: rate,
-      description: conditionForm.description || (conditionForm.type === 'credit_card' ? 'Gasto com Cartão de Crédito' : 'Empréstimo em Dinheiro')
-    };
-
-    setDebtConditions(prev => {
-      const updated = [...prev, newCond];
-      updated.sort((a, b) => new Date(a.date) - new Date(b.date));
-      return updated;
-    });
-
-    setConditionForm({
-      type: 'loan',
-      amount: '',
-      date: new Date().toISOString().slice(0, 10),
-      monthlyRate: '10',
-      description: ''
-    });
-    setShowAddCondition(false);
-  }
-
-  function handleRemoveCondition(id) {
-    setDebtConditions(prev => prev.filter(c => c.id !== id));
-  }
-
-  // Fallback para campos únicos legados se necessário
-  const [initialDebt, setInitialDebt] = useState('');
-  const [monthlyInterestRate, setMonthlyInterestRate] = useState('10');
-  const [interestType, setInterestType] = useState('simple');
-  const [debtStartDate, setDebtStartDate] = useState('');
+    checkStatus();
+    const interval = setInterval(checkStatus, 4000);
+    return () => clearInterval(interval);
+  }, []);
 
   // ── COMPROVANTES AVULSOS ENVIADOS PELO USUÁRIO (PRINTS / PIX) ──
-  const [uploadedReceipts, setUploadedReceipts] = useState([]); // { id, name, base64, date, amount, beneficiary, authId, status }
+  const [uploadedReceipts, setUploadedReceipts] = useState([]);
   const [uploadingReceipts, setUploadingReceipts] = useState(false);
 
   // ── BACKUP / CONVERSA EXPORTADA (ARQUIVO .TXT OU .ZIP) ──
@@ -105,8 +108,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
   // ── RESULTADOS E LAUDO PERICIAL ──
   const [auditResult, setAuditResult] = useState(null);
-  const [activeTab, setActiveTab] = useState('summary'); // 'summary' | 'amortization' | 'receipts' | 'transcripts'
-  const [tableFilter, setTableFilter] = useState('all');
+  const [activeTab, setActiveTab] = useState('summary'); // 'summary' | 'amortization' | 'receipts' | 'transcripts' | 'comparison'
 
   function addLog(msg, type = 'info') {
     const time = new Date().toLocaleTimeString('pt-BR');
@@ -118,6 +120,60 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       logEndRef.current.scrollTop = logEndRef.current.scrollHeight;
     }
   }, [auditLogs]);
+
+  // ── CONEXÃO COM WHATSAPP (QR CODE & PAIRING CODE) ──
+  async function handleOpenConnectModal() {
+    setShowConnectModalLocal(true);
+    if (setShowConnectModal) setShowConnectModal(true);
+    handleFetchQr();
+  }
+
+  async function handleFetchQr() {
+    setLoadingQr(true);
+    try {
+      const res = await createOrConnectInstance();
+      if (res?.base64 || res?.qrcode) {
+        setQrCodeData(res.base64 || res.qrcode);
+      }
+    } catch (err) {
+      console.warn('Erro ao gerar QR Code:', err);
+    } finally {
+      setLoadingQr(false);
+    }
+  }
+
+  async function handleGeneratePairing(e) {
+    if (e) e.preventDefault();
+    const clean = extractCleanPhone(pairingPhone);
+    if (!clean || clean.length < 8) {
+      alert('Por favor, informe seu número de WhatsApp com DDD (ex: 61999998888).');
+      return;
+    }
+    setGeneratingPairing(true);
+    try {
+      const code = await getPairingCode(clean);
+      setPairingCodeResult(code);
+    } catch (err) {
+      alert('Erro ao gerar código de pareamento: ' + err.message);
+    } finally {
+      setGeneratingPairing(false);
+    }
+  }
+
+  async function handleResetSession() {
+    setResettingInstance(true);
+    try {
+      await resetAndRecreateInstance();
+      setQrCodeData(null);
+      setPairingCodeResult(null);
+      await handleFetchQr();
+      alert('Sessão limpa! Escaneie o novo QR Code que apareceu na tela.');
+    } catch (err) {
+      alert('Erro ao reiniciar sessão: ' + err.message);
+    } finally {
+      setResettingInstance(false);
+    }
+  }
 
   // Carregar conversas ativas do WhatsApp
   async function loadChats() {
@@ -135,12 +191,6 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       setLoadingChats(false);
     }
   }
-
-  useEffect(() => {
-    if (status?.connected) {
-      loadChats();
-    }
-  }, [status?.connected]);
 
   // Selecionar por clique na lista
   function handleSelectChat(c) {
@@ -169,6 +219,183 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     });
   }
 
+  // ── GERENCIAMENTO MANUAL DE CONDIÇÕES (PASSO 2) ──
+  function handleAddCondition(e) {
+    if (e) e.preventDefault();
+    const val = parseFloat(conditionForm.amount);
+    if (!val || val <= 0) {
+      alert('Por favor, digite um valor maior que zero.');
+      return;
+    }
+    const rate = parseFloat(conditionForm.monthlyRate);
+    if (isNaN(rate) || rate < 0) {
+      alert('Por favor, informe a taxa de juros cobrada ao mês.');
+      return;
+    }
+
+    const newCond = {
+      id: Date.now() + Math.random().toString(36).substr(2, 5),
+      type: conditionForm.type, // 'loan' | 'credit_card'
+      amount: val,
+      date: conditionForm.date || new Date().toISOString().slice(0, 10),
+      monthlyRate: rate,
+      description: conditionForm.description || (conditionForm.type === 'credit_card' ? 'Gasto com Cartão de Crédito' : 'Empréstimo em Dinheiro')
+    };
+
+    setDebtConditions(prev => {
+      const updated = [...prev, newCond];
+      updated.sort((a, b) => new Date(a.date) - new Date(b.date));
+      return updated;
+    });
+
+    setConditionForm({
+      type: 'loan',
+      amount: '',
+      date: new Date().toISOString().slice(0, 10),
+      monthlyRate: '10',
+      description: ''
+    });
+    setShowAddCondition(false);
+  }
+
+  function handleRemoveCondition(id) {
+    setDebtConditions(prev => prev.filter(c => c.id !== id));
+  }
+
+  // ── VARREDURA AUTOMÁTICA DE DÉBITOS COM IA (PASSO 2) ──
+  async function handleAutoScanDebts() {
+    if (!selectedContact && !uploadedChatFile) {
+      alert('Por favor, primeiro selecione o contato do credor no Passo 1 ou anexe o arquivo .txt de conversa.');
+      return;
+    }
+
+    setIsScanningAuto(true);
+    addLog('🤖 [Modo Automático] Iniciando varredura inteligente na conversa para encontrar empréstimos e cartões...', 'info');
+
+    try {
+      let rawMessages = [];
+      if (uploadedChatFile) {
+        addLog(`📄 Lendo mensagens do arquivo de backup "${uploadedChatFile.name}"...`, 'info');
+        const lines = uploadedChatFile.content.split('\n');
+        lines.forEach((line, idx) => {
+          const match = line.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(?:às\s+)?(\d{1,2}:\d{2})\s*-\s*([^:]+):\s*(.*)$/);
+          if (match) {
+            const [, rawDate, rawTime, sender, text] = match;
+            const [d, m, y] = rawDate.split('/');
+            const fullYear = y.length === 2 ? '20' + y : y;
+            const isoDate = `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+            rawMessages.push({
+              key: { id: `file-${idx}`, fromMe: sender.toLowerCase().includes('você') || sender.toLowerCase().includes('you') },
+              messageTimestamp: Math.floor(new Date(`${isoDate}T${rawTime}:00`).getTime() / 1000),
+              senderName: sender.trim(),
+              text: text.trim(),
+              isoDate
+            });
+          }
+        });
+      } else if (selectedContact) {
+        addLog(`🌐 Buscando histórico do WhatsApp para ${selectedContact.name}...`, 'info');
+        rawMessages = await fetchFullChatHistory(selectedContact.jid);
+      }
+
+      if (rawMessages.length === 0) {
+        throw new Error('Nenhuma mensagem encontrada na conversa.');
+      }
+
+      const textRecords = [];
+      const audioTranscripts = [];
+
+      for (let i = 0; i < rawMessages.length; i++) {
+        const msg = rawMessages[i];
+        const isFromMe = msg.key?.fromMe ?? false;
+        const senderLabel = isFromMe ? 'Eu (Devedor)' : (selectedContact?.name || 'Credor');
+        const tsSec = Number(msg.messageTimestamp || 0);
+        const dateStr = msg.isoDate || (tsSec ? new Date(tsSec * 1000).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
+
+        let textContent = msg.text ||
+          msg.message?.conversation ||
+          msg.message?.extendedTextMessage?.text ||
+          msg.message?.imageMessage?.caption ||
+          '';
+
+        if (textContent.trim()) {
+          const hasFinancial = /(emprest|peguei|mandou|juro|cart|compra|fatura|pag|r\$|\d+,\d{2}|\d+\.\d{2}|limite|pix|transfer)/i.test(textContent);
+          if (hasFinancial) {
+            textRecords.push({ date: dateStr, sender: senderLabel, text: textContent });
+          }
+        }
+
+        const isAudio = Boolean(msg.message?.audioMessage || msg.messageType === 'audioMessage');
+        if (isAudio && audioTranscripts.length < 15) {
+          try {
+            const base64Audio = await fetchMediaBase64FromMessage(msg);
+            if (base64Audio) {
+              const resp = await fetch('/api/gemini-financial-audit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'transcribe_audio',
+                  base64Data: base64Audio,
+                  mimeType: 'audio/ogg'
+                })
+              });
+              if (resp.ok) {
+                const audData = await resp.json();
+                audioTranscripts.push({
+                  date: dateStr,
+                  sender: senderLabel,
+                  transcription: audData.transcricao,
+                  valores: audData.valores_mencionados || [],
+                  taxaJuros: audData.taxa_juros_mencionada || ''
+                });
+              }
+            }
+          } catch (e) {}
+        }
+      }
+
+      addLog(`🤖 Enviando ${textRecords.length} mensagens e ${audioTranscripts.length} áudios para detecção automática com IA...`, 'info');
+
+      const resp = await fetch('/api/gemini-financial-audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'detect_debts_auto',
+          payload: {
+            mensagensTexto: textRecords,
+            audiosTranscritos: audioTranscripts,
+            nomeCredor: selectedContact?.name || 'Credor',
+            nomeDevedor: 'Eu (Devedor)'
+          }
+        })
+      });
+
+      if (resp.ok) {
+        const data = await resp.json();
+        const detected = (data.debitos_detectados || []).map((d, i) => ({
+          id: `auto-${Date.now()}-${i}`,
+          type: (d.tipo || '').toLowerCase().includes('cart') ? 'credit_card' : 'loan',
+          amount: parseFloat(d.valor) || 0,
+          date: d.data || new Date().toISOString().slice(0, 10),
+          monthlyRate: parseFloat(d.taxa_juros_mes) || ((d.tipo || '').toLowerCase().includes('cart') ? 5 : 10),
+          description: d.descricao || 'Débito Detectado Automaticamente',
+          evidence: d.evidencia || ''
+        }));
+
+        setAutoDetectedDebts(detected);
+        setAutoScanSummary(data.resumo || '');
+        addLog(`✓ IA identificou automaticamente ${detected.length} operações de empréstimos e cartões!`, 'success');
+      } else {
+        throw new Error('Falha na resposta da IA.');
+      }
+    } catch (err) {
+      addLog(`❌ Erro no escaneamento automático: ${err.message}`, 'error');
+      alert('Erro ao escanear automaticamente: ' + err.message);
+    } finally {
+      setIsScanningAuto(false);
+    }
+  }
+
   // Upload de Comprovantes de Pagamento do Usuário
   async function handleReceiptsUpload(e) {
     const files = Array.from(e.target.files || []);
@@ -187,8 +414,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         });
         const base64Data = await base64Promise;
 
-        // OCR com IA do Comprovante
-        addLog(`🔍 Analisando comprovante "${file.name}" com Inteligência Artificial...`, 'info');
+        addLog(`🔍 Analisando comprovante "${file.name}" com OCR da Inteligência Artificial...`, 'info');
         let parsedReceipt = {
           data_pagamento: new Date().toISOString().slice(0, 10),
           valor_pago: 0,
@@ -253,7 +479,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     reader.readAsText(file);
   }
 
-  // ── MOTOR PERICIAL PRINCIPAL ─────────────────────────────────────────
+  // ── MOTOR PERICIAL PRINCIPAL (COM SUPORTE A MODO MANUAL E AUTOMÁTICO) ──
   async function runFullDebtForensicAudit() {
     if (!selectedContact && !uploadedChatFile) {
       alert('Por favor, selecione um contato conectado no WhatsApp ou anexe o arquivo de conversa exportada.');
@@ -267,7 +493,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
     addLog('🚀 INICIANDO PERÍCIA FINANCEIRA FORENSE DE CONVERSA & AMORTIZAÇÕES', 'info');
     addLog(`👤 Alvo da Perícia: ${selectedContact ? `${selectedContact.name} (${selectedContact.phone})` : 'Arquivo de Conversa'}`, 'info');
-    addLog(`📊 Parâmetros: Taxa pactuada: ${monthlyInterestRate}% ao mês | Amortização: Código Civil art. 354`, 'info');
+    addLog(`⚙️ Modo Escolhido no Passo 2: ${step2Mode === 'auto' ? '🤖 AUTOMÁTICO (Robô & IA)' : '📝 MANUAL'}`, 'info');
 
     try {
       let rawMessages = [];
@@ -279,7 +505,6 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         addLog(`📄 Extraindo histórico do arquivo de backup "${uploadedChatFile.name}"...`, 'info');
         const lines = uploadedChatFile.content.split('\n');
         lines.forEach((line, idx) => {
-          // Padrão WhatsApp Brasil: DD/MM/AAAA HH:MM - Nome: Mensagem
           const match = line.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(?:às\s+)?(\d{1,2}:\d{2})\s*-\s*([^:]+):\s*(.*)$/);
           if (match) {
             const [, rawDate, rawTime, sender, text] = match;
@@ -324,7 +549,6 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         const tsSec = Number(msg.messageTimestamp || 0);
         const dateStr = msg.isoDate || (tsSec ? new Date(tsSec * 1000).toISOString().slice(0, 10) : 'Data Indefinida');
 
-        // Mensagem de Texto
         let textContent = msg.text ||
           msg.message?.conversation ||
           msg.message?.extendedTextMessage?.text ||
@@ -332,8 +556,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           '';
 
         if (textContent.trim()) {
-          // Filtra se menciona valores, juros, cobranças ou pagamentos
-          const hasFinancialKeywords = /(juro|amortiz|pag|devo|saldo|cobran|r\$|\d+,\d{2}|\d+\.\d{2}|deposit|pix|transferi|acordo|cobrou|venc|resta)/i.test(textContent);
+          const hasFinancialKeywords = /(juro|amortiz|pag|devo|saldo|cobran|r\$|\d+,\d{2}|\d+\.\d{2}|deposit|pix|transferi|acordo|cobrou|venc|resta|cart|compra|fatura)/i.test(textContent);
           textRecords.push({
             date: dateStr,
             sender: senderLabel,
@@ -342,7 +565,6 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           });
         }
 
-        // Mensagem de Áudio (audioMessage / PTT)
         const isAudio = Boolean(msg.message?.audioMessage || msg.messageType === 'audioMessage');
         if (isAudio) {
           audioCount++;
@@ -384,7 +606,6 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       // ── FASE 3: CONSOLIDAÇÃO DE COMPROVANTES E PAGAMENTOS ─────────────
       setAuditProgress({ current: 65, total: 100, stepLabel: 'Fase 3/4: Cruzando comprovantes e pagamentos efetuados...' });
 
-      // Agrupa todos os pagamentos (comprovantes anexados + menções explícitas de pagamento no chat)
       const allPayments = [...uploadedReceipts.map(r => ({
         date: r.date,
         amount: Number(r.amount) || 0,
@@ -393,7 +614,6 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         authId: r.authId
       }))];
 
-      // Busca pagamentos confirmados nas mensagens de texto (ex: "Transferi R$ 1.500", "Pix de 500 enviado")
       textRecords.forEach(t => {
         if (t.sender.includes('Eu')) {
           const matchPix = t.text.match(/(?:paguei|mandei|transferi|enviei|pix\s*de)\s*(?:r\$)?\s*([\d\.]+,\d{2}|\d+)/i);
@@ -401,7 +621,6 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             const rawVal = matchPix[1].replace(/\./g, '').replace(',', '.');
             const valNum = parseFloat(rawVal);
             if (valNum > 0 && valNum < 500000) {
-              // Evita duplicar se já houver comprovante na mesma data com mesmo valor
               const alreadyExists = allPayments.some(p => p.date === t.date && Math.abs(p.amount - valNum) < 1);
               if (!alreadyExists) {
                 allPayments.push({
@@ -417,14 +636,93 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         }
       });
 
-      // Ordena pagamentos por data
       allPayments.sort((a, b) => new Date(a.date) - new Date(b.date));
       addLog(`💳 ${allPayments.length} registros de pagamentos consolidados para a perícia.`, 'info');
 
-      // ── FASE 4: CÁLCULO FORENSE DE AMORTIZAÇÕES & IA ──────────────────
+      // ── FASE 4: SELEÇÃO DAS CONDIÇÕES DE DÉBITO (MANUAL VS AUTOMÁTICO) ──
       setAuditProgress({ current: 85, total: 100, stepLabel: 'Fase 4/4: Executando cálculo matemático e parecer da IA...' });
 
-      // Chamada da IA Forense para analisar discrepâncias, abusos e juros
+      let activeDebts = [];
+
+      if (step2Mode === 'auto') {
+        // Se já tinha escaneado antes, usa; se não, detecta agora mesmo!
+        if (autoDetectedDebts.length > 0) {
+          activeDebts = [...autoDetectedDebts];
+          addLog(`🤖 Usando ${activeDebts.length} débitos identificados automaticamente pelo robô.`, 'info');
+        } else {
+          addLog('🤖 Detectando empréstimos e gastos no cartão automaticamente com IA...', 'info');
+          try {
+            const respAuto = await fetch('/api/gemini-financial-audit', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'detect_debts_auto',
+                payload: {
+                  mensagensTexto: textRecords.slice(-100),
+                  audiosTranscritos: audioTranscripts,
+                  nomeCredor: selectedContact?.name || 'Credor',
+                  nomeDevedor: 'Eu (Devedor)'
+                }
+              })
+            });
+            if (respAuto.ok) {
+              const dAuto = await respAuto.json();
+              activeDebts = (dAuto.debitos_detectados || []).map((d, i) => ({
+                id: `auto-${Date.now()}-${i}`,
+                type: (d.tipo || '').toLowerCase().includes('cart') ? 'credit_card' : 'loan',
+                amount: parseFloat(d.valor) || 0,
+                date: d.data || new Date().toISOString().slice(0, 10),
+                monthlyRate: parseFloat(d.taxa_juros_mes) || ((d.tipo || '').toLowerCase().includes('cart') ? 5 : 10),
+                description: d.descricao || 'Débito Detectado',
+                evidence: d.evidencia || ''
+              }));
+              setAutoDetectedDebts(activeDebts);
+              addLog(`✓ IA detectou automaticamente ${activeDebts.length} débitos!`, 'success');
+            }
+          } catch (e) {
+            console.warn('Falha no auto-detect:', e);
+          }
+        }
+      } else {
+        // MODO MANUAL: usa o que o usuário cadastrou
+        activeDebts = [...debtConditions];
+        addLog(`📝 Usando ${activeDebts.length} débitos cadastrados manualmente pelo usuário.`, 'info');
+      }
+
+      // Se ainda vazio, fallback de emergência
+      if (activeDebts.length === 0) {
+        let baseCapital = 0;
+        for (const t of textRecords) {
+          const m = t.text.match(/(?:emprestei|peguei|mandou|valor\s*(?:inicial|do\s*empréstimo))\s*(?:r\$)?\s*([\d\.]+,\d{2}|\d+)/i);
+          if (m) {
+            baseCapital = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
+            break;
+          }
+        }
+        if (baseCapital === 0 && allPayments.length > 0) {
+          baseCapital = allPayments[0].amount;
+        }
+
+        activeDebts.push({
+          id: 'initial-fallback',
+          type: 'loan',
+          amount: baseCapital,
+          date: allPayments.length > 0 ? allPayments[0].date : new Date().toISOString().slice(0, 10),
+          monthlyRate: 10,
+          description: 'Empréstimo Detectado (Base)',
+          evidence: 'Inferido do histórico'
+        });
+      }
+
+      let totalLoansCash = 0;
+      let totalCardExpenses = 0;
+      activeDebts.forEach(c => {
+        if (c.type === 'credit_card') totalCardExpenses += c.amount;
+        else totalLoansCash += c.amount;
+      });
+      const totalContracted = totalLoansCash + totalCardExpenses;
+
+      // ── CHAMADA DA IA FORENSE PARA PARECER TÉCNICO ──
       let aiAuditResponse = null;
       try {
         const resp = await fetch('/api/gemini-financial-audit', {
@@ -436,8 +734,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               mensagensTexto: textRecords.filter(t => t.isFinancial).slice(-100),
               audiosTranscritos: audioTranscripts,
               comprovantesPagamento: allPayments,
-              valorEmprestimoInformado: parseFloat(initialDebt) || 0,
-              taxaJurosMensal: parseFloat(monthlyInterestRate) || 10,
+              valorEmprestimoInformado: totalContracted,
+              taxaJurosMensal: 10,
               nomeCredor: selectedContact?.name || 'Credor',
               nomeDevedor: 'Eu (Devedor)'
             }
@@ -452,53 +750,15 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         console.warn('Erro na IA:', aiErr);
       }
 
-      // ── CONSOLIDAÇÃO DE EMPRÉSTIMOS E GASTOS NO CARTÃO (MÚLTIPLOS) ──
-      const activeDebtConditions = debtConditions.length > 0 
-        ? [...debtConditions]
-        : [];
-
-      // Fallback caso não tenha cadastrado condições na lista:
-      if (activeDebtConditions.length === 0) {
-        let baseCapital = parseFloat(initialDebt) || aiAuditResponse?.total_emprestado || 0;
-        if (baseCapital === 0) {
-          for (const t of textRecords) {
-            const m = t.text.match(/(?:emprestei|peguei|mandou|valor\s*(?:inicial|do\s*empréstimo))\s*(?:r\$)?\s*([\d\.]+,\d{2}|\d+)/i);
-            if (m) {
-              baseCapital = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
-              break;
-            }
-          }
-        }
-        if (baseCapital === 0 && allPayments.length > 0) {
-          baseCapital = allPayments[0].amount;
-        }
-
-        activeDebtConditions.push({
-          id: 'initial-default',
-          type: 'loan',
-          amount: baseCapital,
-          date: debtStartDate || (allPayments.length > 0 ? allPayments[0].date : new Date().toISOString().slice(0, 10)),
-          monthlyRate: parseFloat(monthlyInterestRate) || 10,
-          description: 'Empréstimo Original / Capital Inicial Contratado'
-        });
-      }
-
-      let totalLoansCash = 0;
-      let totalCardExpenses = 0;
-      activeDebtConditions.forEach(c => {
-        if (c.type === 'credit_card') totalCardExpenses += c.amount;
-        else totalLoansCash += c.amount;
-      });
-      const totalContracted = totalLoansCash + totalCardExpenses;
-
-      // Unifica dívidas (empréstimos e cartão) com os pagamentos em ordem cronológica
+      // ── RECONSTITUIÇÃO CRONOLÓGICA (CÓDIGO CIVIL ART. 354) ──
       const unifiedEvents = [
-        ...activeDebtConditions.map(c => ({
+        ...activeDebts.map(c => ({
           date: c.date,
           amount: c.amount,
           type: c.type === 'credit_card' ? 'CARTAO_CREDITO' : 'EMPRESTIMO',
           monthlyRate: c.monthlyRate,
           description: c.description,
+          evidence: c.evidence,
           isPayment: false
         })),
         ...allPayments.map(p => ({
@@ -523,7 +783,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       let totalOverpaid = 0;
 
       let lastDate = unifiedEvents.length > 0 ? unifiedEvents[0].date : new Date().toISOString().slice(0, 10);
-      let activeRate = activeDebtConditions[0]?.monthlyRate || 10;
+      let activeRate = activeDebts[0]?.monthlyRate || 10;
 
       const amortizationTimeline = [];
 
@@ -534,7 +794,6 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         const diffDays = Math.max(0, Math.floor((d2 - d1) / (1000 * 60 * 60 * 24)));
         const monthsFraction = diffDays / 30;
 
-        // Atualiza juros acumulados sobre o saldo devedor principal remanescente
         if (runningPrincipal > 0 && monthsFraction > 0) {
           const periodInterest = runningPrincipal * (activeRate / 100) * monthsFraction;
           accumulatedInterestDue += periodInterest;
@@ -542,14 +801,13 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         }
 
         if (!ev.isPayment) {
-          // NOVO DÉBITO (EMPRÉSTIMO OU GASTO NO CARTÃO)
           runningPrincipal += ev.amount;
           activeRate = ev.monthlyRate || activeRate;
 
           amortizationTimeline.push({
             data: currentDate,
             origem: ev.type === 'CARTAO_CREDITO' ? 'Cartão de Crédito' : 'Empréstimo em Dinheiro',
-            descricao: `${ev.type === 'CARTAO_CREDITO' ? '💳 Gasto no Cartão de Crédito' : '💵 Empréstimo em Dinheiro'}: R$ ${ev.amount.toFixed(2)} (${ev.description}) - Juros cobrados: ${ev.monthlyRate}% a.m.`,
+            descricao: `${ev.type === 'CARTAO_CREDITO' ? '💳 Gasto com Cartão de Crédito' : '💵 Empréstimo em Dinheiro'}: R$ ${ev.amount.toFixed(2)} (${ev.description}) - Juros: ${ev.monthlyRate}% a.m.`,
             cobradoCredor: 0,
             valorPago: 0,
             jurosPeriodo: 0,
@@ -557,19 +815,16 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             saldoDevedor: runningPrincipal,
             diferenca: 0,
             status: ev.type === 'CARTAO_CREDITO' ? 'GASTO_CARTAO' : 'NOVO_EMPRESTIMO',
-            evidencia: `Taxa de juros: ${ev.monthlyRate}% ao mês.`
+            evidencia: ev.evidence || `Taxa de juros: ${ev.monthlyRate}% ao mês.`
           });
         } else {
-          // PAGAMENTO / AMORTIZAÇÃO (ART. 354 DO CÓDIGO CIVIL)
           const paid = ev.amount;
           totalPaid += paid;
 
-          // 1. Quita juros vencidos primeiro
           const interestPaid = Math.min(paid, accumulatedInterestDue);
           accumulatedInterestDue -= interestPaid;
           totalInterestChargedByCreditor += interestPaid;
 
-          // 2. O excedente AMORTIZA IMEDIATAMENTE O CAPITAL PRINCIPAL
           const principalAmortization = Math.max(0, paid - interestPaid);
           totalPrincipalAmortized += principalAmortization;
           runningPrincipal -= principalAmortization;
@@ -612,16 +867,23 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         ? 'QUITADO_PAGO_A_MAIS'
         : 'SALDO_DEVEDOR_RESTANTE';
 
+      // Totais para comparação Manual vs Automático
+      const manualTotal = debtConditions.reduce((acc, c) => acc + c.amount, 0);
+      const autoTotal = autoDetectedDebts.reduce((acc, c) => acc + c.amount, 0);
+
       const finalResult = {
+        executionMode: step2Mode, // 'manual' | 'auto'
+        manualTotal,
+        autoTotal,
         totalEmprestado: totalContracted,
         totalEmprestimosDinheiro: totalLoansCash,
         totalGastosCartao: totalCardExpenses,
-        debtConditions: activeDebtConditions,
+        debtConditions: activeDebts,
         totalPago: totalPaid,
         totalJurosDevidos: totalInterestDue,
         totalJurosCobrados: totalInterestChargedByCreditor,
         totalAmortizado: totalPrincipalAmortized,
-        saldoFinalReal: runningBalance,
+        saldoFinalReal: runningPrincipal,
         totalPagoAMais: totalOverpaid,
         status: finalStatus,
         timeline: amortizationTimeline,
@@ -629,11 +891,11 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         textRecords,
         receipts: allPayments,
         aiReport: aiAuditResponse || {
-          diagnostico_pericial: `Após minuciosa reconstituição contábil com aplicação do art. 354 do Código Civil sobre ${activeDebtConditions.length} operações contratadas (Total Contratado: R$ ${totalContracted.toFixed(2)}), verificou-se que foram pagos R$ ${totalPaid.toFixed(2)}. ${runningBalance <= 0 ? `A dívida encontra-se TOTALMENTE QUITADA, restando saldo credor a favor do devedor de R$ ${totalOverpaid.toFixed(2)} cobrado a mais a ser devolvido.` : `O saldo devedor real e justo a pagar é de R$ ${runningBalance.toFixed(2)}.`}`,
+          diagnostico_pericial: `Após reconstituição contábil (Código Civil art. 354) no modo ${step2Mode === 'auto' ? 'Automático' : 'Manual'} sobre ${activeDebts.length} operações (Total: R$ ${totalContracted.toFixed(2)}), apurou-se que foram pagos R$ ${totalPaid.toFixed(2)}. ${runningPrincipal <= 0 ? `Dívida TOTALMENTE QUITADA, restando saldo credor a favor do devedor de R$ ${totalOverpaid.toFixed(2)} pago a mais a ser devolvido!` : `Saldo devedor restante justo a pagar: R$ ${runningPrincipal.toFixed(2)}.`}`,
           irregularidades_detectadas: [
-            'Cobrança contínua de juros sobre o valor inicial sem abater as amortizações e pagamentos parciais já realizados.',
-            'Não aplicação imediata da amortização do capital após o pagamento de valores superiores aos juros mensais.',
-            'Cobrança de juros duplicados sobre períodos ou despesas de cartão já quitadas.'
+            'Cobrança de juros sem o devido abatimento das amortizações do capital principal.',
+            'Não consideração de descontos de juros em pagamentos antecipados.',
+            'Cobrança de juros sobre parcelas de cartão já quitadas.'
           ]
         }
       };
@@ -650,7 +912,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     }
   }
 
-  // ── GERADOR DE PLANILHA EXCEL (.XLSX) COM FORMATAÇÃO COMPLETA ─────────
+  // ── GERADOR DE PLANILHA EXCEL (.XLSX) ──
   function exportAuditToExcel() {
     if (!auditResult) {
       alert('Nenhum resultado de perícia disponível para exportar.');
@@ -660,13 +922,14 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     try {
       const wb = XLSX.utils.book_new();
 
-      // ── ABA 1: RESUMO DO LAUDO PERICIAL ──
+      // ABA 1: RESUMO DO LAUDO PERICIAL
       const summaryRows = [
         ['LAUDO PERICIAL DE AUDITORIA FINANCEIRA & AMORTIZAÇÕES'],
         ['Emitido pelo Módulo Forense de Inteligência Artificial'],
         [''],
         ['Credor Auditado:', selectedContact?.name || 'Credor'],
         ['Telefone do Credor:', selectedContact?.phone || 'Não informado'],
+        ['Modo de Execução Utilizado:', auditResult.executionMode === 'auto' ? 'Automático (Identificado por IA)' : 'Manual'],
         ['Data da Emissão da Perícia:', new Date().toLocaleDateString('pt-BR')],
         ['Regra de Amortização:', 'Código Civil Brasileiro art. 354 (Amortização Linear Imediata)'],
         [''],
@@ -691,19 +954,20 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
       XLSX.utils.book_append_sheet(wb, wsSummary, 'Resumo do Laudo');
 
-      // ── ABA 2: CONDIÇÕES DE EMPRÉSTIMOS E CARTÃO DE CRÉDITO ──
-      const conditionsHeaders = ['Tipo de Operação', 'Data', 'Valor (R$)', 'Juros Cobrados (% a.m.)', 'Descrição / Finalidade'];
+      // ABA 2: CONDIÇÕES DE EMPRÉSTIMOS E CARTÃO
+      const conditionsHeaders = ['Tipo de Operação', 'Data', 'Valor (R$)', 'Juros Cobrados (% a.m.)', 'Descrição / Finalidade', 'Evidência'];
       const conditionsRows = (auditResult.debtConditions || []).map(c => [
         c.type === 'credit_card' ? 'Gasto no Cartão de Crédito' : 'Empréstimo em Dinheiro',
         c.date,
         c.amount,
         `${c.monthlyRate}% ao mês`,
-        c.description
+        c.description,
+        c.evidence || ''
       ]);
       const wsConditions = XLSX.utils.aoa_to_sheet([conditionsHeaders, ...conditionsRows]);
       XLSX.utils.book_append_sheet(wb, wsConditions, 'Empréstimos e Cartão');
 
-      // ── ABA 3: EXTRATO CRONOLÓGICO DE AMORTIZAÇÕES ──
+      // ABA 3: EXTRATO CRONOLÓGICO DE AMORTIZAÇÕES
       const timelineHeaders = [
         'Data',
         'Origem do Evento',
@@ -715,7 +979,6 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         'Status do Evento',
         'Evidência Probatória'
       ];
-
       const timelineRows = auditResult.timeline.map(t => [
         t.data,
         t.origem,
@@ -727,18 +990,11 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         t.status,
         t.evidencia
       ]);
-
       const wsTimeline = XLSX.utils.aoa_to_sheet([timelineHeaders, ...timelineRows]);
       XLSX.utils.book_append_sheet(wb, wsTimeline, 'Extrato de Amortizações');
 
-      // ── ABA 3: COMPROVANTES E PAGAMENTOS IDENTIFICADOS ──
-      const receiptsHeaders = [
-        'Data',
-        'Valor Pago (R$)',
-        'Origem',
-        'ID Transação / Autenticação',
-        'Evidência / Detalhes'
-      ];
+      // ABA 4: COMPROVANTES E PAGAMENTOS IDENTIFICADOS
+      const receiptsHeaders = ['Data', 'Valor Pago (R$)', 'Origem', 'ID Transação / Autenticação', 'Evidência / Detalhes'];
       const receiptsRows = auditResult.receipts.map(r => [
         r.date,
         r.amount,
@@ -749,7 +1005,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       const wsReceipts = XLSX.utils.aoa_to_sheet([receiptsHeaders, ...receiptsRows]);
       XLSX.utils.book_append_sheet(wb, wsReceipts, 'Comprovantes de Pagamento');
 
-      // ── ABA 4: HISTÓRICO DE MENSAGENS E ÁUDIOS PERICIADOS ──
+      // ABA 5: HISTÓRICO DE MENSAGENS E ÁUDIOS
       const transcriptsHeaders = ['Data', 'Remetente', 'Tipo', 'Conteúdo / Transcrição Fiel', 'Resumo Financeiro'];
       const transcriptRows = [
         ...auditResult.audioTranscripts.map(a => [
@@ -770,8 +1026,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       const wsTranscripts = XLSX.utils.aoa_to_sheet([transcriptsHeaders, ...transcriptRows]);
       XLSX.utils.book_append_sheet(wb, wsTranscripts, 'Áudios e Mensagens');
 
-      // Download do arquivo
-      const filename = `pericia_financeira_amortizacao_${selectedContact?.phone || 'credor'}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      const filename = `pericia_financeira_${auditResult.executionMode}_${selectedContact?.phone || 'credor'}_${new Date().toISOString().slice(0, 10)}.xlsx`;
       XLSX.writeFile(wb, filename);
       addLog(`📥 Planilha Excel oficial "${filename}" baixada com sucesso!`, 'success');
 
@@ -797,54 +1052,256 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               <span>⚖️</span> 3 - Perícia Financeira de Conversa & Amortizações (IA)
             </h2>
             <p style={{ fontSize: 13, color: 'var(--ink2)', marginTop: 6, marginBottom: 0, lineHeight: 1.5 }}>
-              Audite negociações de cobrança de juros no WhatsApp: leitura do histórico completo, audição de áudios,
-              OCR de comprovantes e recálculo pericial com abatimento de amortizações antecipadas.
+              Audite negociações de cobrança de juros e cartão de crédito no WhatsApp: leitura do histórico completo, audição de áudios,
+              OCR de comprovantes e cálculo de amortizações com relatório comparativo e planilha Excel.
             </p>
           </div>
 
-          {/* STATUS DA CONEXÃO WHATSAPP */}
+          {/* BOTÃO E STATUS DA CONEXÃO WHATSAPP */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: 10,
             padding: '8px 14px',
             borderRadius: 12,
-            background: status?.connected ? 'rgba(0, 229, 155, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-            border: `1px solid ${status?.connected ? 'var(--teal)' : 'rgba(239, 68, 68, 0.4)'}`
+            background: connStatus?.connected ? 'rgba(0, 229, 155, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+            border: `1px solid ${connStatus?.connected ? 'var(--teal)' : 'rgba(239, 68, 68, 0.4)'}`
           }}>
             <div style={{
               width: 10,
               height: 10,
               borderRadius: '50%',
-              background: status?.connected ? 'var(--teal)' : '#EF4444',
-              boxShadow: status?.connected ? '0 0 8px var(--teal)' : '0 0 8px #EF4444'
+              background: connStatus?.connected ? 'var(--teal)' : '#EF4444',
+              boxShadow: connStatus?.connected ? '0 0 8px var(--teal)' : '0 0 8px #EF4444'
             }} />
             <div style={{ fontSize: 12.5, fontWeight: 800, color: '#fff' }}>
-              {status?.connected ? 'WhatsApp Web Conectado' : 'WhatsApp Desconectado'}
+              {connStatus?.connected ? 'WhatsApp Web Conectado' : 'WhatsApp Desconectado'}
             </div>
-            {!status?.connected && (
-              <button
-                type="button"
-                onClick={() => setShowConnectModal(true)}
-                style={{
-                  fontSize: 11,
-                  fontWeight: 900,
-                  padding: '4px 10px',
-                  borderRadius: 6,
-                  background: 'var(--teal)',
-                  color: '#081018',
-                  border: 'none',
-                  cursor: 'pointer'
-                }}
-              >
-                Conectar Agora
-              </button>
-            )}
+            
+            <button
+              type="button"
+              onClick={handleOpenConnectModal}
+              style={{
+                fontSize: 11.5,
+                fontWeight: 900,
+                padding: '6px 12px',
+                borderRadius: 8,
+                background: connStatus?.connected ? 'rgba(255,255,255,0.08)' : 'var(--teal)',
+                color: connStatus?.connected ? '#fff' : '#081018',
+                border: connStatus?.connected ? '1px solid var(--line)' : 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4
+              }}
+            >
+              <span>📱</span> {connStatus?.connected ? 'Reconectar / QR Code' : 'Conectar Agora'}
+            </button>
           </div>
         </div>
       </div>
 
-      {/* BLOCO EM GRID: PASSO 1 (CONTATO) + PASSO 2 (PARÂMETROS DA DÍVIDA) */}
+      {/* MODAL INTEGRADO DE CONEXÃO WHATSAPP (QR CODE + CÓDIGO DE PAREAMENTO) */}
+      {showConnectModalLocal && (
+        <div className="modal-bg" style={{ zIndex: 12000 }}>
+          <div className="modal" style={{ maxWidth: 430, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ fontSize: 16, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>📱</span> Conectar WhatsApp Oficial
+              </h3>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setShowConnectModalLocal(false)}
+                style={{ width: 28, height: 28, borderRadius: 8, padding: 0, margin: 0, border: '1px solid var(--line)', color: 'var(--ink2)', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Abas: QR Code vs Código de Pareamento */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, background: 'rgba(255,255,255,0.04)', padding: 4, borderRadius: 10 }}>
+              <button
+                type="button"
+                className="btn"
+                style={{
+                  margin: 0,
+                  padding: '7px 10px',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  borderRadius: 8,
+                  background: connectTab === 'qr' ? 'var(--teal)' : 'transparent',
+                  color: connectTab === 'qr' ? '#081018' : 'var(--ink2)',
+                  border: 'none'
+                }}
+                onClick={() => { setConnectTab('qr'); if (!qrCodeData) handleFetchQr(); }}
+              >
+                📷 Ler QR Code
+              </button>
+
+              <button
+                type="button"
+                className="btn"
+                style={{
+                  margin: 0,
+                  padding: '7px 10px',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  borderRadius: 8,
+                  background: connectTab === 'pairing' ? 'var(--teal)' : 'transparent',
+                  color: connectTab === 'pairing' ? '#081018' : 'var(--ink2)',
+                  border: 'none'
+                }}
+                onClick={() => setConnectTab('pairing')}
+              >
+                🔑 Código de 8 Dígitos
+              </button>
+            </div>
+
+            {/* Conteúdo Aba QR Code */}
+            {connectTab === 'qr' && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '10px 0' }}>
+                <div style={{
+                  width: 220,
+                  height: 220,
+                  background: '#fff',
+                  borderRadius: 14,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 10,
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.4)'
+                }}>
+                  {loadingQr ? (
+                    <div style={{ color: '#081018', fontSize: 13, fontWeight: 800 }}>⏳ Gerando QR Code...</div>
+                  ) : qrCodeData ? (
+                    <img
+                      src={qrCodeData.startsWith('data:') ? qrCodeData : `data:image/png;base64,${qrCodeData}`}
+                      alt="QR Code WhatsApp"
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                    />
+                  ) : (
+                    <div style={{ color: '#081018', fontSize: 12, textAlign: 'center', padding: 8 }}>
+                      Clique no botão abaixo para gerar o QR Code.
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ fontSize: 12, color: 'var(--ink2)', textAlign: 'center', lineHeight: 1.4 }}>
+                  Abra o WhatsApp no celular ➔ Toque nos <strong>3 pontinhos / Ajustes</strong> ➔ <strong>Aparelhos Conectados</strong> ➔ <strong>Conectar Aparelho</strong> e aponte a câmera.
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleFetchQr}
+                  disabled={loadingQr}
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: 8,
+                    background: 'var(--teal)',
+                    color: '#081018',
+                    border: 'none',
+                    fontWeight: 800,
+                    fontSize: 12,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {loadingQr ? 'Carregando...' : '🔄 Atualizar QR Code'}
+                </button>
+              </div>
+            )}
+
+            {/* Conteúdo Aba Código de Pareamento */}
+            {connectTab === 'pairing' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <form onSubmit={handleGeneratePairing} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <label style={{ fontSize: 12, color: 'var(--ink1)', fontWeight: 800 }}>
+                    Número do WhatsApp (com DDD):
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 61999998888"
+                    value={pairingPhone}
+                    onChange={(e) => setPairingPhone(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '9px 12px',
+                      borderRadius: 8,
+                      border: '1px solid var(--line)',
+                      background: 'rgba(0,0,0,0.4)',
+                      color: '#fff',
+                      fontSize: 13
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={generatingPairing}
+                    style={{
+                      width: '100%',
+                      padding: '9px',
+                      borderRadius: 8,
+                      background: 'var(--teal)',
+                      color: '#081018',
+                      fontWeight: 900,
+                      border: 'none',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {generatingPairing ? '⏳ Gerando...' : '🔑 Gerar Código'}
+                  </button>
+                </form>
+
+                {pairingCodeResult && (
+                  <div style={{
+                    padding: 14,
+                    borderRadius: 10,
+                    background: 'rgba(0, 229, 155, 0.1)',
+                    border: '1px solid var(--teal)',
+                    textAlign: 'center'
+                  }}>
+                    <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 800 }}>CÓDIGO DE PAREAMENTO:</div>
+                    <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: '4px', color: '#fff', margin: '6px 0' }}>
+                      {pairingCodeResult}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--ink2)' }}>
+                      No celular: <strong>Aparelhos Conectados</strong> ➔ <strong>Conectar com número de telefone</strong> e digite o código acima!
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Opção Limpar e Reiniciar Sessão */}
+            <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={handleResetSession}
+                disabled={resettingInstance}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#FF8A65',
+                  fontSize: 11.5,
+                  cursor: 'pointer',
+                  textDecoration: 'underline'
+                }}
+              >
+                {resettingInstance ? '⏳ Reiniciando...' : '⚠️ Sessão travada? Limpar e Reiniciar'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setShowConnectModalLocal(false)}
+                style={{ padding: '4px 12px', fontSize: 12, margin: 0 }}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BLOCO EM GRID: PASSO 1 (CONTATO) + PASSO 2 (CONDIÇÕES: MANUAL VS AUTOMÁTICO) */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
@@ -911,7 +1368,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               <button
                 type="button"
                 onClick={loadChats}
-                disabled={loadingChats || !status?.connected}
+                disabled={loadingChats || !connStatus?.connected}
                 style={{
                   background: 'none',
                   border: 'none',
@@ -951,7 +1408,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             }}>
               {chats.length === 0 ? (
                 <div style={{ padding: 12, textAlign: 'center', fontSize: 12, color: 'var(--ink2)' }}>
-                  {status?.connected ? 'Nenhuma conversa individual encontrada.' : 'Conecte o WhatsApp para listar conversas.'}
+                  {connStatus?.connected ? 'Nenhuma conversa individual encontrada.' : 'Conecte o WhatsApp no botão acima para listar conversas.'}
                 </div>
               ) : (
                 chats
@@ -1013,7 +1470,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           )}
         </div>
 
-        {/* PASSO 2: CONDIÇÕES DE EMPRÉSTIMO & GASTOS NO CARTÃO (MÚLTIPLOS) */}
+        {/* PASSO 2: CONDIÇÕES DE EMPRÉSTIMO & CARTÃO (COM BOTÕES MANUAL VS AUTOMÁTICO) */}
         <div style={{
           background: 'rgba(15, 23, 42, 0.9)',
           border: '1px solid var(--line)',
@@ -1023,355 +1480,485 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           flexDirection: 'column',
           gap: 14
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          {/* TÍTULO E BOTÕES MANUAL / AUTOMÁTICO */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
             <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>⚙️</span> Passo 2: Condições do Empréstimo & Cartão de Crédito
+              <span>⚙️</span> Passo 2: Condições de Empréstimo & Cartão
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowAddCondition(!showAddCondition)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 14px',
-                borderRadius: 8,
-                background: showAddCondition ? 'rgba(239, 68, 68, 0.15)' : 'var(--teal)',
-                color: showAddCondition ? '#EF4444' : '#081018',
-                border: showAddCondition ? '1px solid rgba(239, 68, 68, 0.4)' : 'none',
-                fontWeight: 900,
-                fontSize: 12,
-                cursor: 'pointer'
-              }}
-            >
-              {showAddCondition ? '✕ Fechar Cadastro' : '➕ Novo Empréstimo / Cartão'}
-            </button>
-          </div>
-
-          <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.4 }}>
-            Cadastre múltiplos empréstimos e compras feitas no cartão de crédito da pessoa com suas respectivas taxas de juros (ex: 5% no cartão, 10% no empréstimo):
-          </div>
-
-          {/* FORMULÁRIO PARA ADICIONAR NOVO REGISTRO */}
-          {showAddCondition && (
+            {/* SELETOR DE MODO: MANUAL VS AUTOMÁTICO */}
             <div style={{
-              padding: 16,
-              borderRadius: 12,
-              background: 'rgba(0, 0, 0, 0.5)',
-              border: '1px solid rgba(0, 229, 155, 0.4)',
               display: 'flex',
-              flexDirection: 'column',
-              gap: 12
-            }}>
-              <div style={{ fontSize: 13, fontWeight: 900, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>📝</span> Novo Registro de Débito
-              </div>
-
-              {/* SELEÇÃO DO TIPO: EMPRÉSTIMO VS CARTÃO */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => setConditionForm(prev => ({ ...prev, type: 'loan', monthlyRate: prev.monthlyRate === '5' ? '10' : prev.monthlyRate }))}
-                  style={{
-                    padding: '8px 10px',
-                    borderRadius: 8,
-                    border: conditionForm.type === 'loan' ? '1px solid var(--teal)' : '1px solid var(--line)',
-                    background: conditionForm.type === 'loan' ? 'rgba(0, 229, 155, 0.18)' : 'rgba(255,255,255,0.03)',
-                    color: conditionForm.type === 'loan' ? 'var(--teal)' : 'var(--ink2)',
-                    fontWeight: 800,
-                    fontSize: 12,
-                    cursor: 'pointer'
-                  }}
-                >
-                  💵 Empréstimo em Dinheiro (PIX)
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setConditionForm(prev => ({ ...prev, type: 'credit_card', monthlyRate: prev.monthlyRate === '10' ? '5' : prev.monthlyRate }))}
-                  style={{
-                    padding: '8px 10px',
-                    borderRadius: 8,
-                    border: conditionForm.type === 'credit_card' ? '1px solid #38BDF8' : '1px solid var(--line)',
-                    background: conditionForm.type === 'credit_card' ? 'rgba(56, 189, 248, 0.18)' : 'rgba(255,255,255,0.03)',
-                    color: conditionForm.type === 'credit_card' ? '#38BDF8' : 'var(--ink2)',
-                    fontWeight: 800,
-                    fontSize: 12,
-                    cursor: 'pointer'
-                  }}
-                >
-                  💳 Gasto no Cartão de Crédito
-                </button>
-              </div>
-
-              {/* CAMPOS DE VALOR E DATA */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 4 }}>
-                    Valor (R$):
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="Ex: 1500.00"
-                    value={conditionForm.amount}
-                    onChange={(e) => setConditionForm({ ...conditionForm, amount: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: 8,
-                      border: '1px solid var(--line)',
-                      background: 'rgba(0,0,0,0.4)',
-                      color: '#fff',
-                      fontSize: 12.5
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 4 }}>
-                    Data da Operação:
-                  </label>
-                  <input
-                    type="date"
-                    value={conditionForm.date}
-                    onChange={(e) => setConditionForm({ ...conditionForm, date: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: 8,
-                      border: '1px solid var(--line)',
-                      background: 'rgba(0,0,0,0.4)',
-                      color: '#fff',
-                      fontSize: 12.5
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* CAMPOS DE JUROS E DESCRIÇÃO */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 4 }}>
-                    Juros Cobrados (% ao Mês):
-                  </label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    placeholder={conditionForm.type === 'credit_card' ? 'Ex: 5' : 'Ex: 10'}
-                    value={conditionForm.monthlyRate}
-                    onChange={(e) => setConditionForm({ ...conditionForm, monthlyRate: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: 8,
-                      border: '1px solid var(--line)',
-                      background: 'rgba(0,0,0,0.4)',
-                      color: '#fff',
-                      fontSize: 12.5
-                    }}
-                  />
-                  <span style={{ fontSize: 10, color: 'var(--ink2)' }}>
-                    {conditionForm.type === 'credit_card' ? 'Cobrança do cartão (padrão 5%)' : 'Juro contratado (padrão 10%)'}
-                  </span>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 4 }}>
-                    Descrição / Finalidade:
-                  </label>
-                  <input
-                    type="text"
-                    placeholder={conditionForm.type === 'credit_card' ? 'Ex: Compra Mercado' : 'Ex: Empréstimo inicial'}
-                    value={conditionForm.description}
-                    onChange={(e) => setConditionForm({ ...conditionForm, description: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      borderRadius: 8,
-                      border: '1px solid var(--line)',
-                      background: 'rgba(0,0,0,0.4)',
-                      color: '#fff',
-                      fontSize: 12.5
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* BOTÕES DE SALVAR E CANCELAR */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-                <button
-                  type="button"
-                  onClick={() => setShowAddCondition(false)}
-                  style={{
-                    padding: '7px 12px',
-                    borderRadius: 8,
-                    background: 'rgba(255,255,255,0.06)',
-                    border: '1px solid var(--line)',
-                    color: '#fff',
-                    fontSize: 12,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleAddCondition}
-                  style={{
-                    padding: '7px 16px',
-                    borderRadius: 8,
-                    background: 'var(--teal)',
-                    border: 'none',
-                    color: '#081018',
-                    fontWeight: 900,
-                    fontSize: 12,
-                    cursor: 'pointer'
-                  }}
-                >
-                  ✓ Salvar Registro
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* RESUMO DOS DÉBITOS REGISTRADOS */}
-          {debtConditions.length > 0 && (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-              gap: 8,
-              padding: 10,
+              alignItems: 'center',
+              background: 'rgba(0,0,0,0.5)',
+              padding: 3,
               borderRadius: 10,
-              background: 'rgba(0,0,0,0.3)',
-              border: '1px solid rgba(255,255,255,0.06)'
+              border: '1px solid var(--line)'
             }}>
-              <div>
-                <div style={{ fontSize: 10, color: 'var(--ink2)', fontWeight: 700 }}>💵 DINHEIRO / PIX:</div>
-                <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--teal)' }}>
-                  R$ {debtConditions.filter(c => c.type !== 'credit_card').reduce((sum, c) => sum + c.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </div>
-              </div>
+              <button
+                type="button"
+                onClick={() => setStep2Mode('manual')}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: step2Mode === 'manual' ? 'var(--teal)' : 'transparent',
+                  color: step2Mode === 'manual' ? '#081018' : 'var(--ink2)',
+                  fontWeight: 900,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5
+                }}
+              >
+                <span>📝</span> Manual
+              </button>
 
-              <div>
-                <div style={{ fontSize: 10, color: 'var(--ink2)', fontWeight: 700 }}>💳 CARTÃO DE CRÉDITO:</div>
-                <div style={{ fontSize: 13, fontWeight: 900, color: '#38BDF8' }}>
-                  R$ {debtConditions.filter(c => c.type === 'credit_card').reduce((sum, c) => sum + c.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </div>
-              </div>
-
-              <div>
-                <div style={{ fontSize: 10, color: 'var(--ink2)', fontWeight: 700 }}>💰 TOTAL CONTRATADO:</div>
-                <div style={{ fontSize: 13, fontWeight: 900, color: '#fff' }}>
-                  R$ {debtConditions.reduce((sum, c) => sum + c.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </div>
-              </div>
+              <button
+                type="button"
+                onClick={() => setStep2Mode('auto')}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: step2Mode === 'auto' ? '#38BDF8' : 'transparent',
+                  color: step2Mode === 'auto' ? '#081018' : 'var(--ink2)',
+                  fontWeight: 900,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5
+                }}
+              >
+                <span>🤖</span> Automático (IA)
+              </button>
             </div>
-          )}
+          </div>
 
-          {/* LISTA ORGANIZADA DE EMPRÉSTIMOS E GASTOS NO CARTÃO */}
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-            maxHeight: 240,
-            overflowY: 'auto'
-          }}>
-            {debtConditions.length === 0 ? (
-              <div style={{
-                padding: 16,
-                textAlign: 'center',
-                borderRadius: 10,
-                background: 'rgba(0,0,0,0.2)',
-                border: '1px dashed var(--line)'
-              }}>
-                <div style={{ fontSize: 12, color: 'var(--ink2)' }}>
-                  Nenhum empréstimo ou gasto no cartão cadastrado ainda.
-                </div>
+          {/* ────────────────── ABA MANUAL ────────────────── */}
+          {step2Mode === 'manual' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 12, color: 'var(--ink2)' }}>
+                  Cadastre manualmente os empréstimos e despesas no cartão com juros:
+                </span>
                 <button
                   type="button"
-                  onClick={() => setShowAddCondition(true)}
+                  onClick={() => setShowAddCondition(!showAddCondition)}
                   style={{
-                    marginTop: 8,
-                    padding: '6px 14px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '5px 12px',
                     borderRadius: 8,
-                    background: 'var(--teal)',
-                    color: '#081018',
-                    border: 'none',
+                    background: showAddCondition ? 'rgba(239, 68, 68, 0.15)' : 'var(--teal)',
+                    color: showAddCondition ? '#EF4444' : '#081018',
+                    border: showAddCondition ? '1px solid rgba(239, 68, 68, 0.4)' : 'none',
                     fontWeight: 900,
                     fontSize: 11.5,
                     cursor: 'pointer'
                   }}
                 >
-                  ➕ Adicionar Primeiro Registro
+                  {showAddCondition ? '✕ Fechar' : '➕ Novo Débito'}
                 </button>
               </div>
-            ) : (
-              debtConditions.map((cond, idx) => {
-                const isCard = cond.type === 'credit_card';
-                return (
-                  <div
-                    key={cond.id || idx}
-                    style={{
-                      padding: '10px 14px',
-                      borderRadius: 10,
-                      background: isCard ? 'rgba(56, 189, 248, 0.08)' : 'rgba(0, 229, 155, 0.08)',
-                      border: `1px solid ${isCard ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 229, 155, 0.3)'}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 10
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ fontSize: 18 }}>{isCard ? '💳' : '💵'}</span>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{
-                            fontSize: 10,
-                            fontWeight: 900,
-                            padding: '2px 6px',
-                            borderRadius: 4,
-                            background: isCard ? '#38BDF8' : 'var(--teal)',
-                            color: '#081018'
-                          }}>
-                            {isCard ? 'CARTÃO DE CRÉDITO' : 'EMPRÉSTIMO'}
-                          </span>
-                          <span style={{ fontSize: 13, fontWeight: 900, color: '#fff' }}>
-                            R$ {cond.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 2 }}>
-                          📅 {cond.date} | ⚡ <strong>{cond.monthlyRate}% ao mês</strong> | {cond.description}
-                        </div>
-                      </div>
-                    </div>
+
+              {/* FORMULÁRIO MANUAL */}
+              {showAddCondition && (
+                <div style={{
+                  padding: 14,
+                  borderRadius: 12,
+                  background: 'rgba(0, 0, 0, 0.5)',
+                  border: '1px solid rgba(0, 229, 155, 0.4)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10
+                }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => setConditionForm(prev => ({ ...prev, type: 'loan', monthlyRate: prev.monthlyRate === '5' ? '10' : prev.monthlyRate }))}
+                      style={{
+                        padding: '7px 10px',
+                        borderRadius: 8,
+                        border: conditionForm.type === 'loan' ? '1px solid var(--teal)' : '1px solid var(--line)',
+                        background: conditionForm.type === 'loan' ? 'rgba(0, 229, 155, 0.18)' : 'rgba(255,255,255,0.03)',
+                        color: conditionForm.type === 'loan' ? 'var(--teal)' : 'var(--ink2)',
+                        fontWeight: 800,
+                        fontSize: 11.5,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      💵 Empréstimo Dinheiro (PIX)
+                    </button>
 
                     <button
                       type="button"
-                      onClick={() => handleRemoveCondition(cond.id)}
+                      onClick={() => setConditionForm(prev => ({ ...prev, type: 'credit_card', monthlyRate: prev.monthlyRate === '10' ? '5' : prev.monthlyRate }))}
                       style={{
-                        background: 'none',
-                        border: 'none',
-                        color: '#EF4444',
-                        cursor: 'pointer',
-                        fontSize: 14,
-                        padding: 4
+                        padding: '7px 10px',
+                        borderRadius: 8,
+                        border: conditionForm.type === 'credit_card' ? '1px solid #38BDF8' : '1px solid var(--line)',
+                        background: conditionForm.type === 'credit_card' ? 'rgba(56, 189, 248, 0.18)' : 'rgba(255,255,255,0.03)',
+                        color: conditionForm.type === 'credit_card' ? '#38BDF8' : 'var(--ink2)',
+                        fontWeight: 800,
+                        fontSize: 11.5,
+                        cursor: 'pointer'
                       }}
-                      title="Excluir condição"
                     >
-                      🗑️
+                      💳 Cartão de Crédito (5%)
                     </button>
                   </div>
-                );
-              })
-            )}
-          </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 3 }}>
+                        Valor (R$):
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="Ex: 1500.00"
+                        value={conditionForm.amount}
+                        onChange={(e) => setConditionForm({ ...conditionForm, amount: e.target.value })}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          borderRadius: 8,
+                          border: '1px solid var(--line)',
+                          background: 'rgba(0,0,0,0.4)',
+                          color: '#fff',
+                          fontSize: 12
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 3 }}>
+                        Data da Operação:
+                      </label>
+                      <input
+                        type="date"
+                        value={conditionForm.date}
+                        onChange={(e) => setConditionForm({ ...conditionForm, date: e.target.value })}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          borderRadius: 8,
+                          border: '1px solid var(--line)',
+                          background: 'rgba(0,0,0,0.4)',
+                          color: '#fff',
+                          fontSize: 12
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 3 }}>
+                        Juros ao Mês (%):
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={conditionForm.monthlyRate}
+                        onChange={(e) => setConditionForm({ ...conditionForm, monthlyRate: e.target.value })}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          borderRadius: 8,
+                          border: '1px solid var(--line)',
+                          background: 'rgba(0,0,0,0.4)',
+                          color: '#fff',
+                          fontSize: 12
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 3 }}>
+                        Descrição:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder={conditionForm.type === 'credit_card' ? 'Ex: Compra Mercado' : 'Ex: Empréstimo 1'}
+                        value={conditionForm.description}
+                        onChange={(e) => setConditionForm({ ...conditionForm, description: e.target.value })}
+                        style={{
+                          width: '100%',
+                          padding: '7px 10px',
+                          borderRadius: 8,
+                          border: '1px solid var(--line)',
+                          background: 'rgba(0,0,0,0.4)',
+                          color: '#fff',
+                          fontSize: 12
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddCondition(false)}
+                      style={{ padding: '6px 12px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid var(--line)', color: '#fff', fontSize: 11.5, cursor: 'pointer' }}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAddCondition}
+                      style={{ padding: '6px 14px', borderRadius: 8, background: 'var(--teal)', border: 'none', color: '#081018', fontWeight: 900, fontSize: 11.5, cursor: 'pointer' }}
+                    >
+                      ✓ Salvar Registro
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* TOTAIS MANUAIS */}
+              {debtConditions.length > 0 && (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                  gap: 8,
+                  padding: 10,
+                  borderRadius: 10,
+                  background: 'rgba(0,0,0,0.3)',
+                  border: '1px solid rgba(255,255,255,0.06)'
+                }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: 'var(--ink2)', fontWeight: 700 }}>💵 DINHEIRO / PIX:</div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--teal)' }}>
+                      R$ {debtConditions.filter(c => c.type !== 'credit_card').reduce((sum, c) => sum + c.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 10, color: 'var(--ink2)', fontWeight: 700 }}>💳 CARTÃO (5% a.m.):</div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: '#38BDF8' }}>
+                      R$ {debtConditions.filter(c => c.type === 'credit_card').reduce((sum, c) => sum + c.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 10, color: 'var(--ink2)', fontWeight: 700 }}>💰 TOTAL CONTRATADO:</div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: '#fff' }}>
+                      R$ {debtConditions.reduce((sum, c) => sum + c.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* LISTA MANUAL DE ITENS */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 200, overflowY: 'auto' }}>
+                {debtConditions.length === 0 ? (
+                  <div style={{ padding: 14, textAlign: 'center', borderRadius: 10, background: 'rgba(0,0,0,0.2)', border: '1px dashed var(--line)' }}>
+                    <div style={{ fontSize: 12, color: 'var(--ink2)' }}>Nenhum empréstimo ou gasto cadastrado no modo manual.</div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddCondition(true)}
+                      style={{ marginTop: 6, padding: '5px 12px', borderRadius: 8, background: 'var(--teal)', color: '#081018', border: 'none', fontWeight: 900, fontSize: 11, cursor: 'pointer' }}
+                    >
+                      ➕ Adicionar Primeiro Registro
+                    </button>
+                  </div>
+                ) : (
+                  debtConditions.map((cond, idx) => {
+                    const isCard = cond.type === 'credit_card';
+                    return (
+                      <div
+                        key={cond.id || idx}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: 10,
+                          background: isCard ? 'rgba(56, 189, 248, 0.08)' : 'rgba(0, 229, 155, 0.08)',
+                          border: `1px solid ${isCard ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 229, 155, 0.3)'}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 10
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 16 }}>{isCard ? '💳' : '💵'}</span>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 9.5, fontWeight: 900, padding: '2px 5px', borderRadius: 4, background: isCard ? '#38BDF8' : 'var(--teal)', color: '#081018' }}>
+                                {isCard ? 'CARTÃO DE CRÉDITO' : 'EMPRÉSTIMO'}
+                              </span>
+                              <span style={{ fontSize: 12.5, fontWeight: 900, color: '#fff' }}>
+                                R$ {cond.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 10.5, color: 'var(--ink2)', marginTop: 2 }}>
+                              📅 {cond.date} | ⚡ <strong>{cond.monthlyRate}% ao mês</strong> | {cond.description}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveCondition(cond.id)}
+                          style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 13 }}
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ────────────────── ABA AUTOMÁTICA (IA & ROBÔ) ────────────────── */}
+          {step2Mode === 'auto' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{
+                padding: 12,
+                borderRadius: 10,
+                background: 'rgba(56, 189, 248, 0.1)',
+                border: '1px solid rgba(56, 189, 248, 0.3)',
+                fontSize: 12,
+                color: '#fff',
+                lineHeight: 1.5
+              }}>
+                🤖 <strong>Detecção 100% Automática por Inteligência Artificial:</strong><br />
+                O robô examina todo o histórico de conversas, transcreve os áudios e inspeciona os prints para descobrir automaticamente
+                cada empréstimo tomado e cada gasto feito no cartão de crédito com a taxa de 5% ao mês!
+              </div>
+
+              {/* Botão de Varredura Automática Prévia */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <span style={{ fontSize: 11.5, color: 'var(--ink2)' }}>
+                  {autoDetectedDebts.length > 0 ? `${autoDetectedDebts.length} débitos identificados pela IA:` : 'Clique para escanear antecipadamente:'}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={handleAutoScanDebts}
+                  disabled={isScanningAuto}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '7px 14px',
+                    borderRadius: 8,
+                    background: isScanningAuto ? 'rgba(255,255,255,0.2)' : 'linear-gradient(135deg, #38BDF8, #0284C7)',
+                    color: '#081018',
+                    fontWeight: 900,
+                    fontSize: 12,
+                    border: 'none',
+                    cursor: isScanningAuto ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {isScanningAuto ? '⏳ Escaneando com IA...' : '⚡ Escanear Débitos com IA'}
+                </button>
+              </div>
+
+              {/* TOTAIS IDENTIFICADOS AUTOMATICAMENTE */}
+              {autoDetectedDebts.length > 0 && (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                  gap: 8,
+                  padding: 10,
+                  borderRadius: 10,
+                  background: 'rgba(0,0,0,0.3)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)'
+                }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: 'var(--ink2)', fontWeight: 700 }}>💵 EMPRÉSTIMOS (IA):</div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--teal)' }}>
+                      R$ {autoDetectedDebts.filter(c => c.type !== 'credit_card').reduce((sum, c) => sum + c.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 10, color: 'var(--ink2)', fontWeight: 700 }}>💳 CARTÃO 5% (IA):</div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: '#38BDF8' }}>
+                      R$ {autoDetectedDebts.filter(c => c.type === 'credit_card').reduce((sum, c) => sum + c.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ fontSize: 10, color: 'var(--ink2)', fontWeight: 700 }}>💰 TOTAL IDENTIFICADO:</div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: '#fff' }}>
+                      R$ {autoDetectedDebts.reduce((sum, c) => sum + c.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* LISTA AUTOMÁTICA DE ITENS IDENTIFICADOS */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 200, overflowY: 'auto' }}>
+                {autoDetectedDebts.length === 0 ? (
+                  <div style={{ padding: 14, textAlign: 'center', borderRadius: 10, background: 'rgba(0,0,0,0.2)', border: '1px dashed var(--line)' }}>
+                    <div style={{ fontSize: 12, color: 'var(--ink2)' }}>
+                      Nenhum débito escaneado ainda. Clique no botão acima para escanear ou clique diretamente em "Iniciar Perícia" que o robô fará tudo na hora.
+                    </div>
+                  </div>
+                ) : (
+                  autoDetectedDebts.map((cond, idx) => {
+                    const isCard = cond.type === 'credit_card';
+                    return (
+                      <div
+                        key={cond.id || idx}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: 10,
+                          background: isCard ? 'rgba(56, 189, 248, 0.08)' : 'rgba(0, 229, 155, 0.08)',
+                          border: `1px solid ${isCard ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 229, 155, 0.3)'}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 10
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 16 }}>{isCard ? '💳' : '💵'}</span>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 9.5, fontWeight: 900, padding: '2px 5px', borderRadius: 4, background: isCard ? '#38BDF8' : 'var(--teal)', color: '#081018' }}>
+                                {isCard ? 'CARTÃO DE CRÉDITO' : 'EMPRÉSTIMO'}
+                              </span>
+                              <span style={{ fontSize: 12.5, fontWeight: 900, color: '#fff' }}>
+                                R$ {cond.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 10.5, color: 'var(--ink2)', marginTop: 2 }}>
+                              📅 {cond.date} | ⚡ <strong>{cond.monthlyRate}% a.m.</strong> | {cond.description}
+                            </div>
+                            {cond.evidence && (
+                              <div style={{ fontSize: 10, color: '#38BDF8', fontStyle: 'italic', marginTop: 1 }}>
+                                Evidência: "{cond.evidence}"
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setAutoDetectedDebts(prev => prev.filter(c => c.id !== cond.id))}
+                          style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 13 }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
 
           <div style={{
-            padding: 10,
-            borderRadius: 10,
+            padding: 8,
+            borderRadius: 8,
             background: 'rgba(0,0,0,0.3)',
             border: '1px solid rgba(255,255,255,0.06)',
             fontSize: 11,
@@ -1532,7 +2119,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             transition: 'all 0.25s ease'
           }}
         >
-          {isAuditing ? '⏳ Executando Perícia Minuciosa...' : '🚀 Iniciar Perícia Completa (Ler Textos, Ouvir Áudios e Calcular)'}
+          {isAuditing ? '⏳ Executando Perícia Minuciosa...' : `🚀 Iniciar Perícia Completa (Modo: ${step2Mode === 'auto' ? 'Automático por IA' : 'Manual'})`}
         </button>
       </div>
 
@@ -1625,6 +2212,40 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       {/* ── RESULTADOS COMPLETOS DA PERÍCIA ───────────────────────────── */}
       {auditResult && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+          {/* BADGE DE MODO UTILIZADO E COMPARATIVO */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 18px',
+            borderRadius: 12,
+            background: auditResult.executionMode === 'auto' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(0, 229, 155, 0.15)',
+            border: `1px solid ${auditResult.executionMode === 'auto' ? '#38BDF8' : 'var(--teal)'}`,
+            flexWrap: 'wrap',
+            gap: 10
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 18 }}>{auditResult.executionMode === 'auto' ? '🤖' : '📝'}</span>
+              <span style={{ fontSize: 13, fontWeight: 900, color: '#fff' }}>
+                Perícia Executada com Sucesso no <strong>Modo {auditResult.executionMode === 'auto' ? 'Automático (Identificado por IA)' : 'Manual'}</strong>
+              </span>
+            </div>
+
+            {/* Comparativo se houver valores nos dois modos */}
+            {auditResult.manualTotal > 0 && auditResult.autoTotal > 0 && (
+              <div style={{ fontSize: 12, color: 'var(--ink2)' }}>
+                Comparativo: <strong>Manual (R$ {auditResult.manualTotal.toFixed(2)})</strong> vs <strong>Automático (R$ {auditResult.autoTotal.toFixed(2)})</strong>
+                {Math.abs(auditResult.manualTotal - auditResult.autoTotal) < 1 ? (
+                  <span style={{ color: 'var(--teal)', fontWeight: 800, marginLeft: 6 }}>✓ Valores Batem 100%!</span>
+                ) : (
+                  <span style={{ color: '#F59E0B', fontWeight: 800, marginLeft: 6 }}>
+                    Diferença: R$ {Math.abs(auditResult.manualTotal - auditResult.autoTotal).toFixed(2)}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* CARDS DE VEREDITO / KPIS */}
           <div style={{
@@ -1724,7 +2345,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 📊 Planilha Oficial de Perícia Pronta para Download
               </div>
               <div style={{ fontSize: 12.5, color: 'var(--ink2)', marginTop: 2 }}>
-                Gere o arquivo completo em Excel (.xlsx) contendo 4 abas detalhadas com fórmulas e transcrições.
+                Gere o arquivo completo em Excel (.xlsx) contendo 5 abas detalhadas com fórmulas e transcrições.
               </div>
             </div>
 

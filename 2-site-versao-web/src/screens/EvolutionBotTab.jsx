@@ -2999,282 +2999,6 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
         </div>
       </div>
 
-      {/* Modal Completo de Conexão WhatsApp (QR Code + Código de Pareamento de 8 Dígitos) */}
-      {showConnectModal && (
-        <div className="modal-bg" style={{ zIndex: 12000 }}>
-          <div className="modal" style={{ maxWidth: 420, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 style={{ fontSize: 16, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>📱</span> Conectar WhatsApp Oficial
-              </h3>
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={() => { setShowConnectModal(false); setQrCodeData(null); setPairingCodeResult(null); }}
-                style={{ width: 28, height: 28, borderRadius: 8, padding: 0, margin: 0, border: '1px solid var(--line)', color: 'var(--ink2)', cursor: 'pointer' }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Abas de Método de Conexão */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, background: 'rgba(255,255,255,0.04)', padding: 4, borderRadius: 10 }}>
-              <button
-                type="button"
-                className="btn"
-                style={{
-                  margin: 0,
-                  padding: '7px 10px',
-                  fontSize: 12,
-                  fontWeight: 800,
-                  borderRadius: 8,
-                  background: connectTab === 'qr' ? 'var(--teal)' : 'transparent',
-                  color: connectTab === 'qr' ? '#081018' : 'var(--ink2)',
-                  border: 'none',
-                  boxShadow: connectTab === 'qr' ? '0 2px 8px rgba(0,229,155,0.2)' : 'none'
-                }}
-                onClick={() => { setConnectTab('qr'); if (!qrCodeData) handleFetchQrCode(); }}
-              >
-                📷 QR Code
-              </button>
-
-              <button
-                type="button"
-                className="btn"
-                style={{
-                  margin: 0,
-                  padding: '7px 10px',
-                  fontSize: 12,
-                  fontWeight: 800,
-                  borderRadius: 8,
-                  background: connectTab === 'pairing' ? 'var(--teal)' : 'transparent',
-                  color: connectTab === 'pairing' ? '#081018' : 'var(--ink2)',
-                  border: 'none',
-                  boxShadow: connectTab === 'pairing' ? '0 2px 8px rgba(0,229,155,0.2)' : 'none'
-                }}
-                onClick={() => setConnectTab('pairing')}
-              >
-                🔢 Código (8 Dígitos)
-              </button>
-            </div>
-
-            {/* ABA 1: QR CODE */}
-            {connectTab === 'qr' && (
-              <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                <p style={{ fontSize: 12, color: 'var(--ink2)', margin: 0, lineHeight: 1.4 }}>
-                  No WhatsApp do Dr. Cândido: <strong>Aparelhos Conectados</strong> ➔ <strong>Conectar Aparelho</strong> e aponte para o QR Code:
-                </p>
-
-                {qrLoading ? (
-                  <div style={{ width: 210, height: 210, background: 'rgba(255,255,255,0.03)', borderRadius: 12, border: '1px dashed var(--teal)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--teal)', fontSize: 12 }}>
-                    <div style={{ fontSize: 24 }}>⏳</div>
-                    <div>Gerando QR Code...</div>
-                  </div>
-                ) : qrCodeData ? (
-                  <div style={{ background: '#fff', padding: 10, borderRadius: 12, display: 'inline-block', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }}>
-                    <img 
-                      src={qrCodeData.startsWith('data:') ? qrCodeData : `data:image/png;base64,${qrCodeData}`} 
-                      alt="QR Code WhatsApp" 
-                      style={{ width: 210, height: 210, display: 'block' }} 
-                    />
-                  </div>
-                ) : (
-                  <div style={{ width: 210, height: 210, background: 'rgba(255,255,255,0.03)', borderRadius: 12, border: '1px dashed var(--line)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--ink3)', fontSize: 12, padding: 12, textAlign: 'center' }}>
-                    {qrError ? (
-                      <div style={{ color: '#FF8A65', fontSize: 11.5, lineHeight: 1.4 }}>
-                        ⚠️ {qrError}
-                      </div>
-                    ) : (
-                      <div>Clique abaixo para gerar o QR Code</div>
-                    )}
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', gap: 8, width: '100%' }}>
-                  <button 
-                    type="button" 
-                    className="btn btn-ghost" 
-                    style={{ flex: 1, fontSize: 12, padding: '8px', margin: 0 }}
-                    onClick={() => handleFetchQrCode(true)}
-                    disabled={qrLoading}
-                  >
-                    {qrLoading ? '⏳ Atualizando...' : '🔄 Atualizar QR Code'}
-                  </button>
-                  <button 
-                    type="button" 
-                    className="btn btn-teal" 
-                    style={{ flex: 1, fontSize: 12, padding: '8px', margin: 0 }}
-                    onClick={checkStatus}
-                  >
-                    ✅ Já Escaneei
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ABA 2: CÓDIGO DE PAREAMENTO DE 8 DÍGITOS (SEM CÂMERA) */}
-            {connectTab === 'pairing' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <p style={{ fontSize: 12, color: 'var(--ink2)', margin: 0, lineHeight: 1.5 }}>
-                  Conecte <strong>sem usar a câmera</strong>. Digite o número do WhatsApp do Dr. Cândido com DDD para receber o código de 8 dígitos:
-                </p>
-
-                <form onSubmit={handleGeneratePairingCode} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div>
-                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase' }}>
-                      Número do WhatsApp (com DDD)
-                    </label>
-                    <input 
-                      type="text"
-                      placeholder="Ex: 61999998888 ou 6188889999"
-                      value={pairingPhone}
-                      onChange={(e) => setPairingPhone(e.target.value)}
-                      style={{ marginTop: 4, width: '100%', fontSize: 14, fontWeight: 700, letterSpacing: '0.5px' }}
-                      required
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="btn btn-teal"
-                    style={{ width: '100%', padding: '9px', fontSize: 12.5, fontWeight: 800, margin: 0 }}
-                    disabled={generatingPairing}
-                  >
-                    {generatingPairing ? '⏳ Gerando Código...' : '🔑 Gerar Código de Pareamento'}
-                  </button>
-                </form>
-
-                {pairingCodeResult && (
-                  <div style={{ 
-                    background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.15), rgba(15, 23, 42, 0.8))', 
-                    border: '1px solid var(--teal)', 
-                    borderRadius: 12, 
-                    padding: 14, 
-                    textAlign: 'center',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 8
-                  }}>
-                    <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 800, textTransform: 'uppercase' }}>
-                      Seu Código de Pareamento
-                    </div>
-                    <div style={{ 
-                      fontSize: 26, 
-                      fontWeight: 900, 
-                      letterSpacing: '4px', 
-                      color: '#fff',
-                      background: 'rgba(0,0,0,0.3)',
-                      padding: '8px 12px',
-                      borderRadius: 8
-                    }}>
-                      {pairingCodeResult}
-                    </div>
-                    <div style={{ fontSize: 11.5, color: 'var(--ink2)', lineHeight: 1.4 }}>
-                      1. No WhatsApp do celular, toque em <strong>Aparelhos Conectados</strong> ➔ <strong>Conectar Aparelho</strong>.<br />
-                      2. Toque no link inferior <strong style={{ color: '#fff' }}>"Conectar com número de telefone"</strong> e digite o código acima!
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Opção de Reset de Emergência para Sessões Travadas */}
-            <div style={{ marginTop: 6, paddingTop: 10, borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <button
-                type="button"
-                className="btn"
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#FF8A65',
-                  fontSize: 11.5,
-                  padding: 0,
-                  margin: 0,
-                  cursor: 'pointer',
-                  textDecoration: 'underline'
-                }}
-                onClick={handleResetAndReconnect}
-                disabled={resettingInstance}
-              >
-                {resettingInstance ? '⏳ Reiniciando...' : '⚠️ Deu erro ao conectar? Clique para Limpar Sessão'}
-              </button>
-
-              <button
-                type="button"
-                className="btn btn-ghost"
-                style={{ width: 'auto', padding: '5px 14px', fontSize: 12, margin: 0 }}
-                onClick={() => { setShowConnectModal(false); setQrCodeData(null); setPairingCodeResult(null); }}
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Configuração Railway */}
-      {showConfigModal && (
-        <div className="modal-bg" style={{ zIndex: 12000 }}>
-          <div className="modal" style={{ maxWidth: 440, padding: 24 }}>
-            <h3 style={{ fontSize: 16, color: '#fff', marginBottom: 6 }}>⚙️ Configuração da Evolution API (Railway)</h3>
-            <p style={{ fontSize: 12, color: 'var(--ink2)', marginBottom: 16 }}>
-              Insira a URL gerada no seu Railway.app e a Chave de Autenticação (API Key):
-            </p>
-
-            <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase' }}>
-                  URL do Servidor Railway
-                </label>
-                <input 
-                  type="text"
-                  placeholder="https://sua-evolution-api.up.railway.app"
-                  value={config.serverUrl}
-                  onChange={(e) => setConfig({ ...config, serverUrl: e.target.value })}
-                  required
-                  style={{ marginTop: 4, width: '100%' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase' }}>
-                  Chave Global da API (AUTHENTICATION_API_KEY)
-                </label>
-                <input 
-                  type="text"
-                  placeholder="Sua chave secreta configurada no Railway"
-                  value={config.apiKey}
-                  onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
-                  required
-                  style={{ marginTop: 4, width: '100%' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase' }}>
-                  Nome da Instância
-                </label>
-                <input 
-                  type="text"
-                  placeholder="dr_candido"
-                  value={config.instanceName}
-                  onChange={(e) => setConfig({ ...config, instanceName: e.target.value })}
-                  style={{ marginTop: 4, width: '100%' }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button type="submit" className="btn btn-teal" style={{ flex: 1, margin: 0 }}>
-                  💾 Salvar Configurações
-                </button>
-                <button type="button" className="btn btn-ghost" style={{ flex: 1, margin: 0 }} onClick={() => setShowConfigModal(false)}>
-                  Cancelar
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Modal de Lista Filtrada (Com Número / Sem Número) */}
       {contactFilterModal && (
@@ -5615,6 +5339,283 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
         </div>
       )}
         </>
+      )}
+
+      {/* Modal Completo de Conexão WhatsApp (QR Code + Código de Pareamento de 8 Dígitos) - Global para todas as abas */}
+      {showConnectModal && (
+        <div className="modal-bg" style={{ zIndex: 12000 }}>
+          <div className="modal" style={{ maxWidth: 420, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ fontSize: 16, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>📱</span> Conectar WhatsApp Oficial
+              </h3>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => { setShowConnectModal(false); setQrCodeData(null); setPairingCodeResult(null); }}
+                style={{ width: 28, height: 28, borderRadius: 8, padding: 0, margin: 0, border: '1px solid var(--line)', color: 'var(--ink2)', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Abas de Método de Conexão */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, background: 'rgba(255,255,255,0.04)', padding: 4, borderRadius: 10 }}>
+              <button
+                type="button"
+                className="btn"
+                style={{
+                  margin: 0,
+                  padding: '7px 10px',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  borderRadius: 8,
+                  background: connectTab === 'qr' ? 'var(--teal)' : 'transparent',
+                  color: connectTab === 'qr' ? '#081018' : 'var(--ink2)',
+                  border: 'none',
+                  boxShadow: connectTab === 'qr' ? '0 2px 8px rgba(0,229,155,0.2)' : 'none'
+                }}
+                onClick={() => { setConnectTab('qr'); if (!qrCodeData) handleFetchQrCode(); }}
+              >
+                📷 QR Code
+              </button>
+
+              <button
+                type="button"
+                className="btn"
+                style={{
+                  margin: 0,
+                  padding: '7px 10px',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  borderRadius: 8,
+                  background: connectTab === 'pairing' ? 'var(--teal)' : 'transparent',
+                  color: connectTab === 'pairing' ? '#081018' : 'var(--ink2)',
+                  border: 'none',
+                  boxShadow: connectTab === 'pairing' ? '0 2px 8px rgba(0,229,155,0.2)' : 'none'
+                }}
+                onClick={() => setConnectTab('pairing')}
+              >
+                🔢 Código (8 Dígitos)
+              </button>
+            </div>
+
+            {/* ABA 1: QR CODE */}
+            {connectTab === 'qr' && (
+              <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                <p style={{ fontSize: 12, color: 'var(--ink2)', margin: 0, lineHeight: 1.4 }}>
+                  No WhatsApp do Dr. Cândido: <strong>Aparelhos Conectados</strong> ➔ <strong>Conectar Aparelho</strong> e aponte para o QR Code:
+                </p>
+
+                {qrLoading ? (
+                  <div style={{ width: 210, height: 210, background: 'rgba(255,255,255,0.03)', borderRadius: 12, border: '1px dashed var(--teal)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--teal)', fontSize: 12 }}>
+                    <div style={{ fontSize: 24 }}>⏳</div>
+                    <div>Gerando QR Code...</div>
+                  </div>
+                ) : qrCodeData ? (
+                  <div style={{ background: '#fff', padding: 10, borderRadius: 12, display: 'inline-block', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }}>
+                    <img 
+                      src={qrCodeData.startsWith('data:') ? qrCodeData : `data:image/png;base64,${qrCodeData}`} 
+                      alt="QR Code WhatsApp" 
+                      style={{ width: 210, height: 210, display: 'block' }} 
+                    />
+                  </div>
+                ) : (
+                  <div style={{ width: 210, height: 210, background: 'rgba(255,255,255,0.03)', borderRadius: 12, border: '1px dashed var(--line)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--ink3)', fontSize: 12, padding: 12, textAlign: 'center' }}>
+                    {qrError ? (
+                      <div style={{ color: '#FF8A65', fontSize: 11.5, lineHeight: 1.4 }}>
+                        ⚠️ {qrError}
+                      </div>
+                    ) : (
+                      <div>Clique abaixo para gerar o QR Code</div>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+                  <button 
+                    type="button" 
+                    className="btn btn-ghost" 
+                    style={{ flex: 1, fontSize: 12, padding: '8px', margin: 0 }}
+                    onClick={() => handleFetchQrCode(true)}
+                    disabled={qrLoading}
+                  >
+                    {qrLoading ? '⏳ Atualizando...' : '🔄 Atualizar QR Code'}
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-teal" 
+                    style={{ flex: 1, fontSize: 12, padding: '8px', margin: 0 }}
+                    onClick={checkStatus}
+                  >
+                    ✅ Já Escaneei
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ABA 2: CÓDIGO DE PAREAMENTO DE 8 DÍGITOS (SEM CÂMERA) */}
+            {connectTab === 'pairing' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <p style={{ fontSize: 12, color: 'var(--ink2)', margin: 0, lineHeight: 1.5 }}>
+                  Conecte <strong>sem usar a câmera</strong>. Digite o número do WhatsApp do Dr. Cândido com DDD para receber o código de 8 dígitos:
+                </p>
+
+                <form onSubmit={handleGeneratePairingCode} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase' }}>
+                      Número do WhatsApp (com DDD)
+                    </label>
+                    <input 
+                      type="text"
+                      placeholder="Ex: 61999998888 ou 6188889999"
+                      value={pairingPhone}
+                      onChange={(e) => setPairingPhone(e.target.value)}
+                      style={{ marginTop: 4, width: '100%', fontSize: 14, fontWeight: 700, letterSpacing: '0.5px' }}
+                      required
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="btn btn-teal"
+                    style={{ width: '100%', padding: '9px', fontSize: 12.5, fontWeight: 800, margin: 0 }}
+                    disabled={generatingPairing}
+                  >
+                    {generatingPairing ? '⏳ Gerando Código...' : '🔑 Gerar Código de Pareamento'}
+                  </button>
+                </form>
+
+                {pairingCodeResult && (
+                  <div style={{ 
+                    background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.15), rgba(15, 23, 42, 0.8))', 
+                    border: '1px solid var(--teal)', 
+                    borderRadius: 12, 
+                    padding: 14, 
+                    textAlign: 'center',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8
+                  }}>
+                    <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 800, textTransform: 'uppercase' }}>
+                      Seu Código de Pareamento
+                    </div>
+                    <div style={{ 
+                      fontSize: 26, 
+                      fontWeight: 900, 
+                      letterSpacing: '4px', 
+                      color: '#fff',
+                      background: 'rgba(0,0,0,0.3)',
+                      padding: '8px 12px',
+                      borderRadius: 8
+                    }}>
+                      {pairingCodeResult}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--ink2)', lineHeight: 1.4 }}>
+                      1. No WhatsApp do celular, toque em <strong>Aparelhos Conectados</strong> ➔ <strong>Conectar Aparelho</strong>.<br />
+                      2. Toque no link inferior <strong style={{ color: '#fff' }}>"Conectar com número de telefone"</strong> e digite o código acima!
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Opção de Reset de Emergência para Sessões Travadas */}
+            <div style={{ marginTop: 6, paddingTop: 10, borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#FF8A65',
+                  fontSize: 11.5,
+                  padding: 0,
+                  margin: 0,
+                  cursor: 'pointer',
+                  textDecoration: 'underline'
+                }}
+                onClick={handleResetAndReconnect}
+                disabled={resettingInstance}
+              >
+                {resettingInstance ? '⏳ Reiniciando...' : '⚠️ Deu erro ao conectar? Clique para Limpar Sessão'}
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ width: 'auto', padding: '5px 14px', fontSize: 12, margin: 0 }}
+                onClick={() => { setShowConnectModal(false); setQrCodeData(null); setPairingCodeResult(null); }}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Configuração Railway - Global */}
+      {showConfigModal && (
+        <div className="modal-bg" style={{ zIndex: 12000 }}>
+          <div className="modal" style={{ maxWidth: 440, padding: 24 }}>
+            <h3 style={{ fontSize: 16, color: '#fff', marginBottom: 6 }}>⚙️ Configuração da Evolution API (Railway)</h3>
+            <p style={{ fontSize: 12, color: 'var(--ink2)', marginBottom: 16 }}>
+              Insira a URL gerada no seu Railway.app e a Chave de Autenticação (API Key):
+            </p>
+
+            <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase' }}>
+                  URL do Servidor Railway
+                </label>
+                <input 
+                  type="text"
+                  placeholder="https://sua-evolution-api.up.railway.app"
+                  value={config.serverUrl}
+                  onChange={(e) => setConfig({ ...config, serverUrl: e.target.value })}
+                  required
+                  style={{ marginTop: 4, width: '100%' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase' }}>
+                  Chave Global da API (AUTHENTICATION_API_KEY)
+                </label>
+                <input 
+                  type="text"
+                  placeholder="Sua chave secreta configurada no Railway"
+                  value={config.apiKey}
+                  onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
+                  required
+                  style={{ marginTop: 4, width: '100%' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase' }}>
+                  Nome da Instância
+                </label>
+                <input 
+                  type="text"
+                  placeholder="dr_candido"
+                  value={config.instanceName}
+                  onChange={(e) => setConfig({ ...config, instanceName: e.target.value })}
+                  style={{ marginTop: 4, width: '100%' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button type="submit" className="btn btn-teal" style={{ flex: 1, margin: 0 }}>
+                  💾 Salvar Configurações
+                </button>
+                <button type="button" className="btn btn-ghost" style={{ flex: 1, margin: 0 }} onClick={() => setShowConfigModal(false)}>
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

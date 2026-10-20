@@ -227,6 +227,50 @@ Retorne EXCLUSIVAMENTE um JSON com esta estrutura:
       return res.status(200).json(JSON.parse(raw));
     }
 
+    // ── 4. DETECTAR EMPRÉSTIMOS E GASTOS NO CARTÃO AUTOMATICAMENTE ───
+    if (action === 'detect_debts_auto') {
+      const {
+        mensagensTexto = [],
+        audiosTranscritos = [],
+        nomeCredor = '',
+        nomeDevedor = ''
+      } = payload || {};
+
+      const prompt = `Você é um perito contábil e auditor forense.
+Analise detalhadamente o histórico de mensagens de texto e transcrições de áudios entre o credor (${nomeCredor || 'Credor'}) e o devedor (${nomeDevedor || 'Devedor'}).
+Identifique AUTOMATICAMENTE cada evento em que:
+1. Houve um EMPRÉSTIMO EM DINHEIRO concedido (valores transferidos via PIX, TED, entregues em espécie, emprestados).
+2. Houve o USO DO CARTÃO DE CRÉDITO do credor pelo devedor (compras feitas no cartão, parcelas de compras, faturas cobradas). Regra de taxa: para gastos no cartão de crédito, a taxa de juros padrão cobrada pelo credor é de 5% ao mês (a menos que outra taxa seja explicitamente mencionada).
+3. Para cada débito identificado, extraia:
+   - tipo: "EMPRESTIMO" ou "CARTAO_CREDITO"
+   - data: AAAA-MM-DD (deduza pelo contexto da mensagem se não explícita)
+   - valor: número float positivo
+   - taxa_juros_mes: número float (ex: 5.0 para cartão, 10.0 ou a taxa pactuada citada para empréstimo)
+   - descricao: resumo curto (ex: "Empréstimo inicial", "Compra no Cartão Mercado", etc.)
+   - evidencia: trecho da mensagem ou áudio que comprova este débito.
+
+DADOS DA CONVERSA E ÁUDIOS:
+${JSON.stringify([...mensagensTexto, ...audiosTranscritos].slice(-150), null, 2)}
+
+Retorne EXCLUSIVAMENTE um JSON com esta estrutura:
+{
+  "debitos_detectados": [
+    {
+      "tipo": "EMPRESTIMO" | "CARTAO_CREDITO",
+      "data": "AAAA-MM-DD",
+      "valor": 0.00,
+      "taxa_juros_mes": 0.0,
+      "descricao": "...",
+      "evidencia": "..."
+    }
+  ],
+  "resumo": "Explicação detalhada dos empréstimos e cartões identificados pela IA..."
+}`;
+
+      const raw = await callGemini([{ text: prompt }], true);
+      return res.status(200).json(JSON.parse(raw));
+    }
+
     return res.status(400).json({ error: `Ação "${action}" inválida.` });
   } catch (err) {
     console.error('Erro na API de Perícia Financeira:', err);
