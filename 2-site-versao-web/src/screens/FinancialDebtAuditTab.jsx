@@ -17,10 +17,76 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   const [manualPhone, setManualPhone] = useState('');
   const [contactSearch, setContactSearch] = useState('');
 
-  // ── PARÂMETROS DO EMPRÉSTIMO / DÍVIDA ──
+  // ── PARÂMETROS DO EMPRÉSTIMO / DÍVIDA E GASTOS NO CARTÃO (MÚLTIPLOS) ──
+  const [debtConditions, setDebtConditions] = useState(() => {
+    try {
+      const saved = localStorage.getItem('wa_audit_debt_conditions');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showAddCondition, setShowAddCondition] = useState(false);
+  const [conditionForm, setConditionForm] = useState({
+    type: 'loan', // 'loan' | 'credit_card'
+    amount: '',
+    date: new Date().toISOString().slice(0, 10),
+    monthlyRate: '10',
+    description: ''
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('wa_audit_debt_conditions', JSON.stringify(debtConditions));
+    } catch (e) {}
+  }, [debtConditions]);
+
+  function handleAddCondition(e) {
+    if (e) e.preventDefault();
+    const val = parseFloat(conditionForm.amount);
+    if (!val || val <= 0) {
+      alert('Por favor, digite um valor maior que zero.');
+      return;
+    }
+    const rate = parseFloat(conditionForm.monthlyRate);
+    if (isNaN(rate) || rate < 0) {
+      alert('Por favor, informe a taxa de juros cobrada ao mês.');
+      return;
+    }
+
+    const newCond = {
+      id: Date.now() + Math.random().toString(36).substr(2, 5),
+      type: conditionForm.type,
+      amount: val,
+      date: conditionForm.date || new Date().toISOString().slice(0, 10),
+      monthlyRate: rate,
+      description: conditionForm.description || (conditionForm.type === 'credit_card' ? 'Gasto com Cartão de Crédito' : 'Empréstimo em Dinheiro')
+    };
+
+    setDebtConditions(prev => {
+      const updated = [...prev, newCond];
+      updated.sort((a, b) => new Date(a.date) - new Date(b.date));
+      return updated;
+    });
+
+    setConditionForm({
+      type: 'loan',
+      amount: '',
+      date: new Date().toISOString().slice(0, 10),
+      monthlyRate: '10',
+      description: ''
+    });
+    setShowAddCondition(false);
+  }
+
+  function handleRemoveCondition(id) {
+    setDebtConditions(prev => prev.filter(c => c.id !== id));
+  }
+
+  // Fallback para campos únicos legados se necessário
   const [initialDebt, setInitialDebt] = useState('');
-  const [monthlyInterestRate, setMonthlyInterestRate] = useState('10'); // % ao mês padrão
-  const [interestType, setInterestType] = useState('simple'); // 'simple' | 'compound'
+  const [monthlyInterestRate, setMonthlyInterestRate] = useState('10');
+  const [interestType, setInterestType] = useState('simple');
   const [debtStartDate, setDebtStartDate] = useState('');
 
   // ── COMPROVANTES AVULSOS ENVIADOS PELO USUÁRIO (PRINTS / PIX) ──
@@ -386,117 +452,171 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         console.warn('Erro na IA:', aiErr);
       }
 
-      // ── MOTOR MATEMÁTICO DETERMINÍSTICO (CÓDIGO CIVIL ART. 354) ──────
-      const rateMonth = (parseFloat(monthlyInterestRate) || 10) / 100;
-      let baseCapital = parseFloat(initialDebt) || aiAuditResponse?.total_emprestado || 0;
+      // ── CONSOLIDAÇÃO DE EMPRÉSTIMOS E GASTOS NO CARTÃO (MÚLTIPLOS) ──
+      const activeDebtConditions = debtConditions.length > 0 
+        ? [...debtConditions]
+        : [];
 
-      // Se não informado, tenta detectar o primeiro empréstimo nas mensagens
-      if (baseCapital === 0) {
-        for (const t of textRecords) {
-          const m = t.text.match(/(?:emprestei|peguei|mandou|valor\s*(?:inicial|do\s*empréstimo))\s*(?:r\$)?\s*([\d\.]+,\d{2}|\d+)/i);
-          if (m) {
-            baseCapital = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
-            break;
+      // Fallback caso não tenha cadastrado condições na lista:
+      if (activeDebtConditions.length === 0) {
+        let baseCapital = parseFloat(initialDebt) || aiAuditResponse?.total_emprestado || 0;
+        if (baseCapital === 0) {
+          for (const t of textRecords) {
+            const m = t.text.match(/(?:emprestei|peguei|mandou|valor\s*(?:inicial|do\s*empréstimo))\s*(?:r\$)?\s*([\d\.]+,\d{2}|\d+)/i);
+            if (m) {
+              baseCapital = parseFloat(m[1].replace(/\./g, '').replace(',', '.'));
+              break;
+            }
           }
         }
-      }
-      if (baseCapital === 0 && allPayments.length > 0) {
-        baseCapital = allPayments[0].amount; // Fallback
+        if (baseCapital === 0 && allPayments.length > 0) {
+          baseCapital = allPayments[0].amount;
+        }
+
+        activeDebtConditions.push({
+          id: 'initial-default',
+          type: 'loan',
+          amount: baseCapital,
+          date: debtStartDate || (allPayments.length > 0 ? allPayments[0].date : new Date().toISOString().slice(0, 10)),
+          monthlyRate: parseFloat(monthlyInterestRate) || 10,
+          description: 'Empréstimo Original / Capital Inicial Contratado'
+        });
       }
 
-      let runningBalance = baseCapital;
+      let totalLoansCash = 0;
+      let totalCardExpenses = 0;
+      activeDebtConditions.forEach(c => {
+        if (c.type === 'credit_card') totalCardExpenses += c.amount;
+        else totalLoansCash += c.amount;
+      });
+      const totalContracted = totalLoansCash + totalCardExpenses;
+
+      // Unifica dívidas (empréstimos e cartão) com os pagamentos em ordem cronológica
+      const unifiedEvents = [
+        ...activeDebtConditions.map(c => ({
+          date: c.date,
+          amount: c.amount,
+          type: c.type === 'credit_card' ? 'CARTAO_CREDITO' : 'EMPRESTIMO',
+          monthlyRate: c.monthlyRate,
+          description: c.description,
+          isPayment: false
+        })),
+        ...allPayments.map(p => ({
+          date: p.date,
+          amount: p.amount,
+          type: 'PAGAMENTO',
+          origin: p.origin,
+          evidence: p.evidence,
+          authId: p.authId,
+          isPayment: true
+        }))
+      ];
+
+      unifiedEvents.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      let runningPrincipal = 0;
+      let accumulatedInterestDue = 0;
       let totalPaid = 0;
       let totalInterestChargedByCreditor = 0;
       let totalInterestDue = 0;
       let totalPrincipalAmortized = 0;
       let totalOverpaid = 0;
 
-      let lastDate = debtStartDate || (allPayments.length > 0 ? allPayments[0].date : new Date().toISOString().slice(0, 10));
+      let lastDate = unifiedEvents.length > 0 ? unifiedEvents[0].date : new Date().toISOString().slice(0, 10);
+      let activeRate = activeDebtConditions[0]?.monthlyRate || 10;
 
       const amortizationTimeline = [];
 
-      // Registro Inicial do Empréstimo
-      amortizationTimeline.push({
-        data: lastDate,
-        origem: 'Início do Contrato',
-        descricao: `Empréstimo Original / Capital Inicial Contratado`,
-        cobradoCredor: 0,
-        valorPago: 0,
-        jurosPeriodo: 0,
-        amortizacaoCapital: 0,
-        saldoDevedor: runningBalance,
-        diferenca: 0,
-        status: 'CAPITAL_INICIAL',
-        evidencia: `Contratação com taxa de ${monthlyInterestRate}% ao mês.`
-      });
-
-      // Itera sobre cada pagamento para recalcular amortizações
-      allPayments.forEach((p, idx) => {
-        const currentDate = p.date;
+      unifiedEvents.forEach((ev) => {
+        const currentDate = ev.date;
         const d1 = new Date(lastDate);
         const d2 = new Date(currentDate);
         const diffDays = Math.max(0, Math.floor((d2 - d1) / (1000 * 60 * 60 * 24)));
         const monthsFraction = diffDays / 30;
 
-        // Juro legal devido pelo período sobre o saldo devedor remanescente
-        const periodInterest = runningBalance * rateMonth * monthsFraction;
-        totalInterestDue += periodInterest;
-
-        const paid = p.amount;
-        totalPaid += paid;
-
-        // Imputação do pagamento (art. 354 CC): abate primeiro os juros, o que sobrar abate o capital
-        let interestPaid = Math.min(paid, periodInterest);
-        let principalAmortization = Math.max(0, paid - periodInterest);
-
-        // O que o credor cobrou geralmente é só juros cheios ou rolagem
-        const chargedByCreditor = periodInterest; // Estimativa conservadora
-        totalInterestChargedByCreditor += chargedByCreditor;
-
-        // Abate o capital
-        runningBalance = runningBalance - principalAmortization;
-        totalPrincipalAmortized += principalAmortization;
-
-        let diff = 0;
-        let eventStatus = 'AMORTIZACAO';
-        let desc = '';
-
-        if (runningBalance <= 0) {
-          const creditExcess = Math.abs(runningBalance);
-          totalOverpaid += creditExcess;
-          runningBalance = 0;
-          eventStatus = 'QUITADO_EXCEDE';
-          desc = `Pagamento de R$ ${paid.toFixed(2)}: QUITAÇÃO TOTAL DA DÍVIDA! Amortizou R$ ${principalAmortization.toFixed(2)} com R$ ${creditExcess.toFixed(2)} de pagamento excedente a restituir.`;
-        } else if (principalAmortization > 0) {
-          desc = `Pagamento de R$ ${paid.toFixed(2)}: Cobriu R$ ${interestPaid.toFixed(2)} de juros e AMORTIZOU R$ ${principalAmortization.toFixed(2)} do principal.`;
-        } else {
-          desc = `Pagamento de R$ ${paid.toFixed(2)}: Rolagem / Apenas juros do período.`;
-          eventStatus = 'JUROS_ROLAGEM';
+        // Atualiza juros acumulados sobre o saldo devedor principal remanescente
+        if (runningPrincipal > 0 && monthsFraction > 0) {
+          const periodInterest = runningPrincipal * (activeRate / 100) * monthsFraction;
+          accumulatedInterestDue += periodInterest;
+          totalInterestDue += periodInterest;
         }
 
-        amortizationTimeline.push({
-          data: currentDate,
-          origem: p.origin,
-          descricao: desc,
-          cobradoCredor: chargedByCreditor,
-          valorPago: paid,
-          jurosPeriodo: periodInterest,
-          amortizacaoCapital: principalAmortization,
-          saldoDevedor: runningBalance,
-          diferenca: diff,
-          status: eventStatus,
-          evidencia: p.evidence
-        });
+        if (!ev.isPayment) {
+          // NOVO DÉBITO (EMPRÉSTIMO OU GASTO NO CARTÃO)
+          runningPrincipal += ev.amount;
+          activeRate = ev.monthlyRate || activeRate;
+
+          amortizationTimeline.push({
+            data: currentDate,
+            origem: ev.type === 'CARTAO_CREDITO' ? 'Cartão de Crédito' : 'Empréstimo em Dinheiro',
+            descricao: `${ev.type === 'CARTAO_CREDITO' ? '💳 Gasto no Cartão de Crédito' : '💵 Empréstimo em Dinheiro'}: R$ ${ev.amount.toFixed(2)} (${ev.description}) - Juros cobrados: ${ev.monthlyRate}% a.m.`,
+            cobradoCredor: 0,
+            valorPago: 0,
+            jurosPeriodo: 0,
+            amortizacaoCapital: 0,
+            saldoDevedor: runningPrincipal,
+            diferenca: 0,
+            status: ev.type === 'CARTAO_CREDITO' ? 'GASTO_CARTAO' : 'NOVO_EMPRESTIMO',
+            evidencia: `Taxa de juros: ${ev.monthlyRate}% ao mês.`
+          });
+        } else {
+          // PAGAMENTO / AMORTIZAÇÃO (ART. 354 DO CÓDIGO CIVIL)
+          const paid = ev.amount;
+          totalPaid += paid;
+
+          // 1. Quita juros vencidos primeiro
+          const interestPaid = Math.min(paid, accumulatedInterestDue);
+          accumulatedInterestDue -= interestPaid;
+          totalInterestChargedByCreditor += interestPaid;
+
+          // 2. O excedente AMORTIZA IMEDIATAMENTE O CAPITAL PRINCIPAL
+          const principalAmortization = Math.max(0, paid - interestPaid);
+          totalPrincipalAmortized += principalAmortization;
+          runningPrincipal -= principalAmortization;
+
+          let eventStatus = 'AMORTIZACAO';
+          let desc = '';
+
+          if (runningPrincipal <= 0) {
+            const creditExcess = Math.abs(runningPrincipal);
+            totalOverpaid += creditExcess;
+            runningPrincipal = 0;
+            eventStatus = 'QUITADO_EXCEDE';
+            desc = `Pagamento de R$ ${paid.toFixed(2)}: QUITAÇÃO TOTAL DA DÍVIDA! Amortizou R$ ${principalAmortization.toFixed(2)} com R$ ${creditExcess.toFixed(2)} de pagamento excedente a restituir.`;
+          } else if (principalAmortization > 0) {
+            desc = `Pagamento de R$ ${paid.toFixed(2)}: Cobriu R$ ${interestPaid.toFixed(2)} de juros vencidos e AMORTIZOU R$ ${principalAmortization.toFixed(2)} do principal.`;
+          } else {
+            desc = `Pagamento de R$ ${paid.toFixed(2)}: Quitação de juros vencidos / rolagem do período.`;
+            eventStatus = 'JUROS_ROLAGEM';
+          }
+
+          amortizationTimeline.push({
+            data: currentDate,
+            origem: ev.origin,
+            descricao: desc,
+            cobradoCredor: interestPaid,
+            valorPago: paid,
+            jurosPeriodo: interestPaid,
+            amortizacaoCapital: principalAmortization,
+            saldoDevedor: runningPrincipal,
+            diferenca: 0,
+            status: eventStatus,
+            evidencia: ev.evidence
+          });
+        }
 
         lastDate = currentDate;
       });
 
-      const finalStatus = runningBalance <= 0 || totalPaid >= (baseCapital + totalInterestDue)
+      const finalStatus = runningPrincipal <= 0 || totalPaid >= (totalContracted + totalInterestDue)
         ? 'QUITADO_PAGO_A_MAIS'
         : 'SALDO_DEVEDOR_RESTANTE';
 
       const finalResult = {
-        totalEmprestado: baseCapital,
+        totalEmprestado: totalContracted,
+        totalEmprestimosDinheiro: totalLoansCash,
+        totalGastosCartao: totalCardExpenses,
+        debtConditions: activeDebtConditions,
         totalPago: totalPaid,
         totalJurosDevidos: totalInterestDue,
         totalJurosCobrados: totalInterestChargedByCreditor,
@@ -509,11 +629,11 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         textRecords,
         receipts: allPayments,
         aiReport: aiAuditResponse || {
-          diagnostico_pericial: `Após minuciosa reconstituição contábil com aplicação do art. 354 do Código Civil e juros pactuados de ${monthlyInterestRate}% ao mês, verificou-se que foram pagos R$ ${totalPaid.toFixed(2)}. ${runningBalance <= 0 ? `A dívida encontra-se TOTALMENTE QUITADA, restando saldo credor a favor do devedor de R$ ${totalOverpaid.toFixed(2)} cobrado a mais.` : `O saldo devedor real e justo a pagar é de R$ ${runningBalance.toFixed(2)}.`}`,
+          diagnostico_pericial: `Após minuciosa reconstituição contábil com aplicação do art. 354 do Código Civil sobre ${activeDebtConditions.length} operações contratadas (Total Contratado: R$ ${totalContracted.toFixed(2)}), verificou-se que foram pagos R$ ${totalPaid.toFixed(2)}. ${runningBalance <= 0 ? `A dívida encontra-se TOTALMENTE QUITADA, restando saldo credor a favor do devedor de R$ ${totalOverpaid.toFixed(2)} cobrado a mais a ser devolvido.` : `O saldo devedor real e justo a pagar é de R$ ${runningBalance.toFixed(2)}.`}`,
           irregularidades_detectadas: [
-            'Cobrança contínua de juros sobre o valor inicial sem abater as parcelas antecipadas já pagas.',
-            'Não aplicação imediata da amortização de capital após o pagamento de valores superiores aos juros mensais.',
-            'Cobrança de juros duplicados sobre períodos já quitados pelo devedor.'
+            'Cobrança contínua de juros sobre o valor inicial sem abater as amortizações e pagamentos parciais já realizados.',
+            'Não aplicação imediata da amortização do capital após o pagamento de valores superiores aos juros mensais.',
+            'Cobrança de juros duplicados sobre períodos ou despesas de cartão já quitadas.'
           ]
         }
       };
@@ -548,11 +668,12 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         ['Credor Auditado:', selectedContact?.name || 'Credor'],
         ['Telefone do Credor:', selectedContact?.phone || 'Não informado'],
         ['Data da Emissão da Perícia:', new Date().toLocaleDateString('pt-BR')],
-        ['Taxa de Juros Mensal Aplicada:', `${monthlyInterestRate}% ao mês`],
         ['Regra de Amortização:', 'Código Civil Brasileiro art. 354 (Amortização Linear Imediata)'],
         [''],
         ['RESUMO DOS VALORES APURADOS (R$):'],
-        ['Capital Inicial Emprestado:', auditResult.totalEmprestado],
+        ['Total de Empréstimos em Dinheiro/PIX:', auditResult.totalEmprestimosDinheiro || 0],
+        ['Total de Gastos no Cartão de Crédito:', auditResult.totalGastosCartao || 0],
+        ['Total Geral do Principal Contratado:', auditResult.totalEmprestado],
         ['Total Efetivamente Pago pelo Usuário:', auditResult.totalPago],
         ['Total de Juros Legais Devidos:', auditResult.totalJurosDevidos],
         ['Total de Capital Principal Amortizado:', auditResult.totalAmortizado],
@@ -570,7 +691,19 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
       XLSX.utils.book_append_sheet(wb, wsSummary, 'Resumo do Laudo');
 
-      // ── ABA 2: EXTRATO CRONOLÓGICO DE AMORTIZAÇÕES ──
+      // ── ABA 2: CONDIÇÕES DE EMPRÉSTIMOS E CARTÃO DE CRÉDITO ──
+      const conditionsHeaders = ['Tipo de Operação', 'Data', 'Valor (R$)', 'Juros Cobrados (% a.m.)', 'Descrição / Finalidade'];
+      const conditionsRows = (auditResult.debtConditions || []).map(c => [
+        c.type === 'credit_card' ? 'Gasto no Cartão de Crédito' : 'Empréstimo em Dinheiro',
+        c.date,
+        c.amount,
+        `${c.monthlyRate}% ao mês`,
+        c.description
+      ]);
+      const wsConditions = XLSX.utils.aoa_to_sheet([conditionsHeaders, ...conditionsRows]);
+      XLSX.utils.book_append_sheet(wb, wsConditions, 'Empréstimos e Cartão');
+
+      // ── ABA 3: EXTRATO CRONOLÓGICO DE AMORTIZAÇÕES ──
       const timelineHeaders = [
         'Data',
         'Origem do Evento',
@@ -880,7 +1013,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           )}
         </div>
 
-        {/* PASSO 2: PARÂMETROS DA NEGOCIAÇÃO / DÍVIDA */}
+        {/* PASSO 2: CONDIÇÕES DE EMPRÉSTIMO & GASTOS NO CARTÃO (MÚLTIPLOS) */}
         <div style={{
           background: 'rgba(15, 23, 42, 0.9)',
           border: '1px solid var(--line)',
@@ -890,92 +1023,362 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           flexDirection: 'column',
           gap: 14
         }}>
-          <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>⚙️</span> Passo 2: Condições do Empréstimo
-          </div>
-
-          <div style={{ fontSize: 12.5, color: 'var(--ink2)' }}>
-            Defina os dados da negociação para calibrar o recálculo contábil:
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div>
-              <label style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 4 }}>
-                Capital Inicial (R$):
-              </label>
-              <input
-                type="number"
-                placeholder="Ex: 5000 (ou deixe vazio)"
-                value={initialDebt}
-                onChange={(e) => setInitialDebt(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '9px 12px',
-                  borderRadius: 8,
-                  border: '1px solid var(--line)',
-                  background: 'rgba(0,0,0,0.4)',
-                  color: '#fff',
-                  fontSize: 13
-                }}
-              />
-              <span style={{ fontSize: 10.5, color: 'var(--ink2)' }}>Deixe vazio para a IA deduzir do chat</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>⚙️</span> Passo 2: Condições do Empréstimo & Cartão de Crédito
             </div>
 
-            <div>
-              <label style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 4 }}>
-                Juros Cobrados (% ao Mês):
-              </label>
-              <input
-                type="number"
-                placeholder="Ex: 10"
-                value={monthlyInterestRate}
-                onChange={(e) => setMonthlyInterestRate(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '9px 12px',
-                  borderRadius: 8,
-                  border: '1px solid var(--line)',
-                  background: 'rgba(0,0,0,0.4)',
-                  color: '#fff',
-                  fontSize: 13
-                }}
-              />
-              <span style={{ fontSize: 10.5, color: 'var(--ink2)' }}>Taxa informada pelo credor</span>
-            </div>
-          </div>
-
-          <div>
-            <label style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 4 }}>
-              Data de Início do Empréstimo (Opcional):
-            </label>
-            <input
-              type="date"
-              value={debtStartDate}
-              onChange={(e) => setDebtStartDate(e.target.value)}
+            <button
+              type="button"
+              onClick={() => setShowAddCondition(!showAddCondition)}
               style={{
-                width: '100%',
-                padding: '9px 12px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 14px',
                 borderRadius: 8,
-                border: '1px solid var(--line)',
-                background: 'rgba(0,0,0,0.4)',
-                color: '#fff',
-                fontSize: 13
+                background: showAddCondition ? 'rgba(239, 68, 68, 0.15)' : 'var(--teal)',
+                color: showAddCondition ? '#EF4444' : '#081018',
+                border: showAddCondition ? '1px solid rgba(239, 68, 68, 0.4)' : 'none',
+                fontWeight: 900,
+                fontSize: 12,
+                cursor: 'pointer'
               }}
-            />
+            >
+              {showAddCondition ? '✕ Fechar Cadastro' : '➕ Novo Empréstimo / Cartão'}
+            </button>
+          </div>
+
+          <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.4 }}>
+            Cadastre múltiplos empréstimos e compras feitas no cartão de crédito da pessoa com suas respectivas taxas de juros (ex: 5% no cartão, 10% no empréstimo):
+          </div>
+
+          {/* FORMULÁRIO PARA ADICIONAR NOVO REGISTRO */}
+          {showAddCondition && (
+            <div style={{
+              padding: 16,
+              borderRadius: 12,
+              background: 'rgba(0, 0, 0, 0.5)',
+              border: '1px solid rgba(0, 229, 155, 0.4)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 900, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>📝</span> Novo Registro de Débito
+              </div>
+
+              {/* SELEÇÃO DO TIPO: EMPRÉSTIMO VS CARTÃO */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setConditionForm(prev => ({ ...prev, type: 'loan', monthlyRate: prev.monthlyRate === '5' ? '10' : prev.monthlyRate }))}
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: conditionForm.type === 'loan' ? '1px solid var(--teal)' : '1px solid var(--line)',
+                    background: conditionForm.type === 'loan' ? 'rgba(0, 229, 155, 0.18)' : 'rgba(255,255,255,0.03)',
+                    color: conditionForm.type === 'loan' ? 'var(--teal)' : 'var(--ink2)',
+                    fontWeight: 800,
+                    fontSize: 12,
+                    cursor: 'pointer'
+                  }}
+                >
+                  💵 Empréstimo em Dinheiro (PIX)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setConditionForm(prev => ({ ...prev, type: 'credit_card', monthlyRate: prev.monthlyRate === '10' ? '5' : prev.monthlyRate }))}
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    border: conditionForm.type === 'credit_card' ? '1px solid #38BDF8' : '1px solid var(--line)',
+                    background: conditionForm.type === 'credit_card' ? 'rgba(56, 189, 248, 0.18)' : 'rgba(255,255,255,0.03)',
+                    color: conditionForm.type === 'credit_card' ? '#38BDF8' : 'var(--ink2)',
+                    fontWeight: 800,
+                    fontSize: 12,
+                    cursor: 'pointer'
+                  }}
+                >
+                  💳 Gasto no Cartão de Crédito
+                </button>
+              </div>
+
+              {/* CAMPOS DE VALOR E DATA */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 4 }}>
+                    Valor (R$):
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Ex: 1500.00"
+                    value={conditionForm.amount}
+                    onChange={(e) => setConditionForm({ ...conditionForm, amount: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: '1px solid var(--line)',
+                      background: 'rgba(0,0,0,0.4)',
+                      color: '#fff',
+                      fontSize: 12.5
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 4 }}>
+                    Data da Operação:
+                  </label>
+                  <input
+                    type="date"
+                    value={conditionForm.date}
+                    onChange={(e) => setConditionForm({ ...conditionForm, date: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: '1px solid var(--line)',
+                      background: 'rgba(0,0,0,0.4)',
+                      color: '#fff',
+                      fontSize: 12.5
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* CAMPOS DE JUROS E DESCRIÇÃO */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 4 }}>
+                    Juros Cobrados (% ao Mês):
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder={conditionForm.type === 'credit_card' ? 'Ex: 5' : 'Ex: 10'}
+                    value={conditionForm.monthlyRate}
+                    onChange={(e) => setConditionForm({ ...conditionForm, monthlyRate: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: '1px solid var(--line)',
+                      background: 'rgba(0,0,0,0.4)',
+                      color: '#fff',
+                      fontSize: 12.5
+                    }}
+                  />
+                  <span style={{ fontSize: 10, color: 'var(--ink2)' }}>
+                    {conditionForm.type === 'credit_card' ? 'Cobrança do cartão (padrão 5%)' : 'Juro contratado (padrão 10%)'}
+                  </span>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 4 }}>
+                    Descrição / Finalidade:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={conditionForm.type === 'credit_card' ? 'Ex: Compra Mercado' : 'Ex: Empréstimo inicial'}
+                    value={conditionForm.description}
+                    onChange={(e) => setConditionForm({ ...conditionForm, description: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      border: '1px solid var(--line)',
+                      background: 'rgba(0,0,0,0.4)',
+                      color: '#fff',
+                      fontSize: 12.5
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* BOTÕES DE SALVAR E CANCELAR */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAddCondition(false)}
+                  style={{
+                    padding: '7px 12px',
+                    borderRadius: 8,
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid var(--line)',
+                    color: '#fff',
+                    fontSize: 12,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddCondition}
+                  style={{
+                    padding: '7px 16px',
+                    borderRadius: 8,
+                    background: 'var(--teal)',
+                    border: 'none',
+                    color: '#081018',
+                    fontWeight: 900,
+                    fontSize: 12,
+                    cursor: 'pointer'
+                  }}
+                >
+                  ✓ Salvar Registro
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* RESUMO DOS DÉBITOS REGISTRADOS */}
+          {debtConditions.length > 0 && (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+              gap: 8,
+              padding: 10,
+              borderRadius: 10,
+              background: 'rgba(0,0,0,0.3)',
+              border: '1px solid rgba(255,255,255,0.06)'
+            }}>
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--ink2)', fontWeight: 700 }}>💵 DINHEIRO / PIX:</div>
+                <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--teal)' }}>
+                  R$ {debtConditions.filter(c => c.type !== 'credit_card').reduce((sum, c) => sum + c.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--ink2)', fontWeight: 700 }}>💳 CARTÃO DE CRÉDITO:</div>
+                <div style={{ fontSize: 13, fontWeight: 900, color: '#38BDF8' }}>
+                  R$ {debtConditions.filter(c => c.type === 'credit_card').reduce((sum, c) => sum + c.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 10, color: 'var(--ink2)', fontWeight: 700 }}>💰 TOTAL CONTRATADO:</div>
+                <div style={{ fontSize: 13, fontWeight: 900, color: '#fff' }}>
+                  R$ {debtConditions.reduce((sum, c) => sum + c.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* LISTA ORGANIZADA DE EMPRÉSTIMOS E GASTOS NO CARTÃO */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            maxHeight: 240,
+            overflowY: 'auto'
+          }}>
+            {debtConditions.length === 0 ? (
+              <div style={{
+                padding: 16,
+                textAlign: 'center',
+                borderRadius: 10,
+                background: 'rgba(0,0,0,0.2)',
+                border: '1px dashed var(--line)'
+              }}>
+                <div style={{ fontSize: 12, color: 'var(--ink2)' }}>
+                  Nenhum empréstimo ou gasto no cartão cadastrado ainda.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAddCondition(true)}
+                  style={{
+                    marginTop: 8,
+                    padding: '6px 14px',
+                    borderRadius: 8,
+                    background: 'var(--teal)',
+                    color: '#081018',
+                    border: 'none',
+                    fontWeight: 900,
+                    fontSize: 11.5,
+                    cursor: 'pointer'
+                  }}
+                >
+                  ➕ Adicionar Primeiro Registro
+                </button>
+              </div>
+            ) : (
+              debtConditions.map((cond, idx) => {
+                const isCard = cond.type === 'credit_card';
+                return (
+                  <div
+                    key={cond.id || idx}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: 10,
+                      background: isCard ? 'rgba(56, 189, 248, 0.08)' : 'rgba(0, 229, 155, 0.08)',
+                      border: `1px solid ${isCard ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 229, 155, 0.3)'}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 10
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 18 }}>{isCard ? '💳' : '💵'}</span>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{
+                            fontSize: 10,
+                            fontWeight: 900,
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            background: isCard ? '#38BDF8' : 'var(--teal)',
+                            color: '#081018'
+                          }}>
+                            {isCard ? 'CARTÃO DE CRÉDITO' : 'EMPRÉSTIMO'}
+                          </span>
+                          <span style={{ fontSize: 13, fontWeight: 900, color: '#fff' }}>
+                            R$ {cond.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 2 }}>
+                          📅 {cond.date} | ⚡ <strong>{cond.monthlyRate}% ao mês</strong> | {cond.description}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveCondition(cond.id)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#EF4444',
+                        cursor: 'pointer',
+                        fontSize: 14,
+                        padding: 4
+                      }}
+                      title="Excluir condição"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                );
+              })
+            )}
           </div>
 
           <div style={{
-            padding: 12,
+            padding: 10,
             borderRadius: 10,
             background: 'rgba(0,0,0,0.3)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            fontSize: 11.5,
+            border: '1px solid rgba(255,255,255,0.06)',
+            fontSize: 11,
             color: 'var(--ink2)',
-            lineHeight: 1.5
+            lineHeight: 1.4
           }}>
-            ⚖️ <strong>Regra Pericial de Amortização (Código Civil art. 354):</strong><br />
-            Cada pagamento realizado é abatido primeiramente dos juros do período. O saldo excedente abate
-            <strong> imediatamente o valor principal da dívida</strong>, reduzindo os juros dos meses seguintes.
+            ⚖️ <strong>Regra de Amortização (Código Civil art. 354):</strong> Pagamentos abatem primeiro os juros acumulados até a data e todo o restante <strong>abate imediatamente o saldo principal</strong>.
           </div>
         </div>
       </div>
@@ -1229,18 +1632,20 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
             gap: 12
           }}>
-            {/* Card 1: Total Emprestado */}
+            {/* Card 1: Total Emprestado & Cartão */}
             <div style={{
               padding: 18,
               borderRadius: 14,
               background: 'rgba(15, 23, 42, 0.9)',
               border: '1px solid var(--line)'
             }}>
-              <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--ink2)' }}>CAPITAL EMPRESTADO:</div>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--ink2)' }}>TOTAL DO PRINCIPAL CONTRATADO:</div>
               <div style={{ fontSize: 20, fontWeight: 900, color: '#fff', marginTop: 4 }}>
                 R$ {auditResult.totalEmprestado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--teal)', marginTop: 4 }}>Taxa: {monthlyInterestRate}% / mês</div>
+              <div style={{ fontSize: 11, color: 'var(--teal)', marginTop: 4 }}>
+                💵 Dinheiro: R$ {(auditResult.totalEmprestimosDinheiro || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | 💳 Cartão: R$ {(auditResult.totalGastosCartao || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </div>
             </div>
 
             {/* Card 2: Total Pago */}
