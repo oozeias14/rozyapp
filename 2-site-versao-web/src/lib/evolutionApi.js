@@ -1538,6 +1538,7 @@ export function auditBroadcastDeliveryReceipts(receiptsData, targetUsers = []) {
       }
     }
 
+
     const is2Checks = Boolean(matchReceipt?.is2Checks || matchReceipt?.checks === 2);
 
     if (is2Checks) {
@@ -1567,4 +1568,219 @@ export function auditBroadcastDeliveryReceipts(receiptsData, targetUsers = []) {
 }
 
 
+// ── AUDITORIA SIMPLIFICADA: QUEM O WHATSAPP CONECTADO MANDOU MSG NAS ÚLTIMAS 24H ────
+// Busca TODAS as mensagens enviadas (fromMe=true) nas últimas 24 horas,
+// extrai os números de destino e retorna um Set de assinaturas (phone signatures)
+// para cruzar com a base de contatos do aplicativo.
+export async function scanSentMessagesLast24h() {
+  const sentPhoneSigs = new Set();
+  const { instanceName } = getEvolutionConfig();
+
+  try {
+    // 1. Busca contatos e chats para mapeamento LID -> telefone real
+    const [contacts, chats] = await Promise.all([
+      fetchWhatsAppContacts().catch(() => []),
+      fetchWhatsAppChats().catch(() => [])
+    ]);
+
+    // 2. Busca muitas páginas de mensagens (24h = volume alto)
+    const allMsgsList = [];
+    for (let p = 1; p <= 50; p++) {
+      const msgsP = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+        method: 'POST',
+        body: JSON.stringify({ limit: 100, page: p }),
+      }).catch(() => null);
+      const recs = msgsP?.messages?.records || (Array.isArray(msgsP) ? msgsP : []);
+      if (Array.isArray(recs) && recs.length > 0) {
+        allMsgsList.push(...recs);
+      } else {
+        break; // sem mais páginas
+      }
+    }
+
+    // 3. Busca mensagens de listas de transmissão (@broadcast)
+    const broadcastJids = new Set();
+    (chats || []).forEach(c => {
+      const rj = c.remoteJid || c.id || '';
+      if (rj.includes('@broadcast') && !rj.includes('status@broadcast')) broadcastJids.add(rj);
+    });
+    allMsgsList.forEach(m => {
+      const rj = m.key?.remoteJid || m.remoteJid || '';
+      if (rj.includes('@broadcast') && !rj.includes('status@broadcast')) broadcastJids.add(rj);
+    });
+
+    for (const bjId of broadcastJids) {
+      const bRes = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+        method: 'POST',
+        body: JSON.stringify({ where: { key: { remoteJid: bjId } }, limit: 200 }),
+      }).catch(() => null);
+      const bRecs = bRes?.messages?.records || (Array.isArray(bRes) ? bRes : []);
+      if (Array.isArray(bRecs) && bRecs.length > 0) {
+        allMsgsList.push(...bRecs);
+      }
+    }
+
+    // 4. Busca recibos de status (statusMessage) de transmissões
+    const statusRecords = [];
+    for (const bjId of broadcastJids) {
+      const sRes = await evolutionFetch(`/chat/findStatusMessage/${instanceName}`, {
+        method: 'POST',
+        body: JSON.stringify({ where: { remoteJid: bjId }, limit: 500 }),
+      }).catch(() => null);
+      const sList = Array.isArray(sRes) ? sRes : (sRes?.records || []);
+      if (Array.isArray(sList) && sList.length > 0) {
+        statusRecords.push(...sList);
+      }
+    }
+
+    // Recibos gerais
+    const sResGeneral = await evolutionFetch(`/chat/findStatusMessage/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({ limit: 500 }),
+    }).catch(() => null);
+    const sGenList = Array.isArray(sResGeneral) ? sResGeneral : (sResGeneral?.records || []);
+    if (Array.isArray(sGenList) && sGenList.length > 0) {
+      statusRecords.push(...sGenList);
+    }
+
+    // 5. Deduplica mensagens
+    const msgMap = new Map();
+    allMsgsList.forEach((m) => {
+      const kId = m?.key?.id || m?.id;
+      if (kId && !msgMap.has(kId)) {
+        msgMap.set(kId, m);
+      }
+    });
+    const allMsgs = Array.from(msgMap.values());
+
+    // 6. Constrói mapeamento LID -> telefone real
+    const lidToPhone = await buildLidPhoneMapping(chats, allMsgs, contacts, statusRecords);
+
+    // Identifica o próprio número do robô conectado para ignorar
+    const ownerPhones = new Set();
+    try {
+      const instData = await fetchInstanceStatus();
+      const oJid = instData?.data?.instance?.ownerJid;
+      if (oJid) {
+        const cleanO = extractCleanPhone(oJid);
+        if (cleanO) ownerPhones.add(cleanO);
+        getPhoneSignatures(cleanO).forEach(s => ownerPhones.add(s));
+      }
+    } catch (e) {}
+
+    // Helper: adicionar número confirmado no Set
+    function addPhone(jid) {
+      if (!jid || typeof jid !== 'string') return;
+      if (jid.includes('@g.us') || jid.includes('status@broadcast')) return;
+      let clean = extractCleanPhone(jid);
+      if (!clean || ownerPhones.has(clean)) return;
+      if (lidToPhone.has(clean)) clean = lidToPhone.get(clean);
+      if (clean && clean.length >= 8 && !ownerPhones.has(clean)) {
+        getPhoneSignatures(clean).forEach((sig) => sentPhoneSigs.add(sig));
+      }
+    }
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const cutoffSec = nowSec - (24 * 3600); // últimas 24 horas
+
+    function getTimestampSec(ts) {
+      if (!ts) return 0;
+      if (typeof ts === 'object' && ts !== null && ts.low) ts = ts.low;
+      if (typeof ts === 'string') {
+        if (ts.includes('-') || ts.includes('T')) {
+          const dt = new Date(ts);
+          if (!isNaN(dt.getTime())) return Math.floor(dt.getTime() / 1000);
+        } else {
+          ts = parseInt(ts, 10);
+        }
+      }
+      if (ts > 10000000000) return Math.floor(ts / 1000);
+      return Number(ts) || 0;
+    }
+
+    function isWithin24h(msg) {
+      if (!msg) return false;
+      let ts = msg.messageTimestamp || msg.createdAt || msg.updatedAt;
+      if (!ts && msg.lastMessage) ts = msg.lastMessage.messageTimestamp || msg.lastMessage.createdAt || msg.lastMessage.updatedAt;
+      const tsSec = getTimestampSec(ts);
+      return tsSec >= cutoffSec && tsSec <= nowSec + 60;
+    }
+
+    // 7. Filtra: TODAS as mensagens enviadas pelo robô (fromMe=true) nas últimas 24h
+    //    + mensagens recebidas (fromMe=false) = contato interagiu / respondeu
+    allMsgs.forEach((m) => {
+      if (!isWithin24h(m)) return;
+
+      const rJid = m.key?.remoteJid || m.remoteJid || '';
+      const isBroadcast = (rJid.includes('@broadcast') && !rJid.includes('status@broadcast')) || m.broadcast;
+
+      if (isBroadcast) {
+        // Mensagens de transmissão: pegar destinatários dos recibos
+        (m.MessageUpdate || []).forEach((mu) => {
+          addPhone(mu.participant);
+          addPhone(mu.fromMeJid);
+          addPhone(mu.key?.participant);
+          addPhone(mu.key?.remoteJidAlt);
+        });
+        (m.userReceipt || []).forEach((ur) => {
+          addPhone(ur.userJid);
+          addPhone(ur.jid);
+          addPhone(ur.user);
+          addPhone(ur.userJidAlt);
+        });
+        // Reações
+        const rKey = m.message?.reactionMessage?.key;
+        if (rKey) {
+          addPhone(rKey.participant);
+          addPhone(m.key?.remoteJidAlt);
+        }
+      } else if (!rJid.includes('@g.us')) {
+        // Mensagem direta 1:1 (enviada OU recebida pelo robô)
+        addPhone(rJid);
+        addPhone(m.key?.remoteJidAlt);
+        addPhone(m.remoteJidAlt);
+      }
+    });
+
+    // 8. Chats com atividade recente (última mensagem nas 24h)
+    (chats || []).forEach((c) => {
+      const rJid = c.remoteJid || c.id || '';
+      if (rJid.includes('@g.us')) return;
+
+      const isBroadcast = rJid.includes('@broadcast') && !rJid.includes('status@broadcast');
+
+      if (isBroadcast) {
+        // Chats de broadcast com mensagem recente
+        if (isWithin24h(c.lastMessage) || isWithin24h(c)) {
+          // Participantes são resolvidos via statusRecords abaixo
+        }
+      } else {
+        if (isWithin24h(c.lastMessage) || isWithin24h(c)) {
+          addPhone(rJid);
+          addPhone(c.remoteJidAlt);
+          addPhone(c.lastMessage?.key?.remoteJidAlt);
+        }
+      }
+    });
+
+    // 9. Processa recibos de status (statusMessage) das últimas 24h
+    statusRecords.forEach((sr) => {
+      if (sr.updatedAt || sr.createdAt) {
+        const tsSec = getTimestampSec(sr.updatedAt || sr.createdAt);
+        if (tsSec < cutoffSec) return;
+      }
+      const jids = [
+        sr.participant, sr.remoteJid, sr.fromMeJid,
+        sr.participantAlt, sr.remoteJidAlt,
+        sr.key?.participant, sr.key?.remoteJid
+      ].filter(Boolean);
+      jids.forEach(addPhone);
+    });
+
+  } catch (e) {
+    console.warn('Erro ao escanear mensagens enviadas nas últimas 24h:', e);
+  }
+
+  return sentPhoneSigs;
+}
 

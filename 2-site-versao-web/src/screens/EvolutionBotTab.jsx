@@ -22,6 +22,7 @@ import {
   getContactDeliveryStatusDirect,
   scanAllChatsForPhrase,
   checkContactHasBroadcastPhrase,
+  scanSentMessagesLast24h,
   generateTransmissionBatches,
   getPhoneSignatures,
   extractCleanPhone,
@@ -1110,7 +1111,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
   const [selectedTestBatch, setSelectedTestBatch] = useState('T01');
   const [verificationMethod, setVerificationMethod] = useState('phrase_track'); // 'phrase_track' | 'auto_broadcast' | 'paste'
   const [broadcastPhraseText, setBroadcastPhraseText] = useState('');
-  const [phraseTimeHours, setPhraseTimeHours] = useState(3); // Janela de 3 horas a partir do clique
+  const [phraseTimeHours, setPhraseTimeHours] = useState(24); // Janela de 24 horas a partir do clique
   const [detectedBroadcastLists, setDetectedBroadcastLists] = useState([]);
   const [selectedBroadcastJid, setSelectedBroadcastJid] = useState('');
   const [foundBroadcastMessage, setFoundBroadcastMessage] = useState(null);
@@ -1720,14 +1721,12 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
     }
   }
 
-  // 📝 RASTREADOR DE CONVERSAS POR FRASE DA TRANSMISSÃO (Ideia Brilhante do Usuário)
+  // 📝 AUDITORIA SIMPLIFICADA: Quem o WhatsApp conectado mandou msg nas últimas 24 horas
   async function handleAuditByPhraseLive() {
     if (!status.connected) {
       alert('Conecte o WhatsApp pelo QR Code ou Código antes de rastrear!');
       return;
     }
-
-    const cleanPhrase = (broadcastPhraseText || '').trim();
 
     const targetUsers = getSelectedTargetUsers();
     if (targetUsers.length === 0) {
@@ -1745,20 +1744,14 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
     setTestLogs([]);
     setTestProgress({ current: 0, total: targetUsers.length, success: 0, failed: 0 });
 
-    const timeDesc = phraseTimeHours <= 0.17 ? '10 minutos' : phraseTimeHours <= 0.25 ? '15 minutos' : phraseTimeHours <= 0.5 ? '30 minutos' : `${phraseTimeHours}h`;
-
-    if (cleanPhrase) {
-      addLog(`📝 Iniciando rastreamento da frase "${cleanPhrase}" nos últimos ${timeDesc}...`, 'info');
-    } else {
-      addLog(`📝 Cruzando contatos do sistema com o WhatsApp nos últimos ${timeDesc}...`, 'info');
-    }
+    addLog(`📝 Buscando TODAS as mensagens enviadas/recebidas nas últimas 24 horas no WhatsApp conectado...`, 'info');
 
     try {
-      addLog(`⚡ Escaneando mensagens e listas de transmissão no WhatsApp...`, 'info');
-      const preScannedSigs = await scanAllChatsForPhrase(cleanPhrase, phraseTimeHours);
-      addLog(`📥 ${preScannedSigs.size} identificadores do WhatsApp confirmaram atividade nos últimos ${timeDesc}.`, 'info');
+      addLog(`⚡ Escaneando histórico de mensagens das últimas 24 horas...`, 'info');
+      const sentPhoneSigs = await scanSentMessagesLast24h();
+      addLog(`📥 ${sentPhoneSigs.size} identificadores de telefone encontrados com atividade nas últimas 24h.`, 'info');
 
-      addLog(`📊 Auditando ${targetUsers.length} contatos selecionados...`, 'info');
+      addLog(`📊 Cruzando com ${targetUsers.length} contatos cadastrados no aplicativo...`, 'info');
 
       let savedCount = 0;
       let notSavedCount = 0;
@@ -1766,34 +1759,25 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
 
       for (let i = 0; i < targetUsers.length; i++) {
         if (testAbortRef.current) {
-          addLog('⏹️ Rastreamento interrompido pelo usuário.', 'delay');
+          addLog('⏹️ Análise interrompida pelo usuário.', 'delay');
           break;
         }
 
         const u = targetUsers[i];
         const rawPhone = u.whatsapp || u.phone || '';
         const fullName = (u.name || 'Sem nome').trim();
+        const cleanPhone = extractCleanPhone(rawPhone);
+        const sigs = getPhoneSignatures(cleanPhone);
 
-        const phraseCheck = await checkContactHasBroadcastPhrase(rawPhone, cleanPhrase, preScannedSigs, phraseTimeHours);
-        let is2Checks = phraseCheck.has2Checks;
-
-        // Segunda linha de garantia: se não capturou no escaneamento geral,
-        // checa diretamente a conversa individual do contato no WhatsApp
-        if (!is2Checks && rawPhone) {
-          try {
-            const directCheck = await getContactDeliveryStatusDirect(rawPhone, phraseTimeHours);
-            if (directCheck && directCheck.has2Checks) {
-              is2Checks = true;
-            }
-          } catch (e) {}
-        }
+        // Verifica se alguma assinatura do contato bate com as mensagens enviadas nas últimas 24h
+        const is2Checks = sigs.some(sig => sentPhoneSigs.has(sig));
 
         if (is2Checks) {
           savedCount++;
-          addLog(`✓✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): TRANSMISSÃO / ATIVIDADE ENTREGUE (2 Traços) ➔ SALVO!`, 'success');
+          addLog(`✓✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): RECEBEU MENSAGEM NAS ÚLTIMAS 24H ➔ CONFIRMADO!`, 'success');
         } else {
           notSavedCount++;
-          addLog(`✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): SEM MENSAGEM / ENTREGA ➔ PENDENTE (1 Traço)`, 'error');
+          addLog(`✓ [${i + 1}/${targetUsers.length}] ${fullName} (${rawPhone}): SEM MENSAGEM NAS ÚLTIMAS 24H ➔ PENDENTE`, 'error');
         }
 
         evaluated.push({
@@ -1804,7 +1788,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
           city: u.city || '',
           checks: is2Checks ? 2 : 1,
           status: is2Checks ? 'DELIVERY_ACK' : 'SERVER_ACK',
-          label: is2Checks ? `✓✓ 2 Traços (Salvo / Transmissão Recebida)` : `✓ 1 Traço (Não Salvo / Sem Entrega)`,
+          label: is2Checks ? `✓✓ 2 Traços (Mensagem Enviada/Recebida nas Últimas 24h)` : `✓ 1 Traço (Sem Mensagem nas Últimas 24h)`,
           isSaved: is2Checks,
         });
 
@@ -1815,11 +1799,12 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
           failed: notSavedCount,
         });
 
-        await new Promise(r => setTimeout(r, 30));
+        // Sem delay excessivo - a busca já foi feita, agora é só cruzamento local
+        if (i % 100 === 0) await new Promise(r => setTimeout(r, 10));
       }
 
       setTestResults(evaluated);
-      addLog(`🏁 Rastreamento finalizado! Atividade nos últimos ${timeDesc} (Salvos): ${savedCount} | Sem atividade (Pendentes): ${notSavedCount}`, 'info');
+      addLog(`🏁 Análise finalizada! Receberam mensagem nas últimas 24h: ${savedCount} | Sem mensagem: ${notSavedCount}`, 'info');
 
       // Auto-atualização dos salvos encontrados na auditoria (2 traços confirmados)
       const confirmedSavedPhones = evaluated
@@ -1836,8 +1821,8 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
       }
 
     } catch (err) {
-      addLog(`❌ Erro no rastreamento por frase: ${err.message}`, 'error');
-      alert('Erro no rastreamento: ' + err.message);
+      addLog(`❌ Erro na análise: ${err.message}`, 'error');
+      alert('Erro na análise: ' + err.message);
     } finally {
       setIsTestingRunning(false);
       setIsTestingPaused(false);
@@ -4425,7 +4410,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                           }}
                           onClick={handleAuditByPhraseLive}
                         >
-                          ⚡ Rastrear Transmissão das Últimas 3 Horas ({getSelectedTargetUsers().length} Contatos)
+                          ⚡ Verificar Quem Recebeu Mensagem nas Últimas 24 Horas ({getSelectedTargetUsers().length} Contatos)
                         </button>
 
                         <button
@@ -5070,7 +5055,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                   </span>
                   <div>
                     <div style={{ fontSize: 15, fontWeight: 900, color: '#fff' }}>
-                      Auditoria de Entrega Automática (Últimas 3 Horas)
+                      Auditoria de Entrega Automática (Últimas 24 Horas)
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
                       Identifique instantaneamente quem recebeu sua transmissão e quem ainda não tem o número salvo
@@ -5093,8 +5078,8 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
 
               <div style={{ fontSize: 12.5, color: 'var(--ink2)', lineHeight: 1.6 }}>
                 1. Dispare sua mensagem na Lista de Transmissão oficial no WhatsApp do Dr. Cândido.<br />
-                2. Clique no botão abaixo: o robô examina as últimas <strong>3 horas</strong> e cruza os números.<br />
-                3. Se o contato recebeu a mensagem enviada, ele é confirmado com <strong>2 traços (✓✓ Salvo na Agenda)</strong>. Se não recebeu, permanece com <strong>1 traço (⏱ Pendente)</strong>.
+                2. Clique no botão abaixo: o robô busca TODAS as mensagens enviadas/recebidas nas últimas <strong>24 horas</strong> e cruza com os contatos cadastrados.<br />
+                3. Se o contato recebeu mensagem, ele é confirmado com <strong>2 traços (✓✓ Recebeu)</strong>. Se não recebeu, permanece com <strong>1 traço (⏱ Pendente)</strong>.
               </div>
 
               {/* Ações de Auditoria: Executar, Rechecar Azul (25 min) e Limpar */}
@@ -5118,7 +5103,7 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                     }}
                     onClick={() => setShowBroadcastTestModal(true)}
                   >
-                    <span style={{ fontWeight: 900 }}>✓✓</span> Executar Auditoria de 3 Horas
+                    <span style={{ fontWeight: 900 }}>✓✓</span> Executar Auditoria de 24 Horas
                   </button>
 
                   {/* Botão Azul de Rechecagem (25 Minutos) */}
