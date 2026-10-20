@@ -108,7 +108,9 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
   // ── RESULTADOS E LAUDO PERICIAL ──
   const [auditResult, setAuditResult] = useState(null);
-  const [activeTab, setActiveTab] = useState('summary'); // 'summary' | 'amortization' | 'receipts' | 'transcripts' | 'comparison'
+  const [activeTab, setActiveTab] = useState('summary'); // 'summary' | 'dialogue' | 'receipts' | 'transcripts'
+  const [dialogSearch, setDialogSearch] = useState('');
+  const [dialogFilter, setDialogFilter] = useState('all'); // 'all' | 'audio' | 'text' | 'financial'
 
   function addLog(msg, type = 'info') {
     const time = new Date().toLocaleTimeString('pt-BR');
@@ -479,6 +481,97 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     reader.readAsText(file);
   }
 
+  // ── UTILITÁRIO DE CÁLCULO DE DIAS CORRIDOS (SEM DRIFT DE FUSO HORÁRIO) ──
+  function getDaysBetween(dateStr1, dateStr2) {
+    if (!dateStr1 || !dateStr2) return 0;
+    const p1 = dateStr1.slice(0, 10).split('-').map(Number);
+    const p2 = dateStr2.slice(0, 10).split('-').map(Number);
+    if (p1.length < 3 || p2.length < 3) return 0;
+    const utc1 = Date.UTC(p1[0], p1[1] - 1, p1[2]);
+    const utc2 = Date.UTC(p2[0], p2[1] - 1, p2[2]);
+    return Math.max(0, Math.round((utc2 - utc1) / (1000 * 60 * 60 * 24)));
+  }
+
+  // ── GERADOR DE ARQUIVO TEXTO COM TRANSCRIÇÃO INTEGRAL (.TXT) ──
+  function downloadTranscriptTxt() {
+    if (!auditResult || !auditResult.fullDialog || auditResult.fullDialog.length === 0) {
+      alert('Nenhuma transcrição de conversa disponível para baixar.');
+      return;
+    }
+
+    const targetInfo = selectedContact 
+      ? `${selectedContact.name} (${selectedContact.phone || selectedContact.jid?.replace('@s.whatsapp.net', '')})`
+      : (manualPhone || 'Credor');
+
+    let txt = '================================================================================\r\n';
+    txt += '   LAUDO DE TRANSCRIÇÃO FORENSE INTEGRAL DE DIÁLOGOS E ÁUDIOS DO WHATSAPP\r\n';
+    txt += '   Sistema Pericial de Auditoria Financeira & Reconstituição de Amortizações\r\n';
+    txt += '================================================================================\r\n\r\n';
+    txt += `ALVO AUDITADO: ${targetInfo}\r\n`;
+    txt += `DATA DA EMISSÃO: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}\r\n`;
+    txt += `MODO DE EXECUÇÃO: ${auditResult.executionMode === 'auto' ? 'Automático (Identificado e Transcrito por IA)' : 'Manual'}\r\n`;
+    txt += `TOTAL DE MENSAGENS E ÁUDIOS PROCESSADOS: ${auditResult.fullDialog.length}\r\n`;
+    txt += `TOTAL DE ÁUDIOS TRANSCREVความADOS POR IA: ${auditResult.audioTranscripts?.length || 0}\r\n`;
+    txt += `CRITÉRIO DE AMORTIZAÇÃO: Código Civil Brasileiro art. 354 (Amortização Linear dos Juros Primeiro)\r\n\r\n`;
+    txt += '--------------------------------------------------------------------------------\r\n';
+    txt += 'VEREDITO OFICIAL DA PERÍCIA (QUEM DEVE A QUEM):\r\n';
+    if (auditResult.status === 'QUITADO_PAGO_A_MAIS') {
+      txt += `>> O NÚMERO ${targetInfo} DEVE RESTITUIR R$ ${auditResult.totalPagoAMais.toFixed(2)} AO USUÁRIO!\r\n`;
+      txt += `   A dívida está TOTALMENTE QUITADA. O usuário pagou R$ ${auditResult.totalPago.toFixed(2)},\r\n`;
+      txt += `   enquanto o montante justo contratado somado aos juros legais calculados em dias corridos\r\n`;
+      txt += `   era de R$ ${(auditResult.totalEmprestado + auditResult.totalJurosDevidos).toFixed(2)}.\r\n`;
+      txt += `   Houve pagamento a mais de R$ ${auditResult.totalPagoAMais.toFixed(2)} a ser devolvido!\r\n`;
+    } else {
+      txt += `>> O USUÁRIO DEVE R$ ${auditResult.saldoFinalReal.toFixed(2)} AO NÚMERO ${targetInfo}.\r\n`;
+      txt += `   Do total contratado de R$ ${auditResult.totalEmprestado.toFixed(2)}, o usuário já amortizou\r\n`;
+      txt += `   R$ ${auditResult.totalAmortizado.toFixed(2)} do principal e pagou R$ ${auditResult.totalJurosCobrados.toFixed(2)} em juros.\r\n`;
+      txt += `   Resta pagar o saldo real recalculado de R$ ${auditResult.saldoFinalReal.toFixed(2)}.\r\n`;
+    }
+    txt += '--------------------------------------------------------------------------------\r\n\r\n';
+    txt += 'RESUMO DOS VALORES APURADOS (R$):\r\n';
+    txt += `• Total de Empréstimos em Dinheiro/PIX: R$ ${(auditResult.totalEmprestimosDinheiro || 0).toFixed(2)}\r\n`;
+    txt += `• Total de Gastos no Cartão de Crédito (5% a.m.): R$ ${(auditResult.totalGastosCartao || 0).toFixed(2)}\r\n`;
+    txt += `• Total Geral do Principal Contratado: R$ ${auditResult.totalEmprestado.toFixed(2)}\r\n`;
+    txt += `• Total Efetivamente Pago pelo Usuário: R$ ${auditResult.totalPago.toFixed(2)}\r\n`;
+    txt += `• Total de Juros Legais Devidos no Período: R$ ${auditResult.totalJurosDevidos.toFixed(2)}\r\n`;
+    txt += `• Total de Capital Principal Amortizado: R$ ${auditResult.totalAmortizado.toFixed(2)}\r\n`;
+    txt += `• Saldo Devedor Restante Real: R$ ${auditResult.saldoFinalReal.toFixed(2)}\r\n`;
+    txt += `• Valor Pago a Mais a Restituir: R$ ${auditResult.totalPagoAMais.toFixed(2)}\r\n\r\n`;
+    txt += '================================================================================\r\n';
+    txt += 'TRANSCRIÇÃO CRONOLÓGICA DAS CONVERSAS, ÁUDIOS E COMPROVANTES:\r\n';
+    txt += '================================================================================\r\n\r\n';
+
+    auditResult.fullDialog.forEach((item, index) => {
+      txt += `[${index + 1}] [${item.dateTime || item.date}] [${item.sender}] [${item.mediaTypeLabel}]:\r\n`;
+      txt += `"${item.content}"\r\n`;
+      if (item.resumoFinanceiro) {
+        txt += `   ↳ [Análise Pericial]: ${item.resumoFinanceiro}\r\n`;
+      }
+      if (item.taxaJuros) {
+        txt += `   ↳ [Taxa Citada]: ${item.taxaJuros}\r\n`;
+      }
+      if (item.valores && item.valores.length > 0) {
+        txt += `   ↳ [Valores Mencionados]: ${item.valores.join(', ')}\r\n`;
+      }
+      txt += '\r\n';
+    });
+
+    txt += '================================================================================\r\n';
+    txt += 'Fim do Documento de Transcrição Forense Integral.\r\n';
+    txt += 'Emitido pelo Sistema de Auditoria Financeira Pericial.\r\n';
+
+    const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const safePhone = (selectedContact?.phone || manualPhone || 'conversa').replace(/\D/g, '');
+    link.download = `transcricao_completa_audios_dialogos_${safePhone}_${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
   // ── MOTOR PERICIAL PRINCIPAL (COM SUPORTE A MODO MANUAL E AUTOMÁTICO) ──
   async function runFullDebtForensicAudit() {
     if (!selectedContact && !uploadedChatFile) {
@@ -491,8 +584,12 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     setAuditLogs([]);
     setAuditResult(null);
 
+    const targetContactPhone = selectedContact?.phone || (selectedContact?.jid ? selectedContact.jid.replace('@s.whatsapp.net', '') : manualPhone) || 'Credor';
+    const targetContactName = selectedContact?.name || 'Credor';
+    const targetContactDisplay = `${targetContactName} (${targetContactPhone})`;
+
     addLog('🚀 INICIANDO PERÍCIA FINANCEIRA FORENSE DE CONVERSA & AMORTIZAÇÕES', 'info');
-    addLog(`👤 Alvo da Perícia: ${selectedContact ? `${selectedContact.name} (${selectedContact.phone})` : 'Arquivo de Conversa'}`, 'info');
+    addLog(`👤 Alvo da Perícia: ${targetContactDisplay}`, 'info');
     addLog(`⚙️ Modo Escolhido no Passo 2: ${step2Mode === 'auto' ? '🤖 AUTOMÁTICO (Robô & IA)' : '📝 MANUAL'}`, 'info');
 
     try {
@@ -516,7 +613,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               messageTimestamp: Math.floor(new Date(`${isoDate}T${rawTime}:00`).getTime() / 1000),
               senderName: sender.trim(),
               text: text.trim(),
-              isoDate
+              isoDate,
+              rawTime
             });
           }
         });
@@ -539,15 +637,19 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
       const textRecords = [];
       const audioTranscripts = [];
+      const fullConversationDialog = [];
       let audioCount = 0;
 
       for (let i = 0; i < rawMessages.length; i++) {
         if (abortAuditRef.current) break;
         const msg = rawMessages[i];
         const isFromMe = msg.key?.fromMe ?? false;
-        const senderLabel = isFromMe ? 'Eu (Devedor)' : (selectedContact?.name || 'Credor');
+        const senderLabel = isFromMe ? 'Você (Devedor)' : `${targetContactName} (${targetContactPhone})`;
+        const senderNumber = isFromMe ? 'Você' : targetContactPhone;
         const tsSec = Number(msg.messageTimestamp || 0);
         const dateStr = msg.isoDate || (tsSec ? new Date(tsSec * 1000).toISOString().slice(0, 10) : 'Data Indefinida');
+        const timeStr = msg.rawTime || (tsSec ? new Date(tsSec * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '');
+        const dateTimeDisplay = `${dateStr} ${timeStr}`.trim();
 
         let textContent = msg.text ||
           msg.message?.conversation ||
@@ -555,20 +657,41 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           msg.message?.imageMessage?.caption ||
           '';
 
+        const isAudio = Boolean(msg.message?.audioMessage || msg.messageType === 'audioMessage');
+
         if (textContent.trim()) {
-          const hasFinancialKeywords = /(juro|amortiz|pag|devo|saldo|cobran|r\$|\d+,\d{2}|\d+\.\d{2}|deposit|pix|transferi|acordo|cobrou|venc|resta|cart|compra|fatura)/i.test(textContent);
-          textRecords.push({
+          const hasFinancialKeywords = /(juro|amortiz|pag|devo|saldo|cobran|r\$|\d+,\d{2}|\d+\.\d{2}|deposit|pix|transferi|acordo|cobrou|venc|resta|cart|compra|fatura|comprovante)/i.test(textContent);
+          const tItem = {
             date: dateStr,
+            time: timeStr,
             sender: senderLabel,
+            senderNumber,
+            isFromMe,
             text: textContent,
+            isFinancial: hasFinancialKeywords
+          };
+          textRecords.push(tItem);
+
+          fullConversationDialog.push({
+            id: msg.key?.id || `msg-${i}`,
+            date: dateStr,
+            time: timeStr,
+            dateTime: dateTimeDisplay,
+            timestamp: tsSec,
+            sender: senderLabel,
+            senderNumber,
+            isFromMe,
+            type: 'TEXT',
+            mediaTypeLabel: '💬 Mensagem de Texto',
+            content: textContent,
+            resumoFinanceiro: hasFinancialKeywords ? 'Mencionou termos financeiros' : '',
             isFinancial: hasFinancialKeywords
           });
         }
 
-        const isAudio = Boolean(msg.message?.audioMessage || msg.messageType === 'audioMessage');
         if (isAudio) {
           audioCount++;
-          addLog(`🎙️ Áudio #${audioCount} detectado em ${dateStr}. Extraindo áudio para escuta com IA...`, 'info');
+          addLog(`🎙️ Áudio #${audioCount} detectado em ${dateTimeDisplay}. Transcrevendo com IA...`, 'info');
           try {
             const base64Audio = await fetchMediaBase64FromMessage(msg);
             if (base64Audio) {
@@ -583,16 +706,38 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               });
               if (resp.ok) {
                 const audData = await resp.json();
-                audioTranscripts.push({
+                const audItem = {
                   date: dateStr,
+                  time: timeStr,
                   sender: senderLabel,
+                  senderNumber,
+                  isFromMe,
                   transcription: audData.transcricao,
                   valores: audData.valores_mencionados || [],
                   taxaJuros: audData.taxa_juros_mencionada || '',
                   amortizacao: audData.amortizacao_mencionada || false,
                   resumo: audData.resumo_financeiro || ''
+                };
+                audioTranscripts.push(audItem);
+
+                fullConversationDialog.push({
+                  id: msg.key?.id || `audio-${i}`,
+                  date: dateStr,
+                  time: timeStr,
+                  dateTime: dateTimeDisplay,
+                  timestamp: tsSec,
+                  sender: senderLabel,
+                  senderNumber,
+                  isFromMe,
+                  type: 'AUDIO',
+                  mediaTypeLabel: '🎙️ ÁUDIO TRANSCRIÇÃO',
+                  content: audData.transcricao,
+                  resumoFinanceiro: audData.resumo_financeiro || '',
+                  valores: audData.valores_mencionados || [],
+                  taxaJuros: audData.taxa_juros_mencionada || '',
+                  isFinancial: true
                 });
-                addLog(`✓ Áudio #${audioCount} ouvido com sucesso: "${audData.resumo_financeiro || audData.transcricao.slice(0, 80)}..."`, 'success');
+                addLog(`✓ Áudio #${audioCount} transcrito com sucesso: "${audData.resumo_financeiro || audData.transcricao.slice(0, 80)}..."`, 'success');
               }
             }
           } catch (audioErr) {
@@ -601,7 +746,14 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         }
       }
 
-      addLog(`🎙️ Processamento de áudios concluído: ${audioTranscripts.length} áudio(s) ouvidos e periciados.`, 'info');
+      // Ordenar diálogo completo cronologicamente
+      fullConversationDialog.sort((a, b) => {
+        if (a.timestamp && b.timestamp) return a.timestamp - b.timestamp;
+        return new Date(a.date) - new Date(b.date);
+      });
+
+      addLog(`🎙️ Processamento de áudios concluído: ${audioTranscripts.length} áudio(s) transcritos e periciados.`, 'info');
+      addLog(`📜 Diálogo completo consolidado com ${fullConversationDialog.length} registros no total!`, 'success');
 
       // ── FASE 3: CONSOLIDAÇÃO DE COMPROVANTES E PAGAMENTOS ─────────────
       setAuditProgress({ current: 65, total: 100, stepLabel: 'Fase 3/4: Cruzando comprovantes e pagamentos efetuados...' });
@@ -610,12 +762,12 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         date: r.date,
         amount: Number(r.amount) || 0,
         origin: 'Comprovante Anexado',
-        evidence: `Comprovante ${r.type}: R$ ${r.amount} para ${r.beneficiary || 'Credor'} (Autenticação: ${r.authId || 'Sem ID'})`,
+        evidence: `Comprovante ${r.type}: R$ ${r.amount} para ${r.beneficiary || targetContactName} (Autenticação: ${r.authId || 'Sem ID'})`,
         authId: r.authId
       }))];
 
       textRecords.forEach(t => {
-        if (t.sender.includes('Eu')) {
+        if (t.isFromMe) {
           const matchPix = t.text.match(/(?:paguei|mandei|transferi|enviei|pix\s*de)\s*(?:r\$)?\s*([\d\.]+,\d{2}|\d+)/i);
           if (matchPix) {
             const rawVal = matchPix[1].replace(/\./g, '').replace(',', '.');
@@ -645,7 +797,6 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       let activeDebts = [];
 
       if (step2Mode === 'auto') {
-        // Se já tinha escaneado antes, usa; se não, detecta agora mesmo!
         if (autoDetectedDebts.length > 0) {
           activeDebts = [...autoDetectedDebts];
           addLog(`🤖 Usando ${activeDebts.length} débitos identificados automaticamente pelo robô.`, 'info');
@@ -660,8 +811,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 payload: {
                   mensagensTexto: textRecords.slice(-100),
                   audiosTranscritos: audioTranscripts,
-                  nomeCredor: selectedContact?.name || 'Credor',
-                  nomeDevedor: 'Eu (Devedor)'
+                  nomeCredor: targetContactName,
+                  nomeDevedor: 'Você (Devedor)'
                 }
               })
             });
@@ -684,12 +835,10 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           }
         }
       } else {
-        // MODO MANUAL: usa o que o usuário cadastrou
         activeDebts = [...debtConditions];
         addLog(`📝 Usando ${activeDebts.length} débitos cadastrados manualmente pelo usuário.`, 'info');
       }
 
-      // Se ainda vazio, fallback de emergência
       if (activeDebts.length === 0) {
         let baseCapital = 0;
         for (const t of textRecords) {
@@ -736,8 +885,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               comprovantesPagamento: allPayments,
               valorEmprestimoInformado: totalContracted,
               taxaJurosMensal: 10,
-              nomeCredor: selectedContact?.name || 'Credor',
-              nomeDevedor: 'Eu (Devedor)'
+              nomeCredor: targetContactName,
+              nomeDevedor: 'Você (Devedor)'
             }
           })
         });
@@ -750,14 +899,14 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         console.warn('Erro na IA:', aiErr);
       }
 
-      // ── RECONSTITUIÇÃO CRONOLÓGICA (CÓDIGO CIVIL ART. 354) ──
+      // ── RECONSTITUIÇÃO CRONOLÓGICA (CÓDIGO CIVIL ART. 354 + DIAS CORRIDOS) ──
       const unifiedEvents = [
         ...activeDebts.map(c => ({
           date: c.date,
           amount: c.amount,
           type: c.type === 'credit_card' ? 'CARTAO_CREDITO' : 'EMPRESTIMO',
-          monthlyRate: c.monthlyRate,
-          description: c.description,
+          monthlyRate: Number(c.monthlyRate) || (c.type === 'credit_card' ? 5 : 10),
+          description: c.description || (c.type === 'credit_card' ? 'Gasto no Cartão de Crédito' : 'Empréstimo em Dinheiro'),
           evidence: c.evidence,
           isPayment: false
         })),
@@ -772,98 +921,186 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         }))
       ];
 
-      unifiedEvents.sort((a, b) => new Date(a.date) - new Date(b.date));
+      // Ordenar: na mesma data, débitos vêm antes de pagamentos para não gerar saldo negativo prematuro
+      unifiedEvents.sort((a, b) => {
+        const dA = new Date(a.date).getTime();
+        const dB = new Date(b.date).getTime();
+        if (dA !== dB) return dA - dB;
+        if (!a.isPayment && b.isPayment) return -1;
+        if (a.isPayment && !b.isPayment) return 1;
+        return 0;
+      });
 
-      let runningPrincipal = 0;
-      let accumulatedInterestDue = 0;
+      let saldoLoan = 0;       // Principal empréstimos em dinheiro
+      let rateLoan = 10;       // Taxa empréstimo (padrão 10% a.m.)
+      let saldoCard = 0;       // Principal cartão de crédito
+      let rateCard = 5;        // Taxa cartão (padrão 5% a.m.)
+
+      let accumulatedInterest = 0; // Juros acumulados pendentes de quitação
+      let accumulatedSurplus = 0;  // Crédito excedente pago a mais pelo devedor
+
       let totalPaid = 0;
       let totalInterestChargedByCreditor = 0;
       let totalInterestDue = 0;
       let totalPrincipalAmortized = 0;
-      let totalOverpaid = 0;
 
       let lastDate = unifiedEvents.length > 0 ? unifiedEvents[0].date : new Date().toISOString().slice(0, 10);
-      let activeRate = activeDebts[0]?.monthlyRate || 10;
-
       const amortizationTimeline = [];
 
-      unifiedEvents.forEach((ev) => {
+      unifiedEvents.forEach((ev, idx) => {
         const currentDate = ev.date;
-        const d1 = new Date(lastDate);
-        const d2 = new Date(currentDate);
-        const diffDays = Math.max(0, Math.floor((d2 - d1) / (1000 * 60 * 60 * 24)));
-        const monthsFraction = diffDays / 30;
+        const diasCorridos = idx === 0 ? 0 : getDaysBetween(lastDate, currentDate);
+        const fractionMonths = diasCorridos / 30;
 
-        if (runningPrincipal > 0 && monthsFraction > 0) {
-          const periodInterest = runningPrincipal * (activeRate / 100) * monthsFraction;
-          accumulatedInterestDue += periodInterest;
-          totalInterestDue += periodInterest;
-        }
+        // Juros incorridos pro-rata die no período decorrido sobre os saldos anteriores
+        const saldoAnteriorTotal = saldoLoan + saldoCard;
+        const jurosLoanPeriodo = (saldoLoan > 0 && fractionMonths > 0) ? (saldoLoan * (rateLoan / 100) * fractionMonths) : 0;
+        const jurosCardPeriodo = (saldoCard > 0 && fractionMonths > 0) ? (saldoCard * (rateCard / 100) * fractionMonths) : 0;
+        const jurosPeriodo = jurosLoanPeriodo + jurosCardPeriodo;
+
+        accumulatedInterest += jurosPeriodo;
+        totalInterestDue += jurosPeriodo;
+
+        const jurosAcumuladosAntes = accumulatedInterest;
 
         if (!ev.isPayment) {
-          runningPrincipal += ev.amount;
-          activeRate = ev.monthlyRate || activeRate;
+          // É UM NOVO DÉBITO (EMPRÉSTIMO OU CARTÃO)
+          const isCard = ev.type === 'CARTAO_CREDITO';
+          if (isCard) rateCard = ev.monthlyRate || rateCard;
+          else rateLoan = ev.monthlyRate || rateLoan;
+
+          let debtAmountEffective = ev.amount;
+          let offsetMsg = '';
+
+          // Se o usuário possuía crédito pago a mais, absorve o novo débito
+          if (accumulatedSurplus > 0) {
+            if (accumulatedSurplus >= debtAmountEffective) {
+              accumulatedSurplus -= debtAmountEffective;
+              offsetMsg = ` (Totalmente absorvido pelo crédito prévio de R$ ${debtAmountEffective.toFixed(2)})`;
+              debtAmountEffective = 0;
+            } else {
+              debtAmountEffective -= accumulatedSurplus;
+              offsetMsg = ` (Abateu R$ ${accumulatedSurplus.toFixed(2)} de crédito prévio)`;
+              accumulatedSurplus = 0;
+            }
+          }
+
+          if (debtAmountEffective > 0) {
+            if (isCard) saldoCard += debtAmountEffective;
+            else saldoLoan += debtAmountEffective;
+          }
+
+          const novoSaldoTotal = saldoLoan + saldoCard;
 
           amortizationTimeline.push({
             data: currentDate,
-            origem: ev.type === 'CARTAO_CREDITO' ? 'Cartão de Crédito' : 'Empréstimo em Dinheiro',
-            descricao: `${ev.type === 'CARTAO_CREDITO' ? '💳 Gasto com Cartão de Crédito' : '💵 Empréstimo em Dinheiro'}: R$ ${ev.amount.toFixed(2)} (${ev.description}) - Juros: ${ev.monthlyRate}% a.m.`,
-            cobradoCredor: 0,
+            diasCorridos,
+            origem: isCard ? '💳 Cartão de Crédito' : '💵 Empréstimo em Dinheiro',
+            descricao: `${isCard ? '💳 Gasto no Cartão de Crédito' : '💵 Empréstimo em Dinheiro'}: R$ ${ev.amount.toFixed(2)} (${ev.description})${offsetMsg} - Juros: ${ev.monthlyRate}% a.m.`,
+            saldoAnterior: saldoAnteriorTotal,
+            taxaJurosMensal: `${ev.monthlyRate}% a.m.`,
+            jurosPeriodo,
+            jurosAcumuladosAntes,
             valorPago: 0,
-            jurosPeriodo: 0,
+            jurosAbatidos: 0,
             amortizacaoCapital: 0,
-            saldoDevedor: runningPrincipal,
-            diferenca: 0,
-            status: ev.type === 'CARTAO_CREDITO' ? 'GASTO_CARTAO' : 'NOVO_EMPRESTIMO',
-            evidencia: ev.evidence || `Taxa de juros: ${ev.monthlyRate}% ao mês.`
+            saldoDevedor: novoSaldoTotal,
+            saldoCredor: accumulatedSurplus,
+            status: isCard ? 'GASTO_CARTAO' : 'NOVO_EMPRESTIMO',
+            evidencia: ev.evidence || `Taxa de juros pactuada: ${ev.monthlyRate}% ao mês.`
           });
+
         } else {
+          // É UM PAGAMENTO EFETUADO (PIX, COMPROVANTE, ETC)
           const paid = ev.amount;
           totalPaid += paid;
 
-          const interestPaid = Math.min(paid, accumulatedInterestDue);
-          accumulatedInterestDue -= interestPaid;
+          // Prioridade 1 (Art. 354 CC): Quitar juros vencidos primeiro
+          const interestPaid = Math.min(paid, accumulatedInterest);
+          accumulatedInterest -= interestPaid;
           totalInterestChargedByCreditor += interestPaid;
 
-          const principalAmortization = Math.max(0, paid - interestPaid);
-          totalPrincipalAmortized += principalAmortization;
-          runningPrincipal -= principalAmortization;
+          // Prioridade 2: Amortização do capital principal
+          let remainingPayment = paid - interestPaid;
+          let principalAmortized = 0;
+
+          if (remainingPayment > 0) {
+            // Amortiza a dívida de maior taxa primeiro (empréstimo a 10%, depois cartão a 5%)
+            if (rateLoan >= rateCard) {
+              if (saldoLoan > 0) {
+                const amortL = Math.min(remainingPayment, saldoLoan);
+                saldoLoan -= amortL;
+                remainingPayment -= amortL;
+                principalAmortized += amortL;
+              }
+              if (remainingPayment > 0 && saldoCard > 0) {
+                const amortC = Math.min(remainingPayment, saldoCard);
+                saldoCard -= amortC;
+                remainingPayment -= amortC;
+                principalAmortized += amortC;
+              }
+            } else {
+              if (saldoCard > 0) {
+                const amortC = Math.min(remainingPayment, saldoCard);
+                saldoCard -= amortC;
+                remainingPayment -= amortC;
+                principalAmortized += amortC;
+              }
+              if (remainingPayment > 0 && saldoLoan > 0) {
+                const amortL = Math.min(remainingPayment, saldoLoan);
+                saldoLoan -= amortL;
+                remainingPayment -= amortL;
+                principalAmortized += amortL;
+              }
+            }
+
+            // Se ainda sobrar pagamento após zerar o capital e juros, vira CRÉDITO PAGO A MAIS (indébito)
+            if (remainingPayment > 0) {
+              accumulatedSurplus += remainingPayment;
+            }
+          }
+
+          totalPrincipalAmortized += principalAmortized;
+          const novoSaldoTotal = saldoLoan + saldoCard;
 
           let eventStatus = 'AMORTIZACAO';
           let desc = '';
 
-          if (runningPrincipal <= 0) {
-            const creditExcess = Math.abs(runningPrincipal);
-            totalOverpaid += creditExcess;
-            runningPrincipal = 0;
+          if (novoSaldoTotal === 0 && accumulatedSurplus > 0) {
             eventStatus = 'QUITADO_EXCEDE';
-            desc = `Pagamento de R$ ${paid.toFixed(2)}: QUITAÇÃO TOTAL DA DÍVIDA! Amortizou R$ ${principalAmortization.toFixed(2)} com R$ ${creditExcess.toFixed(2)} de pagamento excedente a restituir.`;
-          } else if (principalAmortization > 0) {
-            desc = `Pagamento de R$ ${paid.toFixed(2)}: Cobriu R$ ${interestPaid.toFixed(2)} de juros vencidos e AMORTIZOU R$ ${principalAmortization.toFixed(2)} do principal.`;
+            desc = `Pagamento de R$ ${paid.toFixed(2)}: QUITAÇÃO TOTAL DA DÍVIDA! Amortizou R$ ${principalAmortized.toFixed(2)} do principal. Saldo excedente pago a mais acumulado: R$ ${accumulatedSurplus.toFixed(2)} a restituir!`;
+          } else if (principalAmortized > 0) {
+            desc = `Pagamento de R$ ${paid.toFixed(2)}: Cobriu R$ ${interestPaid.toFixed(2)} de juros vencidos e AMORTIZOU R$ ${principalAmortized.toFixed(2)} do capital principal.`;
           } else {
-            desc = `Pagamento de R$ ${paid.toFixed(2)}: Quitação de juros vencidos / rolagem do período.`;
             eventStatus = 'JUROS_ROLAGEM';
+            desc = `Pagamento de R$ ${paid.toFixed(2)}: Quitou R$ ${interestPaid.toFixed(2)} de juros vencidos no período (Sem amortização de capital).`;
           }
 
           amortizationTimeline.push({
             data: currentDate,
-            origem: ev.origin,
+            diasCorridos,
+            origem: ev.origin || 'Pagamento',
             descricao: desc,
-            cobradoCredor: interestPaid,
+            saldoAnterior: saldoAnteriorTotal,
+            taxaJurosMensal: `${rateLoan}% (Emp.) / ${rateCard}% (Cartão)`,
+            jurosPeriodo,
+            jurosAcumuladosAntes,
             valorPago: paid,
-            jurosPeriodo: interestPaid,
-            amortizacaoCapital: principalAmortization,
-            saldoDevedor: runningPrincipal,
-            diferenca: 0,
+            jurosAbatidos: interestPaid,
+            amortizacaoCapital: principalAmortized,
+            saldoDevedor: novoSaldoTotal,
+            saldoCredor: accumulatedSurplus,
             status: eventStatus,
-            evidencia: ev.evidence
+            evidencia: ev.evidence || `Comprovante / Autenticação: ${ev.authId || 'Identificado no Chat'}`
           });
         }
 
         lastDate = currentDate;
       });
 
-      const finalStatus = runningPrincipal <= 0 || totalPaid >= (totalContracted + totalInterestDue)
+      const finalDebtBalance = saldoLoan + saldoCard;
+      const finalOverpaid = accumulatedSurplus;
+      const finalStatus = finalDebtBalance === 0 || totalPaid >= (totalContracted + totalInterestDue)
         ? 'QUITADO_PAGO_A_MAIS'
         : 'SALDO_DEVEDOR_RESTANTE';
 
@@ -883,18 +1120,20 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         totalJurosDevidos: totalInterestDue,
         totalJurosCobrados: totalInterestChargedByCreditor,
         totalAmortizado: totalPrincipalAmortized,
-        saldoFinalReal: runningPrincipal,
-        totalPagoAMais: totalOverpaid,
+        saldoFinalReal: finalDebtBalance,
+        totalPagoAMais: finalOverpaid,
         status: finalStatus,
         timeline: amortizationTimeline,
         audioTranscripts,
         textRecords,
+        fullDialog: fullConversationDialog,
         receipts: allPayments,
+        targetContactDisplay,
         aiReport: aiAuditResponse || {
-          diagnostico_pericial: `Após reconstituição contábil (Código Civil art. 354) no modo ${step2Mode === 'auto' ? 'Automático' : 'Manual'} sobre ${activeDebts.length} operações (Total: R$ ${totalContracted.toFixed(2)}), apurou-se que foram pagos R$ ${totalPaid.toFixed(2)}. ${runningPrincipal <= 0 ? `Dívida TOTALMENTE QUITADA, restando saldo credor a favor do devedor de R$ ${totalOverpaid.toFixed(2)} pago a mais a ser devolvido!` : `Saldo devedor restante justo a pagar: R$ ${runningPrincipal.toFixed(2)}.`}`,
+          diagnostico_pericial: `Após reconstituição contábil com base em dias corridos e no Código Civil art. 354 sobre ${activeDebts.length} operações (Total: R$ ${totalContracted.toFixed(2)}), apurou-se que foram pagos R$ ${totalPaid.toFixed(2)}. ${finalDebtBalance <= 0 ? `Dívida TOTALMENTE QUITADA, restando saldo credor a favor do devedor de R$ ${finalOverpaid.toFixed(2)} pago a mais a ser devolvido pelo número ${targetContactDisplay}!` : `Saldo devedor restante justo a pagar ao número ${targetContactDisplay}: R$ ${finalDebtBalance.toFixed(2)}.`}`,
           irregularidades_detectadas: [
             'Cobrança de juros sem o devido abatimento das amortizações do capital principal.',
-            'Não consideração de descontos de juros em pagamentos antecipados.',
+            'Não consideração de descontos de juros em pagamentos antecipados e dias corridos pro-rata die.',
             'Cobrança de juros sobre parcelas de cartão já quitadas.'
           ]
         }
@@ -902,7 +1141,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
       setAuditResult(finalResult);
       setAuditProgress({ current: 100, total: 100, stepLabel: 'Perícia Concluída com Sucesso!' });
-      addLog('🏁 PERÍCIA FINALIZADA COM SUCESSO! Resultados e planilha disponíveis para download.', 'success');
+      addLog('🏁 PERÍCIA FINALIZADA COM SUCESSO! Resultados, planilha Excel e arquivo de transcrição prontos para download.', 'success');
 
     } catch (err) {
       addLog(`❌ Erro durante a perícia: ${err.message}`, 'error');
@@ -912,7 +1151,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     }
   }
 
-  // ── GERADOR DE PLANILHA EXCEL (.XLSX) ──
+  // ── GERADOR DE PLANILHA EXCEL (.XLSX) COM DIÁLOGO TRANSCRITO E AMORTIZAÇÕES ──
   function exportAuditToExcel() {
     if (!auditResult) {
       alert('Nenhum resultado de perícia disponível para exportar.');
@@ -921,24 +1160,35 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
     try {
       const wb = XLSX.utils.book_new();
+      const targetPhone = selectedContact?.phone || (selectedContact?.jid ? selectedContact.jid.replace('@s.whatsapp.net', '') : manualPhone) || 'Credor';
+      const targetDisplay = auditResult.targetContactDisplay || targetPhone;
 
-      // ABA 1: RESUMO DO LAUDO PERICIAL
+      // ABA 1: RESUMO DO LAUDO & VEREDITO OFICIAL (QUEM DEVE A QUEM)
+      const verdictHeader = auditResult.status === 'QUITADO_PAGO_A_MAIS'
+        ? `O NÚMERO ${targetDisplay} DEVE RESTITUIR R$ ${auditResult.totalPagoAMais.toFixed(2)} AO USUÁRIO (QUITADO / PAGO A MAIS)`
+        : `O USUÁRIO DEVE R$ ${auditResult.saldoFinalReal.toFixed(2)} AO NÚMERO ${targetDisplay} (SALDO RESTANTE JUSTO)`;
+
       const summaryRows = [
-        ['LAUDO PERICIAL DE AUDITORIA FINANCEIRA & AMORTIZAÇÕES'],
+        ['LAUDO PERICIAL DE AUDITORIA FINANCEIRA FORENSE & AMORTIZAÇÕES'],
         ['Emitido pelo Módulo Forense de Inteligência Artificial'],
         [''],
+        ['========================================================================================'],
+        ['VEREDITO OFICIAL DA PERÍCIA (QUEM DEVE A QUEM):'],
+        [verdictHeader],
+        ['========================================================================================'],
+        [''],
         ['Credor Auditado:', selectedContact?.name || 'Credor'],
-        ['Telefone do Credor:', selectedContact?.phone || 'Não informado'],
+        ['Telefone do Credor:', targetPhone],
         ['Modo de Execução Utilizado:', auditResult.executionMode === 'auto' ? 'Automático (Identificado por IA)' : 'Manual'],
         ['Data da Emissão da Perícia:', new Date().toLocaleDateString('pt-BR')],
-        ['Regra de Amortização:', 'Código Civil Brasileiro art. 354 (Amortização Linear Imediata)'],
+        ['Critério de Amortização:', 'Código Civil art. 354 (Amortização Linear dos Juros Primeiro + Dias Corridos Pro-Rata Die)'],
         [''],
         ['RESUMO DOS VALORES APURADOS (R$):'],
         ['Total de Empréstimos em Dinheiro/PIX:', auditResult.totalEmprestimosDinheiro || 0],
-        ['Total de Gastos no Cartão de Crédito:', auditResult.totalGastosCartao || 0],
+        ['Total de Gastos no Cartão de Crédito (5% a.m.):', auditResult.totalGastosCartao || 0],
         ['Total Geral do Principal Contratado:', auditResult.totalEmprestado],
         ['Total Efetivamente Pago pelo Usuário:', auditResult.totalPago],
-        ['Total de Juros Legais Devidos:', auditResult.totalJurosDevidos],
+        ['Total de Juros Legais Devidos (dias corridos):', auditResult.totalJurosDevidos],
         ['Total de Capital Principal Amortizado:', auditResult.totalAmortizado],
         ['Saldo Devedor Real Restante:', auditResult.saldoFinalReal],
         ['Valor Pago a Mais a Restituir (Indébito):', auditResult.totalPagoAMais],
@@ -954,7 +1204,45 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
       XLSX.utils.book_append_sheet(wb, wsSummary, 'Resumo do Laudo');
 
-      // ABA 2: CONDIÇÕES DE EMPRÉSTIMOS E CARTÃO
+      // ABA 2: EXTRATO CRONOLÓGICO DE AMORTIZAÇÕES (COM DIAS CORRIDOS)
+      const timelineHeaders = [
+        'Data',
+        'Dias Corridos',
+        'Origem do Evento',
+        'Descrição da Transação / Amortização',
+        'Saldo Principal Anterior (R$)',
+        'Taxa Mensal (% a.m.)',
+        'Juros do Período (R$)',
+        'Juros Acumulados Pendentes (R$)',
+        'Valor Pago (R$)',
+        'Abatimento de Juros (R$)',
+        'Amortização do Principal (R$)',
+        'Saldo Devedor Restante (R$)',
+        'Crédito a Restituir (R$)',
+        'Status do Evento',
+        'Evidência Probatória'
+      ];
+      const timelineRows = auditResult.timeline.map(t => [
+        t.data,
+        t.diasCorridos,
+        t.origem,
+        t.descricao,
+        t.saldoAnterior,
+        t.taxaJurosMensal,
+        t.jurosPeriodo,
+        t.jurosAcumuladosAntes,
+        t.valorPago,
+        t.jurosAbatidos,
+        t.amortizacaoCapital,
+        t.saldoDevedor,
+        t.saldoCredor,
+        t.status,
+        t.evidencia
+      ]);
+      const wsTimeline = XLSX.utils.aoa_to_sheet([timelineHeaders, ...timelineRows]);
+      XLSX.utils.book_append_sheet(wb, wsTimeline, 'Extrato de Amortizações');
+
+      // ABA 3: CONDIÇÕES DE EMPRÉSTIMOS E CARTÃO
       const conditionsHeaders = ['Tipo de Operação', 'Data', 'Valor (R$)', 'Juros Cobrados (% a.m.)', 'Descrição / Finalidade', 'Evidência'];
       const conditionsRows = (auditResult.debtConditions || []).map(c => [
         c.type === 'credit_card' ? 'Gasto no Cartão de Crédito' : 'Empréstimo em Dinheiro',
@@ -966,32 +1254,6 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       ]);
       const wsConditions = XLSX.utils.aoa_to_sheet([conditionsHeaders, ...conditionsRows]);
       XLSX.utils.book_append_sheet(wb, wsConditions, 'Empréstimos e Cartão');
-
-      // ABA 3: EXTRATO CRONOLÓGICO DE AMORTIZAÇÕES
-      const timelineHeaders = [
-        'Data',
-        'Origem do Evento',
-        'Descrição da Transação / Amortização',
-        'Valor Pago (R$)',
-        'Juros Devidos no Período (R$)',
-        'Amortização do Principal (R$)',
-        'Saldo Devedor Restante (R$)',
-        'Status do Evento',
-        'Evidência Probatória'
-      ];
-      const timelineRows = auditResult.timeline.map(t => [
-        t.data,
-        t.origem,
-        t.descricao,
-        t.valorPago,
-        t.jurosPeriodo,
-        t.amortizacaoCapital,
-        t.saldoDevedor,
-        t.status,
-        t.evidencia
-      ]);
-      const wsTimeline = XLSX.utils.aoa_to_sheet([timelineHeaders, ...timelineRows]);
-      XLSX.utils.book_append_sheet(wb, wsTimeline, 'Extrato de Amortizações');
 
       // ABA 4: COMPROVANTES E PAGAMENTOS IDENTIFICADOS
       const receiptsHeaders = ['Data', 'Valor Pago (R$)', 'Origem', 'ID Transação / Autenticação', 'Evidência / Detalhes'];
@@ -1005,28 +1267,21 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       const wsReceipts = XLSX.utils.aoa_to_sheet([receiptsHeaders, ...receiptsRows]);
       XLSX.utils.book_append_sheet(wb, wsReceipts, 'Comprovantes de Pagamento');
 
-      // ABA 5: HISTÓRICO DE MENSAGENS E ÁUDIOS
-      const transcriptsHeaders = ['Data', 'Remetente', 'Tipo', 'Conteúdo / Transcrição Fiel', 'Resumo Financeiro'];
-      const transcriptRows = [
-        ...auditResult.audioTranscripts.map(a => [
-          a.date,
-          a.sender,
-          'ÁUDIO (WhatsApp)',
-          a.transcription,
-          a.resumo
-        ]),
-        ...auditResult.textRecords.filter(t => t.isFinancial).map(t => [
-          t.date,
-          t.sender,
-          'MENSAGEM DE TEXTO',
-          t.text,
-          'Mencionou valores / juros'
-        ])
-      ];
-      const wsTranscripts = XLSX.utils.aoa_to_sheet([transcriptsHeaders, ...transcriptRows]);
-      XLSX.utils.book_append_sheet(wb, wsTranscripts, 'Áudios e Mensagens');
+      // ABA 5: DIÁLOGO TRANSCRITO COMPLETO (TEXTOS E ÁUDIOS)
+      const dialogHeaders = ['Ordem', 'Data e Hora', 'Remetente', 'Tipo de Mensagem', 'Conteúdo Transcrito / Texto Completo', 'Análise Financeira'];
+      const dialogRows = (auditResult.fullDialog || []).map((m, idx) => [
+        idx + 1,
+        m.dateTime || m.date,
+        m.sender,
+        m.mediaTypeLabel,
+        m.content,
+        m.resumoFinanceiro || (m.taxaJuros ? `Taxa citada: ${m.taxaJuros}` : '')
+      ]);
+      const wsDialog = XLSX.utils.aoa_to_sheet([dialogHeaders, ...dialogRows]);
+      XLSX.utils.book_append_sheet(wb, wsDialog, 'Diálogo Transcrito Completo');
 
-      const filename = `pericia_financeira_${auditResult.executionMode}_${selectedContact?.phone || 'credor'}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      const safePhone = (selectedContact?.phone || manualPhone || 'credor').replace(/\D/g, '');
+      const filename = `pericia_financeira_${auditResult.executionMode}_${safePhone}_${new Date().toISOString().slice(0, 10)}.xlsx`;
       XLSX.writeFile(wb, filename);
       addLog(`📥 Planilha Excel oficial "${filename}" baixada com sucesso!`, 'success');
 
@@ -2211,7 +2466,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
       {/* ── RESULTADOS COMPLETOS DA PERÍCIA ───────────────────────────── */}
       {auditResult && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
           {/* BADGE DE MODO UTILIZADO E COMPARATIVO */}
           <div style={{
@@ -2228,7 +2483,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 18 }}>{auditResult.executionMode === 'auto' ? '🤖' : '📝'}</span>
               <span style={{ fontSize: 13, fontWeight: 900, color: '#fff' }}>
-                Perícia Executada com Sucesso no <strong>Modo {auditResult.executionMode === 'auto' ? 'Automático (Identificado por IA)' : 'Manual'}</strong>
+                Perícia Executada no <strong>Modo {auditResult.executionMode === 'auto' ? 'Automático (Identificado por IA)' : 'Manual'}</strong>
               </span>
             </div>
 
@@ -2243,6 +2498,69 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     Diferença: R$ {Math.abs(auditResult.manualTotal - auditResult.autoTotal).toFixed(2)}
                   </span>
                 )}
+              </div>
+            )}
+          </div>
+
+          {/* ══════════════════════════════════════════════════════════════════ */}
+          {/* 🎯 MEGA PAINEL DE VEREDITO OFICIAL DA PERÍCIA (QUEM DEVE A QUEM)  */}
+          {/* ══════════════════════════════════════════════════════════════════ */}
+          <div style={{
+            padding: '24px 28px',
+            borderRadius: 16,
+            background: auditResult.status === 'QUITADO_PAGO_A_MAIS'
+              ? 'linear-gradient(135deg, rgba(0, 229, 155, 0.22), rgba(15, 23, 42, 0.98))'
+              : 'linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(15, 23, 42, 0.98))',
+            border: `2px solid ${auditResult.status === 'QUITADO_PAGO_A_MAIS' ? 'var(--teal)' : '#F59E0B'}`,
+            boxShadow: `0 8px 32px ${auditResult.status === 'QUITADO_PAGO_A_MAIS' ? 'rgba(0, 229, 155, 0.25)' : 'rgba(245, 158, 11, 0.25)'}`,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+              <div style={{
+                fontSize: 12,
+                fontWeight: 900,
+                letterSpacing: '1px',
+                textTransform: 'uppercase',
+                color: auditResult.status === 'QUITADO_PAGO_A_MAIS' ? 'var(--teal)' : '#F59E0B',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8
+              }}>
+                <span>{auditResult.status === 'QUITADO_PAGO_A_MAIS' ? '🎉' : '⚖️'}</span>
+                VEREDITO OFICIAL DA PERÍCIA (QUEM DEVE A QUEM)
+              </div>
+              <div style={{
+                fontSize: 11,
+                fontWeight: 800,
+                padding: '4px 12px',
+                borderRadius: 20,
+                background: auditResult.status === 'QUITADO_PAGO_A_MAIS' ? 'rgba(0, 229, 155, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                color: auditResult.status === 'QUITADO_PAGO_A_MAIS' ? '#00E59B' : '#F59E0B',
+                border: `1px solid ${auditResult.status === 'QUITADO_PAGO_A_MAIS' ? 'var(--teal)' : '#F59E0B'}`
+              }}>
+                Código Civil Art. 354 • Pro-Rata Die
+              </div>
+            </div>
+
+            {auditResult.status === 'QUITADO_PAGO_A_MAIS' ? (
+              <div>
+                <div style={{ fontSize: 24, fontWeight: 900, color: '#fff', lineHeight: 1.35 }}>
+                  O número <span style={{ color: 'var(--teal)' }}>{auditResult.targetContactDisplay}</span> DEVE RESTITUIR <span style={{ color: 'var(--teal)', textDecoration: 'underline' }}>R$ {auditResult.totalPagoAMais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span> A VOCÊ!
+                </div>
+                <div style={{ fontSize: 13.5, color: '#E2E8F0', marginTop: 8, lineHeight: 1.6 }}>
+                  Sua dívida está <strong>TOTALMENTE QUITADA</strong>. Você pagou um total de <strong>R$ {auditResult.totalPago.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>, enquanto a dívida legal recalculada em dias corridos somava <strong>R$ {(auditResult.totalEmprestado + auditResult.totalJurosDevidos).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>. O valor pago a mais de <strong>R$ {auditResult.totalPagoAMais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> é indébito e deve ser devolvido imediatamente pelo credor.
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontSize: 24, fontWeight: 900, color: '#fff', lineHeight: 1.35 }}>
+                  Você deve <span style={{ color: '#F59E0B' }}>R$ {auditResult.saldoFinalReal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span> ao número <span style={{ color: '#F59E0B' }}>{auditResult.targetContactDisplay}</span>.
+                </div>
+                <div style={{ fontSize: 13.5, color: '#E2E8F0', marginTop: 8, lineHeight: 1.6 }}>
+                  Do total contratado de <strong>R$ {auditResult.totalEmprestado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>, você já pagou <strong>R$ {auditResult.totalPago.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> (quitando <strong>R$ {auditResult.totalJurosCobrados.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> de juros e amortizando <strong>R$ {auditResult.totalAmortizado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> do principal). Restam <strong>R$ {auditResult.saldoFinalReal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> do capital principal a pagar.
+                </div>
               </div>
             )}
           </div>
@@ -2265,7 +2583,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 R$ {auditResult.totalEmprestado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </div>
               <div style={{ fontSize: 11, color: 'var(--teal)', marginTop: 4 }}>
-                💵 Dinheiro: R$ {(auditResult.totalEmprestimosDinheiro || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | 💳 Cartão: R$ {(auditResult.totalGastosCartao || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                💵 Dinheiro: R$ {(auditResult.totalEmprestimosDinheiro || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} | 💳 Cartão 5%: R$ {(auditResult.totalGastosCartao || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </div>
             </div>
 
@@ -2328,7 +2646,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </div>
           </div>
 
-          {/* BOTÃO DE EXPORTAÇÃO EXCEL (.XLSX) */}
+          {/* BARRA DE AÇÃO: BOTÕES DE DOWNLOAD EXCEL E TEXTO */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -2341,34 +2659,57 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             gap: 12
           }}>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 900, color: '#fff' }}>
-                📊 Planilha Oficial de Perícia Pronta para Download
+              <div style={{ fontSize: 15, fontWeight: 900, color: '#fff' }}>
+                📁 Baixar Documentos Oficiais da Perícia
               </div>
-              <div style={{ fontSize: 12.5, color: 'var(--ink2)', marginTop: 2 }}>
-                Gere o arquivo completo em Excel (.xlsx) contendo 5 abas detalhadas com fórmulas e transcrições.
+              <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
+                Exporte a planilha Excel com 5 abas detalhadas ou baixe o arquivo de texto com todo o diálogo transcrito.
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={exportAuditToExcel}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '14px 26px',
-                borderRadius: 10,
-                background: 'var(--teal)',
-                color: '#081018',
-                fontSize: 14,
-                fontWeight: 900,
-                border: 'none',
-                cursor: 'pointer',
-                boxShadow: '0 4px 15px rgba(0, 229, 155, 0.3)'
-              }}
-            >
-              <span>📥</span> Baixar Planilha de Perícia em Excel (.xlsx)
-            </button>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={exportAuditToExcel}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '11px 18px',
+                  borderRadius: 10,
+                  background: 'var(--teal)',
+                  color: '#081018',
+                  fontSize: 13,
+                  fontWeight: 900,
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 15px rgba(0, 229, 155, 0.3)'
+                }}
+              >
+                <span>📊</span> Baixar Planilha Excel (.xlsx)
+              </button>
+
+              <button
+                type="button"
+                onClick={downloadTranscriptTxt}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '11px 18px',
+                  borderRadius: 10,
+                  background: 'linear-gradient(135deg, #38BDF8, #0284C7)',
+                  color: '#081018',
+                  fontSize: 13,
+                  fontWeight: 900,
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 15px rgba(56, 189, 248, 0.3)'
+                }}
+              >
+                <span>📄</span> Baixar Diálogo & Áudios (.txt)
+              </button>
+            </div>
           </div>
 
           {/* PARECER PERICIAL DA IA & IRREGULARIDADES DETECTADAS */}
@@ -2423,7 +2764,9 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             )}
           </div>
 
-          {/* ABAS DA TABELA DETALHADA: EXTRATO / COMPROVANTES / ÁUDIOS */}
+          {/* ══════════════════════════════════════════════════════════════════ */}
+          {/* ABAS DA TABELA DETALHADA: EXTRATO / DIÁLOGO / COMPROVANTES / ÁUDIOS */}
+          {/* ══════════════════════════════════════════════════════════════════ */}
           <div style={{
             background: 'rgba(15, 23, 42, 0.95)',
             border: '1px solid var(--line)',
@@ -2433,7 +2776,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             flexDirection: 'column',
             gap: 14
           }}>
-            <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--line)', paddingBottom: 12 }}>
+            <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--line)', paddingBottom: 12, flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={() => setActiveTab('summary')}
@@ -2449,6 +2792,23 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 }}
               >
                 Extrato de Amortizações ({auditResult.timeline.length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('dialogue')}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: activeTab === 'dialogue' ? 'var(--teal)' : 'rgba(255,255,255,0.05)',
+                  color: activeTab === 'dialogue' ? '#081018' : '#fff',
+                  fontWeight: 800,
+                  fontSize: 12.5,
+                  cursor: 'pointer'
+                }}
+              >
+                📜 Diálogo & Áudios Transcritos ({auditResult.fullDialog?.length || 0})
               </button>
 
               <button
@@ -2486,19 +2846,22 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               </button>
             </div>
 
-            {/* ABA: EXTRATO DE AMORTIZAÇÕES */}
+            {/* ABA 1: EXTRATO DE AMORTIZAÇÕES (COM DIAS CORRIDOS) */}
             {activeTab === 'summary' && (
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead>
                     <tr style={{ background: 'rgba(255,255,255,0.05)', textAlign: 'left', color: 'var(--ink2)' }}>
-                      <th style={{ padding: '10px 12px' }}>Data</th>
-                      <th style={{ padding: '10px 12px' }}>Origem</th>
-                      <th style={{ padding: '10px 12px' }}>Descrição / Amortização</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'right' }}>Valor Pago</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'right' }}>Juros Devidos</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'right' }}>Amortizado</th>
-                      <th style={{ padding: '10px 12px', textAlign: 'right' }}>Saldo Restante</th>
+                      <th style={{ padding: '10px 10px' }}>Data</th>
+                      <th style={{ padding: '10px 10px', textAlign: 'center' }}>Dias Corridos</th>
+                      <th style={{ padding: '10px 10px' }}>Origem</th>
+                      <th style={{ padding: '10px 10px' }}>Descrição / Amortização</th>
+                      <th style={{ padding: '10px 10px', textAlign: 'right' }}>Saldo Anterior</th>
+                      <th style={{ padding: '10px 10px', textAlign: 'right' }}>Juros Período</th>
+                      <th style={{ padding: '10px 10px', textAlign: 'right' }}>Valor Pago</th>
+                      <th style={{ padding: '10px 10px', textAlign: 'right' }}>Amortizado</th>
+                      <th style={{ padding: '10px 10px', textAlign: 'right' }}>Saldo Restante</th>
+                      <th style={{ padding: '10px 10px', textAlign: 'right' }}>Crédito Excedente</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2510,27 +2873,38 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                           background: row.status === 'QUITADO_EXCEDE' ? 'rgba(0, 229, 155, 0.1)' : 'transparent'
                         }}
                       >
-                        <td style={{ padding: '10px 12px', whiteSpace: 'nowrap', fontWeight: 700 }}>{row.data}</td>
-                        <td style={{ padding: '10px 12px', color: 'var(--teal)', fontSize: 11.5 }}>{row.origem}</td>
-                        <td style={{ padding: '10px 12px', color: '#fff', maxWidth: 300 }}>
+                        <td style={{ padding: '10px 10px', whiteSpace: 'nowrap', fontWeight: 700 }}>{row.data}</td>
+                        <td style={{ padding: '10px 10px', textAlign: 'center', color: '#F59E0B', fontWeight: 700 }}>
+                          {row.diasCorridos > 0 ? `${row.diasCorridos}d` : '-'}
+                        </td>
+                        <td style={{ padding: '10px 10px', color: 'var(--teal)', fontSize: 11, whiteSpace: 'nowrap' }}>
+                          {row.origem}
+                        </td>
+                        <td style={{ padding: '10px 10px', color: '#fff', maxWidth: 260 }}>
                           <div>{row.descricao}</div>
                           {row.evidencia && (
-                            <div style={{ fontSize: 10.5, color: 'var(--ink2)', marginTop: 2 }}>
+                            <div style={{ fontSize: 10, color: 'var(--ink2)', marginTop: 2 }}>
                               {row.evidencia}
                             </div>
                           )}
                         </td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: row.valorPago > 0 ? '#00E59B' : 'var(--ink2)' }}>
-                          {row.valorPago > 0 ? `R$ ${row.valorPago.toFixed(2)}` : '-'}
+                        <td style={{ padding: '10px 10px', textAlign: 'right', color: 'var(--ink2)' }}>
+                          {row.saldoAnterior > 0 ? `R$ ${row.saldoAnterior.toFixed(2)}` : '-'}
                         </td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', color: '#EF4444' }}>
+                        <td style={{ padding: '10px 10px', textAlign: 'right', color: '#EF4444' }}>
                           {row.jurosPeriodo > 0 ? `R$ ${row.jurosPeriodo.toFixed(2)}` : '-'}
                         </td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 800, color: '#38BDF8' }}>
+                        <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 800, color: row.valorPago > 0 ? '#00E59B' : 'var(--ink2)' }}>
+                          {row.valorPago > 0 ? `R$ ${row.valorPago.toFixed(2)}` : '-'}
+                        </td>
+                        <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 800, color: '#38BDF8' }}>
                           {row.amortizacaoCapital > 0 ? `R$ ${row.amortizacaoCapital.toFixed(2)}` : '-'}
                         </td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 900, color: row.saldoDevedor === 0 ? '#00E59B' : '#fff' }}>
+                        <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 900, color: row.saldoDevedor === 0 ? '#00E59B' : '#fff' }}>
                           R$ {row.saldoDevedor.toFixed(2)}
+                        </td>
+                        <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 900, color: row.saldoCredor > 0 ? '#00E59B' : 'var(--ink2)' }}>
+                          {row.saldoCredor > 0 ? `+ R$ ${row.saldoCredor.toFixed(2)}` : '-'}
                         </td>
                       </tr>
                     ))}
@@ -2539,7 +2913,208 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               </div>
             )}
 
-            {/* ABA: COMPROVANTES IDENTIFICADOS */}
+            {/* ABA 2: DIÁLOGO COMPLETO & TRANSCRIÇÕES DOS ÁUDIOS */}
+            {activeTab === 'dialogue' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {/* Barra de Filtro e Busca */}
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => setDialogFilter('all')}
+                      style={{
+                        padding: '5px 10px',
+                        borderRadius: 6,
+                        border: 'none',
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        background: dialogFilter === 'all' ? 'var(--teal)' : 'rgba(255,255,255,0.06)',
+                        color: dialogFilter === 'all' ? '#081018' : '#fff',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Todos ({auditResult.fullDialog?.length || 0})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDialogFilter('audio')}
+                      style={{
+                        padding: '5px 10px',
+                        borderRadius: 6,
+                        border: 'none',
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        background: dialogFilter === 'audio' ? '#38BDF8' : 'rgba(255,255,255,0.06)',
+                        color: dialogFilter === 'audio' ? '#081018' : '#fff',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🎙️ Áudios ({auditResult.audioTranscripts?.length || 0})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDialogFilter('financial')}
+                      style={{
+                        padding: '5px 10px',
+                        borderRadius: 6,
+                        border: 'none',
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        background: dialogFilter === 'financial' ? '#F59E0B' : 'rgba(255,255,255,0.06)',
+                        color: dialogFilter === 'financial' ? '#081018' : '#fff',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      💰 Mencionou Valores / Juros
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flex: 1, minWidth: 220, justifyContent: 'flex-end' }}>
+                    <input
+                      type="text"
+                      placeholder="Buscar palavra na conversa (ex: juros, cartão, pix)..."
+                      value={dialogSearch}
+                      onChange={e => setDialogSearch(e.target.value)}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: 8,
+                        background: 'rgba(0,0,0,0.5)',
+                        border: '1px solid var(--line)',
+                        color: '#fff',
+                        fontSize: 12,
+                        width: '100%',
+                        maxWidth: 320
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={downloadTranscriptTxt}
+                      title="Baixar arquivo de texto (.txt) completo com todas as mensagens e áudios"
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: 8,
+                        background: 'rgba(255,255,255,0.08)',
+                        border: '1px solid var(--line)',
+                        color: '#fff',
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      📄 Baixar .txt
+                    </button>
+                  </div>
+                </div>
+
+                {/* Lista do Diálogo Transcrito */}
+                <div style={{
+                  maxHeight: 520,
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                  padding: 12,
+                  background: 'rgba(0,0,0,0.4)',
+                  borderRadius: 12,
+                  border: '1px solid rgba(255,255,255,0.06)'
+                }}>
+                  {(() => {
+                    const filtered = (auditResult.fullDialog || []).filter(item => {
+                      if (dialogFilter === 'audio' && item.type !== 'AUDIO') return false;
+                      if (dialogFilter === 'financial' && !item.isFinancial) return false;
+                      if (dialogSearch.trim()) {
+                        const term = dialogSearch.toLowerCase();
+                        const matchText = (item.content || '').toLowerCase().includes(term);
+                        const matchSender = (item.sender || '').toLowerCase().includes(term);
+                        const matchResumo = (item.resumoFinanceiro || '').toLowerCase().includes(term);
+                        if (!matchText && !matchSender && !matchResumo) return false;
+                      }
+                      return true;
+                    });
+
+                    if (filtered.length === 0) {
+                      return (
+                        <div style={{ textAlign: 'center', padding: 30, color: 'var(--ink2)', fontSize: 13 }}>
+                          Nenhuma mensagem encontrada para o filtro atual.
+                        </div>
+                      );
+                    }
+
+                    return filtered.map((item, idx) => {
+                      const isMe = item.isFromMe;
+                      const isAudio = item.type === 'AUDIO';
+                      return (
+                        <div
+                          key={item.id || idx}
+                          style={{
+                            alignSelf: isMe ? 'flex-end' : 'flex-start',
+                            maxWidth: '82%',
+                            padding: '12px 16px',
+                            borderRadius: 14,
+                            background: isMe
+                              ? 'linear-gradient(135deg, rgba(0, 229, 155, 0.15), rgba(15, 23, 42, 0.9))'
+                              : 'linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95))',
+                            border: `1px solid ${isMe ? 'rgba(0, 229, 155, 0.35)' : isAudio ? 'rgba(56, 189, 248, 0.4)' : 'rgba(255,255,255,0.1)'}`,
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 12, fontWeight: 800, color: isMe ? 'var(--teal)' : '#fff' }}>
+                                {item.sender}
+                              </span>
+                              <span style={{
+                                fontSize: 10,
+                                fontWeight: 800,
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                background: isAudio ? '#38BDF8' : 'rgba(255,255,255,0.08)',
+                                color: isAudio ? '#081018' : 'var(--ink2)'
+                              }}>
+                                {item.mediaTypeLabel}
+                              </span>
+                            </div>
+                            <span style={{ fontSize: 10.5, color: 'var(--ink2)' }}>
+                              {item.dateTime || item.date}
+                            </span>
+                          </div>
+
+                          <div style={{
+                            fontSize: 13,
+                            color: isAudio ? '#E0F2FE' : '#fff',
+                            fontStyle: isAudio ? 'italic' : 'normal',
+                            lineHeight: 1.5,
+                            wordBreak: 'break-word'
+                          }}>
+                            {isAudio ? `"${item.content}"` : item.content}
+                          </div>
+
+                          {(item.resumoFinanceiro || item.taxaJuros || (item.valores && item.valores.length > 0)) && (
+                            <div style={{
+                              marginTop: 8,
+                              paddingTop: 6,
+                              borderTop: '1px dashed rgba(255,255,255,0.1)',
+                              fontSize: 11,
+                              color: '#F59E0B',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 2
+                            }}>
+                              {item.resumoFinanceiro && <div>⚡ <strong>Análise:</strong> {item.resumoFinanceiro}</div>}
+                              {item.taxaJuros && <div>⚡ <strong>Taxa Mencionada:</strong> {item.taxaJuros}</div>}
+                              {item.valores && item.valores.length > 0 && <div>💵 <strong>Valores:</strong> {item.valores.join(', ')}</div>}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* ABA 3: COMPROVANTES IDENTIFICADOS */}
             {activeTab === 'receipts' && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
                 {auditResult.receipts.map((r, idx) => (
@@ -2570,7 +3145,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               </div>
             )}
 
-            {/* ABA: ÁUDIOS OUVIDOS COM IA */}
+            {/* ABA 4: ÁUDIOS OUVIDOS COM IA */}
             {activeTab === 'transcripts' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {auditResult.audioTranscripts.length === 0 ? (
