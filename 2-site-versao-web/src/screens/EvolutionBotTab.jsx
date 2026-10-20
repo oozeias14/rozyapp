@@ -29,6 +29,7 @@ import {
   DEFAULT_INSTANCE_NAME 
 } from '../lib/evolutionApi';
 import { supabase } from '../lib/supabase';
+import { FinancialDebtAuditTab } from './FinancialDebtAuditTab';
 
 function initials(name) {
   return (name || '?').split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
@@ -2753,6 +2754,55 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                 </div>
               </div>
             </button>
+
+            {/* BOTÃO 3: PERÍCIA FINANCEIRA & AMORTIZAÇÕES (IA) */}
+            <button
+              type="button"
+              onClick={() => setMainMode('financial_audit')}
+              style={{
+                padding: '24px 20px',
+                borderRadius: 16,
+                border: '1px solid rgba(56, 189, 248, 0.4)',
+                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(15, 23, 42, 0.85))',
+                color: '#fff',
+                cursor: 'pointer',
+                textAlign: 'left',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 14,
+                boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+                transition: 'all 0.25s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 14,
+                  background: '#38BDF8',
+                  color: '#081018',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 22,
+                  fontWeight: 900
+                }}>
+                  3
+                </div>
+                <span style={{ fontSize: 11.5, fontWeight: 800, color: '#38BDF8', background: 'rgba(56, 189, 248, 0.18)', padding: '4px 10px', borderRadius: 20 }}>
+                  Acessar Ferramenta ➔
+                </span>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--ink1)' }}>
+                  3 - Perícia Financeira & Amortizações (IA)
+                </div>
+                <div style={{ fontSize: 12.5, color: 'var(--ink2)', marginTop: 6, lineHeight: 1.4 }}>
+                  Audite cobranças a juros: lê histórico, ouve áudios, confere comprovantes, calcula amortizações e gera planilha Excel.
+                </div>
+              </div>
+            </button>
           </div>
         </div>
       )}
@@ -2791,7 +2841,11 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
           </button>
 
           <div style={{ fontSize: 13.5, fontWeight: 900, color: 'var(--teal)' }}>
-            {mainMode === 'saved_numbers' ? '📌 1 - Descobrir Número Salvo' : '🚀 2 - Envio de Mensagem em Massa'}
+            {mainMode === 'saved_numbers'
+              ? '📌 1 - Descobrir Número Salvo'
+              : mainMode === 'mass_dispatch'
+              ? '🚀 2 - Envio de Mensagem em Massa'
+              : '⚖️ 3 - Perícia Financeira & Amortizações (IA)'}
           </div>
         </div>
       )}
@@ -2804,6 +2858,14 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
           config={config} 
           getPhoneSignatures={getPhoneSignatures} 
           extractCleanPhone={extractCleanPhone} 
+        />
+      )}
+
+      {mainMode === 'financial_audit' && (
+        <FinancialDebtAuditTab 
+          status={status} 
+          setShowConnectModal={setShowConnectModal} 
+          config={config} 
         />
       )}
 

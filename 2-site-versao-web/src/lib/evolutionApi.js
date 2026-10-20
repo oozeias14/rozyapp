@@ -1784,3 +1784,82 @@ export async function scanSentMessagesLast24h() {
   return sentPhoneSigs;
 }
 
+// ── EXTRAÇÃO COMPLETA DE CONVERSA HISTÓRICA E MÍDIAS ──────────────────
+
+export async function fetchFullChatHistory(remoteJid, onProgress) {
+  const { instanceName } = getEvolutionConfig();
+  const allMessages = [];
+  let page = 1;
+  const limit = 100;
+  let consecutiveEmpty = 0;
+
+  let cleanJid = (remoteJid || '').trim();
+  if (!cleanJid.includes('@')) {
+    cleanJid = cleanJid.replace(/\D/g, '') + '@s.whatsapp.net';
+  }
+
+  while (page <= 50) { // Até 5000 mensagens históricas por chat
+    try {
+      const data = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          where: {
+            key: {
+              remoteJid: cleanJid
+            }
+          },
+          page,
+          limit,
+        }),
+      });
+
+      const records = data?.messages?.records || (Array.isArray(data) ? data : []);
+      if (!records || records.length === 0) {
+        consecutiveEmpty++;
+        if (consecutiveEmpty >= 2) break;
+      } else {
+        consecutiveEmpty = 0;
+        allMessages.push(...records);
+        if (onProgress) onProgress(allMessages.length);
+        if (records.length < limit) break;
+      }
+      page++;
+    } catch (e) {
+      console.warn('Erro ao paginar mensagens do chat:', e);
+      break;
+    }
+  }
+
+  // Ordena cronologicamente (da mais antiga para a mais recente)
+  allMessages.sort((a, b) => {
+    const tsA = Number(a.messageTimestamp || a.createdAt || 0);
+    const tsB = Number(b.messageTimestamp || b.createdAt || 0);
+    return tsA - tsB;
+  });
+
+  return allMessages;
+}
+
+export async function fetchMediaBase64FromMessage(msg) {
+  const { instanceName } = getEvolutionConfig();
+  if (!msg || !msg.key) return null;
+  try {
+    const res = await evolutionFetch(`/chat/getBase64FromMediaMessage/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        message: {
+          key: {
+            id: msg.key.id,
+            remoteJid: msg.key.remoteJid,
+            fromMe: msg.key.fromMe
+          }
+        },
+        convertToMp4: false
+      })
+    });
+    return res?.base64 || res?.media || null;
+  } catch (err) {
+    console.warn('Erro ao extrair mídia em base64:', err);
+    return null;
+  }
+}
