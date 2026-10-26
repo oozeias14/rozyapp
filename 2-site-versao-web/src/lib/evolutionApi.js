@@ -85,18 +85,59 @@ export async function saveEvolutionConfig({ serverUrl, apiKey, instanceName }) {
   }
 
   try {
-    await supabase.from('app_settings').update({
+    await supabase.from('app_settings').upsert({
+      id: 1,
       evolution_api_url: cleanUrl,
       evolution_api_key: (apiKey || '').trim(),
       evolution_api_instance: (instanceName || DEFAULT_INSTANCE_NAME).trim(),
-    }).eq('id', 1);
+    });
   } catch (err) {
     console.log('Error updating app_settings for evolution:', err);
   }
 }
 
+export async function testEvolutionServerConnection(serverUrl, apiKey) {
+  let cleanUrl = (serverUrl || '').trim().replace(/\/+$/, '');
+  if (cleanUrl && !cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+    cleanUrl = 'https://' + cleanUrl;
+  }
+  try {
+    const res = await fetch(`${cleanUrl}/instance/fetchInstances`, {
+      method: 'GET',
+      headers: {
+        'apikey': (apiKey || '').trim(),
+        'Content-Type': 'application/json'
+      }
+    });
+    if (res.ok) {
+      return { success: true, message: 'Servidor conectado com sucesso!' };
+    }
+    return { success: false, message: `Servidor respondeu com código ${res.status}: ${res.statusText}` };
+  } catch (e) {
+    return { success: false, message: `Inacessível (${e.message}). Verifique a URL do Railway.` };
+  }
+}
+
+// 🔒 RESTRIÇÃO ESTREITA DE SEGURANÇA: MODO SOMENTE LEITURA DO WHATSAPP (READ-ONLY)
+// O sistema é estritamente proibido de excluir, apagar, revogar ou limpar mensagens, áudios, imagens ou conversas do WhatsApp.
+export const WHATSAPP_READ_ONLY_GUARD = true;
+
 // Generic Evolution API request fetcher
 async function evolutionFetch(endpoint, options = {}) {
+  // ⛔ TRAVA DE SEGURANÇA ABSOLUTA: Bloqueia qualquer tentativa de exclusão de mensagens ou conversas do WhatsApp
+  const lowerEndpoint = (endpoint || '').toLowerCase();
+  const method = (options.method || 'GET').toUpperCase();
+  if (
+    lowerEndpoint.includes('deletemessage') ||
+    lowerEndpoint.includes('clearchat') ||
+    lowerEndpoint.includes('chat/delete') ||
+    lowerEndpoint.includes('messages/delete') ||
+    (method === 'DELETE' && (lowerEndpoint.includes('/chat') || lowerEndpoint.includes('/message')))
+  ) {
+    console.error('⛔ OPERAÇÃO BLOQUEADA: A exclusão de mensagens, mídias ou conversas do WhatsApp é terminantemente proibida.');
+    throw new Error('Operação bloqueada por restrição de segurança: O sistema opera estritamente em modo SOMENTE LEITURA e não tem permissão para apagar mensagens, áudios ou imagens do WhatsApp.');
+  }
+
   const cfg = getEvolutionConfig();
   const serverUrl = (cfg.serverUrl || DEFAULT_SERVER_URL).trim().replace(/\/+$/, '');
   
@@ -141,6 +182,9 @@ async function evolutionFetch(endpoint, options = {}) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
       throw new Error(`Tempo limite de resposta (15s) excedido no servidor da API (${endpoint})`);
+    }
+    if (err.message === 'Failed to fetch' || (err.message && err.message.toLowerCase().includes('failed to fetch'))) {
+      throw new Error(`Servidor Evolution API inacessível em "${serverUrl}". O serviço no Railway pode estar suspenso, desligado ou mudou de endereço. Clique em "⚙️ Configurar Servidor" para atualizar.`);
     }
     throw err;
   }

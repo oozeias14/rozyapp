@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { 
   getEvolutionConfig,
+  saveEvolutionConfig,
+  loadEvolutionConfig,
+  testEvolutionServerConnection,
   fetchInstanceStatus,
   createOrConnectInstance,
   getPairingCode,
@@ -110,7 +113,101 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   const [auditResult, setAuditResult] = useState(null);
   const [activeTab, setActiveTab] = useState('summary'); // 'summary' | 'dialogue' | 'receipts' | 'transcripts'
   const [dialogSearch, setDialogSearch] = useState('');
-  const [dialogFilter, setDialogFilter] = useState('all'); // 'all' | 'audio' | 'text' | 'financial'
+  const [dialogFilter, setDialogFilter] = useState('all'); // 'all' | 'audio' | 'text' | 'financial' | 'image'
+
+  // ── CONFIGURAÇÃO EVOLUTION API (RAILWAY) ──
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [apiConfig, setApiConfig] = useState(() => getEvolutionConfig());
+  const [testingConn, setTestingConn] = useState(false);
+  const [testResult, setTestResult] = useState(null);
+  const [connectError, setConnectError] = useState(null);
+
+  // ── PASSO 3: VALOR TOTAL PAGO CONSOLIDADO (MANUAL) ──
+  const [manualTotalPaidInput, setManualTotalPaidInput] = useState(() => {
+    return localStorage.getItem('wa_audit_manual_total_paid') || '';
+  });
+  const [manualTotalPaidSaved, setManualTotalPaidSaved] = useState(() => {
+    const v = localStorage.getItem('wa_audit_manual_total_paid');
+    return v ? parseFloat(v) : null;
+  });
+  const [manualPaidDate, setManualPaidDate] = useState(() => {
+    return localStorage.getItem('wa_audit_manual_paid_date') || new Date().toISOString().slice(0, 10);
+  });
+
+  function handleSaveManualTotalPaid() {
+    const cleaned = (manualTotalPaidInput || '').replace(/\./g, '').replace(',', '.').replace(/[^\d.]/g, '');
+    const num = parseFloat(cleaned);
+    if (isNaN(num) || num <= 0) {
+      alert('Por favor, digite um valor válido maior que zero (ex: 15000,00).');
+      return;
+    }
+    setManualTotalPaidSaved(num);
+    localStorage.setItem('wa_audit_manual_total_paid', String(num));
+    localStorage.setItem('wa_audit_manual_paid_date', manualPaidDate);
+    alert(`✓ Valor total pago de R$ ${num.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} salvo com sucesso! A perícia utilizará este montante para calcular a amortização e restituição.`);
+  }
+
+  function handleClearManualTotalPaid() {
+    setManualTotalPaidInput('');
+    setManualTotalPaidSaved(null);
+    localStorage.removeItem('wa_audit_manual_total_paid');
+  }
+
+  // ── POP-UP COM CRONÔMETRO REGRESSIVO DE 3 MINUTOS (180s) & FEED AO VIVO ──
+  const [showAuditProgressModal, setShowAuditProgressModal] = useState(false);
+  const [countdownSeconds, setCountdownSeconds] = useState(180);
+  const countdownTimerRef = useRef(null);
+  const [liveDialogueFeed, setLiveDialogueFeed] = useState([]);
+  const [liveModalTab, setLiveModalTab] = useState('dialogue'); // 'dialogue' | 'logs'
+  const [myUserName, setMyUserName] = useState(() => localStorage.getItem('wa_audit_my_name') || 'Ozeias');
+  const [liveTotalMsgs, setLiveTotalMsgs] = useState(0);
+  const liveFeedEndRef = useRef(null);
+
+  useEffect(() => {
+    if (liveFeedEndRef.current) {
+      liveFeedEndRef.current.scrollTop = liveFeedEndRef.current.scrollHeight;
+    }
+  }, [liveDialogueFeed]);
+
+  useEffect(() => {
+    if (showAuditProgressModal && isAuditing) {
+      countdownTimerRef.current = setInterval(() => {
+        setCountdownSeconds(prev => (prev > 0 ? prev - 1 : 0));
+      }, 1000);
+    } else {
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    }
+    return () => {
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    };
+  }, [showAuditProgressModal, isAuditing]);
+
+  function formatCountdown(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  async function handleSaveConfig(e) {
+    if (e) e.preventDefault();
+    await saveEvolutionConfig(apiConfig);
+    alert('Configurações da Evolution API salvas com sucesso!');
+    setShowConfigModal(false);
+    handleFetchQr();
+  }
+
+  async function handleTestConn() {
+    setTestingConn(true);
+    setTestResult(null);
+    try {
+      const res = await testEvolutionServerConnection(apiConfig.serverUrl, apiConfig.apiKey);
+      setTestResult(res);
+    } catch (err) {
+      setTestResult({ success: false, message: err.message });
+    } finally {
+      setTestingConn(false);
+    }
+  }
 
   function addLog(msg, type = 'info') {
     const time = new Date().toLocaleTimeString('pt-BR');
@@ -126,12 +223,14 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   // ── CONEXÃO COM WHATSAPP (QR CODE & PAIRING CODE) ──
   async function handleOpenConnectModal() {
     setShowConnectModalLocal(true);
+    setConnectError(null);
     if (setShowConnectModal) setShowConnectModal(true);
     handleFetchQr();
   }
 
   async function handleFetchQr() {
     setLoadingQr(true);
+    setConnectError(null);
     try {
       const res = await createOrConnectInstance();
       if (res?.base64 || res?.qrcode) {
@@ -139,6 +238,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       }
     } catch (err) {
       console.warn('Erro ao gerar QR Code:', err);
+      setConnectError(err.message || 'Servidor inacessível');
     } finally {
       setLoadingQr(false);
     }
@@ -164,6 +264,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
   async function handleResetSession() {
     setResettingInstance(true);
+    setConnectError(null);
     try {
       await resetAndRecreateInstance();
       setQrCodeData(null);
@@ -171,7 +272,9 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       await handleFetchQr();
       alert('Sessão limpa! Escaneie o novo QR Code que apareceu na tela.');
     } catch (err) {
-      alert('Erro ao reiniciar sessão: ' + err.message);
+      const msg = err.message || 'Erro ao reiniciar sessão';
+      setConnectError(msg);
+      alert('Aviso do Servidor: ' + msg);
     } finally {
       setResettingInstance(false);
     }
@@ -328,6 +431,12 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         }
 
         const isAudio = Boolean(msg.message?.audioMessage || msg.messageType === 'audioMessage');
+        const isImage = Boolean(
+          msg.message?.imageMessage || 
+          msg.messageType === 'imageMessage' ||
+          (msg.message?.documentMessage?.mimetype && msg.message?.documentMessage?.mimetype.startsWith('image/'))
+        );
+
         if (isAudio && audioTranscripts.length < 15) {
           try {
             const base64Audio = await fetchMediaBase64FromMessage(msg);
@@ -354,9 +463,36 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             }
           } catch (e) {}
         }
+
+        if (isImage && textRecords.length < 50) {
+          try {
+            const base64Img = await fetchMediaBase64FromMessage(msg);
+            if (base64Img) {
+              const resp = await fetch('/api/gemini-financial-audit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'ocr_receipt',
+                  base64Data: base64Img,
+                  mimeType: msg.message?.imageMessage?.mimetype || 'image/jpeg'
+                })
+              });
+              if (resp.ok) {
+                const imgData = await resp.json();
+                if (imgData.valor_pago > 0 || imgData.tipo_comprovante) {
+                  textRecords.push({
+                    date: imgData.data_pagamento || dateStr,
+                    sender: senderLabel,
+                    text: `[Print / Comprovante ${imgData.tipo_comprovante || 'PIX'}: R$ ${Number(imgData.valor_pago || 0).toFixed(2)} para ${imgData.favorecido_nome || 'Favorecido'}]`
+                  });
+                }
+              }
+            }
+          } catch (e) {}
+        }
       }
 
-      addLog(`🤖 Enviando ${textRecords.length} mensagens e ${audioTranscripts.length} áudios para detecção automática com IA...`, 'info');
+      addLog(`🤖 Enviando ${textRecords.length} mensagens/prints e ${audioTranscripts.length} áudios para detecção automática com IA...`, 'info');
 
       const resp = await fetch('/api/gemini-financial-audit', {
         method: 'POST',
@@ -583,6 +719,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     abortAuditRef.current = false;
     setAuditLogs([]);
     setAuditResult(null);
+    setShowAuditProgressModal(true);
+    setCountdownSeconds(180);
 
     const targetContactPhone = selectedContact?.phone || (selectedContact?.jid ? selectedContact.jid.replace('@s.whatsapp.net', '') : manualPhone) || 'Credor';
     const targetContactName = selectedContact?.name || 'Credor';
@@ -591,6 +729,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     addLog('🚀 INICIANDO PERÍCIA FINANCEIRA FORENSE DE CONVERSA & AMORTIZAÇÕES', 'info');
     addLog(`👤 Alvo da Perícia: ${targetContactDisplay}`, 'info');
     addLog(`⚙️ Modo Escolhido no Passo 2: ${step2Mode === 'auto' ? '🤖 AUTOMÁTICO (Robô & IA)' : '📝 MANUAL'}`, 'info');
+    addLog('🔒 MODO SOMENTE LEITURA ATIVO: Restrição estrita. Nenhuma mensagem, áudio ou print será apagado do WhatsApp. O sistema opera 100% preservando os dados.', 'success');
 
     try {
       let rawMessages = [];
@@ -632,13 +771,15 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         throw new Error('Nenhuma mensagem ou comprovante encontrado para analisar.');
       }
 
-      // ── FASE 2: TRANSCRIÇÃO DE ÁUDIOS E LEITURA DE TEXTOS ─────────────
-      setAuditProgress({ current: 40, total: 100, stepLabel: 'Fase 2/4: Ouvindo e transcrevendo áudios com IA...' });
+      // ── FASE 2: TRANSCRIÇÃO DE ÁUDIOS, OCR DE PRINTS E LEITURA DE TEXTOS ─────────────
+      setAuditProgress({ current: 40, total: 100, stepLabel: 'Fase 2/4: Lendo mensagens, ouvindo áudios e periciando prints...' });
 
       const textRecords = [];
       const audioTranscripts = [];
+      const whatsappImageReceipts = [];
       const fullConversationDialog = [];
       let audioCount = 0;
+      let imageCount = 0;
 
       for (let i = 0; i < rawMessages.length; i++) {
         if (abortAuditRef.current) break;
@@ -658,6 +799,13 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           '';
 
         const isAudio = Boolean(msg.message?.audioMessage || msg.messageType === 'audioMessage');
+        const isImage = Boolean(
+          msg.message?.imageMessage || 
+          msg.messageType === 'imageMessage' ||
+          (msg.message?.documentMessage?.mimetype && msg.message?.documentMessage?.mimetype.startsWith('image/'))
+        );
+
+        const senderNameOnly = isFromMe ? myUserName : targetContactName;
 
         if (textContent.trim()) {
           const hasFinancialKeywords = /(juro|amortiz|pag|devo|saldo|cobran|r\$|\d+,\d{2}|\d+\.\d{2}|deposit|pix|transferi|acordo|cobrou|venc|resta|cart|compra|fatura|comprovante)/i.test(textContent);
@@ -687,11 +835,46 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             resumoFinanceiro: hasFinancialKeywords ? 'Mencionou termos financeiros' : '',
             isFinancial: hasFinancialKeywords
           });
+
+          // Feed ao Vivo do Pop-up (conforme solicitado no áudio)
+          setLiveDialogueFeed(prev => [
+            ...prev.slice(-300),
+            {
+              id: msg.key?.id || `live-txt-${i}`,
+              sender: senderNameOnly,
+              isFromMe,
+              type: 'TEXT',
+              time: timeStr || dateStr,
+              text: textContent,
+              status: 'done'
+            }
+          ]);
+
+          // Pequena pausa para o usuário acompanhar o fluxo de leitura ao vivo na tela
+          if (!isAudio && !isImage) {
+            await new Promise(r => setTimeout(r, 40));
+          }
         }
 
+        // Processar áudios do WhatsApp
         if (isAudio) {
           audioCount++;
-          addLog(`🎙️ Áudio #${audioCount} detectado em ${dateTimeDisplay}. Transcrevendo com IA...`, 'info');
+          const audioLiveId = msg.key?.id || `live-aud-${i}`;
+          // Notifica imediatamente no Feed: "Áudio sendo transcrito..."
+          setLiveDialogueFeed(prev => [
+            ...prev.slice(-300),
+            {
+              id: audioLiveId,
+              sender: senderNameOnly,
+              isFromMe,
+              type: 'AUDIO',
+              time: timeStr || dateStr,
+              status: 'transcribing',
+              transcription: ''
+            }
+          ]);
+
+          addLog(`🎙️ Áudio #${audioCount} de ${senderNameOnly} em ${dateTimeDisplay}. Transcrevendo com Inteligência Artificial...`, 'info');
           try {
             const base64Audio = await fetchMediaBase64FromMessage(msg);
             if (base64Audio) {
@@ -737,11 +920,120 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   taxaJuros: audData.taxa_juros_mencionada || '',
                   isFinancial: true
                 });
-                addLog(`✓ Áudio #${audioCount} transcrito com sucesso: "${audData.resumo_financeiro || audData.transcricao.slice(0, 80)}..."`, 'success');
+
+                // Atualiza o item no Feed com a transcrição concluída
+                setLiveDialogueFeed(prev => prev.map(item => item.id === audioLiveId ? {
+                  ...item,
+                  status: 'done',
+                  transcription: audData.transcricao || 'Áudio transcrito',
+                  resumo: audData.resumo_financeiro || '',
+                  taxa: audData.taxa_juros_mencionada || '',
+                  valores: audData.valores_mencionados || []
+                } : item));
+
+                addLog(`✓ Áudio #${audioCount} de ${senderNameOnly} transcrito com sucesso: "${audData.resumo_financeiro || audData.transcricao.slice(0, 80)}..."`, 'success');
+              } else {
+                setLiveDialogueFeed(prev => prev.map(item => item.id === audioLiveId ? {
+                  ...item,
+                  status: 'done',
+                  transcription: '[Áudio sem texto legível detectado]'
+                } : item));
               }
+            } else {
+              setLiveDialogueFeed(prev => prev.map(item => item.id === audioLiveId ? {
+                ...item,
+                status: 'done',
+                transcription: '[Mídia do áudio não disponível para download]'
+              } : item));
             }
           } catch (audioErr) {
             console.warn('Erro ao transcrever áudio:', audioErr);
+            setLiveDialogueFeed(prev => prev.map(item => item.id === audioLiveId ? {
+              ...item,
+              status: 'done',
+              transcription: '[Erro na transcrição do áudio]'
+            } : item));
+          }
+        }
+
+        // Processar prints e imagens do WhatsApp
+        if (isImage) {
+          imageCount++;
+          const imgLiveId = msg.key?.id || `live-img-${i}`;
+          setLiveDialogueFeed(prev => [
+            ...prev.slice(-300),
+            {
+              id: imgLiveId,
+              sender: senderNameOnly,
+              isFromMe,
+              type: 'IMAGE',
+              time: timeStr || dateStr,
+              status: 'analyzing',
+              ocrResult: ''
+            }
+          ]);
+
+          addLog(`🖼️ Print #${imageCount} de ${senderNameOnly} em ${dateTimeDisplay}. Analisando com OCR da IA...`, 'info');
+          try {
+            const base64Img = await fetchMediaBase64FromMessage(msg);
+            if (base64Img) {
+              const mime = msg.message?.imageMessage?.mimetype || 'image/jpeg';
+              const resp = await fetch('/api/gemini-financial-audit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'ocr_receipt',
+                  base64Data: base64Img,
+                  mimeType: mime
+                })
+              });
+              if (resp.ok) {
+                const ocrData = await resp.json();
+                const valPago = parseFloat(ocrData.valor_pago) || 0;
+                const isReceipt = ocrData.e_comprovante_valido !== false && valPago > 0;
+
+                if (isReceipt) {
+                  whatsappImageReceipts.push({
+                    date: ocrData.data_pagamento || dateStr,
+                    amount: valPago,
+                    origin: 'Print do WhatsApp',
+                    evidence: `Print ${ocrData.tipo_comprovante || 'PIX'}: R$ ${valPago.toFixed(2)} para ${ocrData.favorecido_nome || targetContactName} (${ocrData.id_transacao_ou_autenticacao || 'ID não informado'})`,
+                    authId: ocrData.id_transacao_ou_autenticacao || ''
+                  });
+                  addLog(`✓ Print #${imageCount} periciado: ${ocrData.tipo_comprovante || 'Comprovante'} de R$ ${valPago.toFixed(2)} (${ocrData.favorecido_nome || 'Favorecido'})`, 'success');
+                }
+
+                setLiveDialogueFeed(prev => prev.map(item => item.id === imgLiveId ? {
+                  ...item,
+                  status: 'done',
+                  ocrResult: isReceipt ? `Comprovante ${ocrData.tipo_comprovante || 'PIX'}: R$ ${valPago.toFixed(2)}` : 'Print analisado (sem comprovante)',
+                  valPago
+                } : item));
+
+                fullConversationDialog.push({
+                  id: msg.key?.id || `img-${i}`,
+                  date: dateStr,
+                  time: timeStr,
+                  dateTime: dateTimeDisplay,
+                  timestamp: tsSec,
+                  sender: senderLabel,
+                  senderNumber,
+                  isFromMe,
+                  type: 'IMAGE',
+                  mediaTypeLabel: isReceipt ? '🖼️ PRINT DE COMPROVANTE' : '🖼️ PRINT / IMAGEM',
+                  content: textContent ? `${textContent}\n[Print periciado: ${ocrData.tipo_comprovante || 'Comprovante'} de R$ ${valPago.toFixed(2)}]` : `[Print periciado: ${ocrData.tipo_comprovante || 'Comprovante'} de R$ ${valPago.toFixed(2)} - ${ocrData.favorecido_nome || 'Favorecido'}]`,
+                  receiptData: ocrData,
+                  isFinancial: isReceipt || valPago > 0
+                });
+              }
+            }
+          } catch (imgErr) {
+            console.warn('Erro ao periciar imagem do WhatsApp:', imgErr);
+            setLiveDialogueFeed(prev => prev.map(item => item.id === imgLiveId ? {
+              ...item,
+              status: 'done',
+              ocrResult: 'Print analisado'
+            } : item));
           }
         }
       }
@@ -752,41 +1044,58 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         return new Date(a.date) - new Date(b.date);
       });
 
-      addLog(`🎙️ Processamento de áudios concluído: ${audioTranscripts.length} áudio(s) transcritos e periciados.`, 'info');
+      addLog(`🎙️ Processamento concluído: ${audioTranscripts.length} áudio(s) transcritos e ${imageCount} print(s) periciados via OCR.`, 'info');
       addLog(`📜 Diálogo completo consolidado com ${fullConversationDialog.length} registros no total!`, 'success');
 
       // ── FASE 3: CONSOLIDAÇÃO DE COMPROVANTES E PAGAMENTOS ─────────────
-      setAuditProgress({ current: 65, total: 100, stepLabel: 'Fase 3/4: Cruzando comprovantes e pagamentos efetuados...' });
+      setAuditProgress({ current: 65, total: 100, stepLabel: 'Fase 3/4: Cruzando comprovantes, prints e pagamentos efetuados...' });
 
-      const allPayments = [...uploadedReceipts.map(r => ({
-        date: r.date,
-        amount: Number(r.amount) || 0,
-        origin: 'Comprovante Anexado',
-        evidence: `Comprovante ${r.type}: R$ ${r.amount} para ${r.beneficiary || targetContactName} (Autenticação: ${r.authId || 'Sem ID'})`,
-        authId: r.authId
-      }))];
+      let allPayments = [];
 
-      textRecords.forEach(t => {
-        if (t.isFromMe) {
-          const matchPix = t.text.match(/(?:paguei|mandei|transferi|enviei|pix\s*de)\s*(?:r\$)?\s*([\d\.]+,\d{2}|\d+)/i);
-          if (matchPix) {
-            const rawVal = matchPix[1].replace(/\./g, '').replace(',', '.');
-            const valNum = parseFloat(rawVal);
-            if (valNum > 0 && valNum < 500000) {
-              const alreadyExists = allPayments.some(p => p.date === t.date && Math.abs(p.amount - valNum) < 1);
-              if (!alreadyExists) {
-                allPayments.push({
-                  date: t.date,
-                  amount: valNum,
-                  origin: 'Chat (Mensagem de Pagamento)',
-                  evidence: `Mensagem em ${t.date}: "${t.text}"`,
-                  authId: 'Chat'
-                });
+      if (manualTotalPaidSaved !== null && manualTotalPaidSaved > 0) {
+        addLog(`💵 MODO PRIORITÁRIO ATIVO: Utilizando o montante total pago de R$ ${manualTotalPaidSaved.toFixed(2)} informado diretamente no Passo 3.`, 'success');
+        allPayments = [{
+          date: manualPaidDate || dateStr,
+          amount: manualTotalPaidSaved,
+          origin: 'Valor Total Pago Informado Diretamente (Passo 3)',
+          evidence: `Montante consolidado de todos os comprovantes pago pelo devedor: R$ ${manualTotalPaidSaved.toFixed(2)}`,
+          authId: 'TOTAL-CONSOLIDADO-PASSO3',
+          isPayment: true
+        }];
+      } else {
+        allPayments = [
+          ...uploadedReceipts.map(r => ({
+            date: r.date,
+            amount: Number(r.amount) || 0,
+            origin: 'Comprovante Anexado',
+            evidence: `Comprovante ${r.type}: R$ ${r.amount} para ${r.beneficiary || targetContactName} (Autenticação: ${r.authId || 'Sem ID'})`,
+            authId: r.authId
+          })),
+          ...whatsappImageReceipts
+        ];
+
+        textRecords.forEach(t => {
+          if (t.isFromMe) {
+            const matchPix = t.text.match(/(?:paguei|mandei|transferi|enviei|pix\s*de)\s*(?:r\$)?\s*([\d\.]+,\d{2}|\d+)/i);
+            if (matchPix) {
+              const rawVal = matchPix[1].replace(/\./g, '').replace(',', '.');
+              const valNum = parseFloat(rawVal);
+              if (valNum > 0 && valNum < 500000) {
+                const alreadyExists = allPayments.some(p => p.date === t.date && Math.abs(p.amount - valNum) < 1);
+                if (!alreadyExists) {
+                  allPayments.push({
+                    date: t.date,
+                    amount: valNum,
+                    origin: 'Chat (Mensagem de Pagamento)',
+                    evidence: `Mensagem em ${t.date}: "${t.text}"`,
+                    authId: 'Chat'
+                  });
+                }
               }
             }
           }
-        }
-      });
+        });
+      }
 
       allPayments.sort((a, b) => new Date(a.date) - new Date(b.date));
       addLog(`💳 ${allPayments.length} registros de pagamentos consolidados para a perícia.`, 'info');
@@ -1352,6 +1661,44 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             >
               <span>📱</span> {connStatus?.connected ? 'Reconectar / QR Code' : 'Conectar Agora'}
             </button>
+
+            <button
+              type="button"
+              onClick={() => setShowConfigModal(true)}
+              title="Configurar URL do Servidor Railway e Chave da API"
+              style={{
+                fontSize: 11.5,
+                fontWeight: 800,
+                padding: '6px 11px',
+                borderRadius: 8,
+                background: 'rgba(255,255,255,0.08)',
+                color: '#fff',
+                border: '1px solid var(--line)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4
+              }}
+            >
+              <span>⚙️</span> Servidor API
+            </button>
+          </div>
+        </div>
+
+        {/* GARANTIA DE RESTRIÇÃO / SEGURANÇA: MODO 100% LEITURA (READ-ONLY) */}
+        <div style={{
+          marginTop: 16,
+          padding: '12px 16px',
+          borderRadius: 12,
+          background: 'rgba(56, 189, 248, 0.08)',
+          border: '1px solid rgba(56, 189, 248, 0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12
+        }}>
+          <span style={{ fontSize: 22 }}>🔒</span>
+          <div style={{ fontSize: 12.5, lineHeight: 1.5, color: '#E0F2FE' }}>
+            <strong style={{ color: '#38BDF8', fontWeight: 900 }}>Restrição de Segurança Ativa — Modo Somente Leitura (Read-Only):</strong> O sistema foi programado estritamente para <strong>ler mensagens, ouvir áudios, analisar prints</strong> e <strong>fazer os cálculos financeiros</strong>. É <u>terminantemente bloqueado</u> apagar, excluir ou alterar qualquer mensagem, áudio ou imagem do seu WhatsApp. Seus arquivos originais permanecem 100% intactos e preservados.
           </div>
         </div>
       </div>
@@ -1359,7 +1706,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       {/* MODAL INTEGRADO DE CONEXÃO WHATSAPP (QR CODE + CÓDIGO DE PAREAMENTO) */}
       {showConnectModalLocal && (
         <div className="modal-bg" style={{ zIndex: 12000 }}>
-          <div className="modal" style={{ maxWidth: 430, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="modal" style={{ maxWidth: 450, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <h3 style={{ fontSize: 16, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span>📱</span> Conectar WhatsApp Oficial
@@ -1373,6 +1720,41 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 ✕
               </button>
             </div>
+
+            {connectError && (
+              <div style={{
+                padding: 10,
+                borderRadius: 8,
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                fontSize: 12,
+                color: '#FCA5A5',
+                lineHeight: 1.4,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6
+              }}>
+                <div>⚠️ {connectError}</div>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => { setShowConnectModalLocal(false); setShowConfigModal(true); }}
+                    style={{
+                      padding: '5px 10px',
+                      borderRadius: 6,
+                      background: '#EF4444',
+                      color: '#fff',
+                      border: 'none',
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ⚙️ Configurar URL / Chave do Servidor
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Abas: QR Code vs Código de Pareamento */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, background: 'rgba(255,255,255,0.04)', padding: 4, borderRadius: 10 }}>
@@ -1526,8 +1908,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               </div>
             )}
 
-            {/* Opção Limpar e Reiniciar Sessão */}
-            <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {/* Opções Rodapé do Modal */}
+            <div style={{ borderTop: '1px solid var(--line)', paddingTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
               <button
                 type="button"
                 onClick={handleResetSession}
@@ -1543,15 +1925,572 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               >
                 {resettingInstance ? '⏳ Reiniciando...' : '⚠️ Sessão travada? Limpar e Reiniciar'}
               </button>
+
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => { setShowConnectModalLocal(false); setShowConfigModal(true); }}
+                  style={{
+                    background: 'none',
+                    border: '1px solid var(--line)',
+                    borderRadius: 6,
+                    color: '#38BDF8',
+                    fontSize: 11.5,
+                    padding: '4px 8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  ⚙️ Configurar Servidor
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setShowConnectModalLocal(false)}
+                  style={{ padding: '4px 12px', fontSize: 12, margin: 0 }}
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIGURAÇÃO DA EVOLUTION API / RAILWAY */}
+      {showConfigModal && (
+        <div className="modal-bg" style={{ zIndex: 14000 }}>
+          <div className="modal" style={{ maxWidth: 440, padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ fontSize: 16, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>⚙️</span> Servidor da API Evolution (Railway)
+              </h3>
               <button
                 type="button"
-                className="btn btn-ghost"
-                onClick={() => setShowConnectModalLocal(false)}
-                style={{ padding: '4px 12px', fontSize: 12, margin: 0 }}
+                className="btn-ghost"
+                onClick={() => setShowConfigModal(false)}
+                style={{ width: 28, height: 28, borderRadius: 8, padding: 0, margin: 0, border: '1px solid var(--line)', color: 'var(--ink2)', cursor: 'pointer' }}
               >
-                Fechar
+                ✕
               </button>
             </div>
+
+            <div style={{ fontSize: 12, color: 'var(--ink2)', lineHeight: 1.4 }}>
+              Atualize a URL e a Chave da sua Evolution API hospedada no Railway ou VPS:
+            </div>
+
+            <form onSubmit={handleSaveConfig} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase' }}>
+                  URL do Servidor Evolution API
+                </label>
+                <input 
+                  type="text"
+                  placeholder="https://sua-evolution-api.up.railway.app"
+                  value={apiConfig.serverUrl}
+                  onChange={(e) => setApiConfig({ ...apiConfig, serverUrl: e.target.value })}
+                  required
+                  style={{ marginTop: 4, width: '100%', padding: '9px 12px', borderRadius: 8, background: 'rgba(0,0,0,0.4)', border: '1px solid var(--line)', color: '#fff', fontSize: 13 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase' }}>
+                  Chave Global da API (AUTHENTICATION_API_KEY)
+                </label>
+                <input 
+                  type="text"
+                  placeholder="Chave secreta configurada no Railway"
+                  value={apiConfig.apiKey}
+                  onChange={(e) => setApiConfig({ ...apiConfig, apiKey: e.target.value })}
+                  required
+                  style={{ marginTop: 4, width: '100%', padding: '9px 12px', borderRadius: 8, background: 'rgba(0,0,0,0.4)', border: '1px solid var(--line)', color: '#fff', fontSize: 13 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink3)', textTransform: 'uppercase' }}>
+                  Nome da Instância
+                </label>
+                <input 
+                  type="text"
+                  placeholder="dr_candido"
+                  value={apiConfig.instanceName}
+                  onChange={(e) => setApiConfig({ ...apiConfig, instanceName: e.target.value })}
+                  style={{ marginTop: 4, width: '100%', padding: '9px 12px', borderRadius: 8, background: 'rgba(0,0,0,0.4)', border: '1px solid var(--line)', color: '#fff', fontSize: 13 }}
+                />
+              </div>
+
+              {testResult && (
+                <div style={{
+                  padding: 10,
+                  borderRadius: 8,
+                  fontSize: 12,
+                  background: testResult.success ? 'rgba(0, 229, 155, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                  border: `1px solid ${testResult.success ? 'var(--teal)' : '#EF4444'}`,
+                  color: testResult.success ? 'var(--teal)' : '#EF4444',
+                  lineHeight: 1.4
+                }}>
+                  {testResult.success ? '✓ ' : '⚠️ '}{testResult.message}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button
+                  type="button"
+                  onClick={handleTestConn}
+                  disabled={testingConn}
+                  style={{
+                    padding: '9px 14px',
+                    borderRadius: 8,
+                    background: 'rgba(56, 189, 248, 0.15)',
+                    border: '1px solid rgba(56, 189, 248, 0.4)',
+                    color: '#38BDF8',
+                    fontWeight: 800,
+                    fontSize: 12,
+                    cursor: testingConn ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {testingConn ? 'Testando...' : '🧪 Testar Conexão'}
+                </button>
+
+                <button
+                  type="submit"
+                  style={{
+                    flex: 1,
+                    padding: '9px 16px',
+                    borderRadius: 8,
+                    background: 'var(--teal)',
+                    border: 'none',
+                    color: '#081018',
+                    fontWeight: 900,
+                    fontSize: 12.5,
+                    cursor: 'pointer'
+                  }}
+                >
+                  💾 Salvar Configurações
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* POP-UP MODAL COM CRONÔMETRO REGRESSIVO DE 3 MINUTOS (180s) & FEED AO VIVO DE CONVERSAS E ÁUDIOS */}
+      {showAuditProgressModal && (
+        <div className="modal-bg" style={{ zIndex: 14500, backdropFilter: 'blur(10px)', background: 'rgba(3, 7, 18, 0.88)' }}>
+          <div className="modal" style={{ maxWidth: 760, width: '95%', maxHeight: '92vh', padding: 24, display: 'flex', flexDirection: 'column', gap: 14, border: '1px solid rgba(0, 229, 155, 0.45)', boxShadow: '0 12px 48px rgba(0, 229, 155, 0.25)', overflow: 'hidden' }}>
+            
+            {/* Cabeçalho */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 12,
+                  background: isAuditing ? 'rgba(0, 229, 155, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                  border: `1px solid ${isAuditing ? 'var(--teal)' : '#38BDF8'}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 22
+                }}>
+                  {isAuditing ? '🤖' : '✓'}
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 17, color: '#fff', margin: 0, fontWeight: 900, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {isAuditing ? 'Perícia Forense em Andamento' : 'Perícia Concluída com Sucesso!'}
+                    {isAuditing && (
+                      <span style={{ fontSize: 11, background: 'rgba(0, 229, 155, 0.2)', color: 'var(--teal)', padding: '2px 8px', borderRadius: 10, fontWeight: 800 }}>
+                        AO VIVO
+                      </span>
+                    )}
+                  </h3>
+                  <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
+                    {selectedContact ? `Alvo: ${selectedContact.name || selectedContact.jid} ↔ ${myUserName}` : 'Examinando histórico de conversas...'}
+                  </div>
+                </div>
+              </div>
+
+              {/* CRONÔMETRO COMPACTO NO CABEÇALHO */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{
+                  background: 'rgba(0,0,0,0.5)',
+                  border: '1px solid rgba(0, 229, 155, 0.4)',
+                  borderRadius: 10,
+                  padding: '6px 14px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: 9.5, fontWeight: 800, color: 'var(--ink2)', textTransform: 'uppercase' }}>
+                    ⏱️ Tempo Restante
+                  </div>
+                  <div style={{
+                    fontFamily: 'monospace, "Courier New", Courier',
+                    fontSize: 22,
+                    fontWeight: 900,
+                    color: countdownSeconds === 0 ? '#38BDF8' : 'var(--teal)',
+                    lineHeight: 1.1
+                  }}>
+                    {formatCountdown(countdownSeconds)}
+                  </div>
+                </div>
+
+                {!isAuditing && (
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={() => setShowAuditProgressModal(false)}
+                    style={{ width: 32, height: 32, borderRadius: 8, padding: 0, margin: 0, border: '1px solid var(--line)', color: '#fff', cursor: 'pointer', fontSize: 14 }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* BARRA DE PROGRESSO & FASE ATUAL */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>
+                  {auditProgress.stepLabel || 'Processando dados...'}
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 900, color: 'var(--teal)' }}>
+                  {auditProgress.current}%
+                </span>
+              </div>
+              <div style={{
+                width: '100%',
+                height: 8,
+                borderRadius: 4,
+                background: 'rgba(255, 255, 255, 0.08)',
+                overflow: 'hidden'
+              }}>
+                <div style={{
+                  width: `${auditProgress.current}%`,
+                  height: '100%',
+                  background: 'linear-gradient(90deg, #00E59B, #38BDF8)',
+                  transition: 'width 0.4s ease'
+                }} />
+              </div>
+            </div>
+
+            {/* ABAS DO MODAL: CONVERSAS AO VIVO VS LOGS DO SISTEMA */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => setLiveModalTab('dialogue')}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    background: liveModalTab === 'dialogue' ? 'var(--teal)' : 'rgba(255,255,255,0.06)',
+                    color: liveModalTab === 'dialogue' ? '#081018' : 'var(--ink2)',
+                    border: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                >
+                  <span>💬</span> Conversa Sendo Lida ao Vivo ({liveDialogueFeed.length})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setLiveModalTab('logs')}
+                  style={{
+                    padding: '7px 14px',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    background: liveModalTab === 'logs' ? 'var(--teal)' : 'rgba(255,255,255,0.06)',
+                    color: liveModalTab === 'logs' ? '#081018' : 'var(--ink2)',
+                    border: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                >
+                  <span>⚙️</span> Logs Técnicos ({auditLogs.length})
+                </button>
+              </div>
+
+              {/* CAMPO RÁPIDO PARA AJUSTAR NOME DO USUÁRIO */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 11, color: 'var(--ink2)', fontWeight: 700 }}>Meu Nome:</span>
+                <input
+                  type="text"
+                  value={myUserName}
+                  onChange={(e) => {
+                    setMyUserName(e.target.value);
+                    localStorage.setItem('wa_audit_my_name', e.target.value);
+                  }}
+                  style={{
+                    width: 90,
+                    padding: '4px 8px',
+                    borderRadius: 6,
+                    background: 'rgba(0,0,0,0.5)',
+                    border: '1px solid var(--line)',
+                    color: '#fff',
+                    fontSize: 11,
+                    fontWeight: 800
+                  }}
+                  title="Altere seu nome se desejar"
+                />
+              </div>
+            </div>
+
+            {/* CONTEÚDO DA ABA 1: FEED AO VIVO DE CONVERSAS ESTILO WHATSAPP */}
+            {liveModalTab === 'dialogue' && (
+              <div 
+                ref={liveFeedEndRef}
+                style={{
+                  background: 'rgba(2, 6, 23, 0.75)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: 12,
+                  padding: 14,
+                  height: 320,
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                  scrollBehavior: 'smooth'
+                }}
+              >
+                {liveDialogueFeed.length === 0 ? (
+                  <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--ink2)', fontSize: 13, padding: 20 }}>
+                    <div style={{ fontSize: 24, marginBottom: 8 }}>⏳</div>
+                    Carregando mensagens da conversa com {selectedContact?.name || 'o contato'}...
+                  </div>
+                ) : (
+                  liveDialogueFeed.map((item, idx) => {
+                    const isMe = item.isFromMe;
+                    return (
+                      <div
+                        key={item.id || idx}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignSelf: isMe ? 'flex-end' : 'flex-start',
+                          maxWidth: '85%',
+                          background: isMe 
+                            ? 'linear-gradient(135deg, rgba(0, 229, 155, 0.12), rgba(0, 179, 119, 0.18))' 
+                            : 'rgba(30, 41, 59, 0.75)',
+                          border: `1px solid ${isMe ? 'rgba(0, 229, 155, 0.35)' : 'rgba(56, 189, 248, 0.3)'}`,
+                          borderRadius: 12,
+                          padding: '8px 12px',
+                          gap: 3,
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+                        }}
+                      >
+                        {/* Nome do Remetente e Horário */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                          <span style={{
+                            fontSize: 11.5,
+                            fontWeight: 900,
+                            color: isMe ? 'var(--teal)' : '#38BDF8'
+                          }}>
+                            {item.sender}:
+                          </span>
+                          <span style={{ fontSize: 10, color: 'var(--ink3)' }}>
+                            {item.time}
+                          </span>
+                        </div>
+
+                        {/* Corpo da Mensagem */}
+                        {item.type === 'TEXT' && (
+                          <div style={{ fontSize: 12.5, color: '#fff', lineHeight: 1.4, wordBreak: 'break-word' }}>
+                            {item.text}
+                          </div>
+                        )}
+
+                        {item.type === 'AUDIO' && (
+                          <div>
+                            {item.status === 'transcribing' ? (
+                              <div style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '4px 10px',
+                                borderRadius: 8,
+                                background: 'rgba(245, 158, 11, 0.15)',
+                                border: '1px solid #F59E0B',
+                                color: '#F59E0B',
+                                fontSize: 11.5,
+                                fontWeight: 800
+                              }}>
+                                <span>🎙️</span>
+                                <span>Áudio sendo transcrito com Inteligência Artificial...</span>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                <div style={{ fontSize: 11, color: '#F59E0B', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <span>🎙️</span> Áudio Transcrito:
+                                </div>
+                                <div style={{ fontSize: 12.5, color: '#fff', fontStyle: 'italic', background: 'rgba(0,0,0,0.3)', padding: '6px 8px', borderRadius: 6 }}>
+                                  "{item.transcription}"
+                                </div>
+                                {item.resumo && (
+                                  <div style={{ fontSize: 11, color: '#38BDF8' }}>
+                                    ⚡ Resumo Financeiro: {item.resumo}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {item.type === 'IMAGE' && (
+                          <div>
+                            {item.status === 'analyzing' ? (
+                              <div style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '4px 10px',
+                                borderRadius: 8,
+                                background: 'rgba(56, 189, 248, 0.15)',
+                                border: '1px solid #38BDF8',
+                                color: '#38BDF8',
+                                fontSize: 11.5,
+                                fontWeight: 800
+                              }}>
+                                <span>🖼️</span>
+                                <span>Print / Imagem sendo periciada via OCR da IA...</span>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 12, color: 'var(--teal)', fontWeight: 800 }}>
+                                🖼️ {item.ocrResult}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            {/* CONTEÚDO DA ABA 2: LOGS TÉCNICOS */}
+            {liveModalTab === 'logs' && (
+              <div 
+                ref={logEndRef}
+                style={{
+                  background: 'rgba(0, 0, 0, 0.75)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: 12,
+                  padding: 12,
+                  height: 320,
+                  overflowY: 'auto',
+                  fontFamily: 'monospace',
+                  fontSize: 11,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4
+                }}
+              >
+                {auditLogs.length === 0 ? (
+                  <span style={{ color: 'var(--ink2)' }}>Iniciando conexão segura em modo somente leitura...</span>
+                ) : (
+                  auditLogs.map((lg, i) => (
+                    <div key={i} style={{
+                      color: lg.type === 'error' ? '#EF4444' : lg.type === 'success' ? 'var(--teal)' : 'var(--ink1)',
+                      lineHeight: 1.4
+                    }}>
+                      <span style={{ color: 'var(--ink3)', marginRight: 6 }}>[{lg.time}]</span>
+                      {lg.msg}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* AVISO DE SEGURANÇA LEITURA EXCLUSIVA */}
+            <div style={{
+              fontSize: 11,
+              color: 'var(--teal)',
+              background: 'rgba(0, 229, 155, 0.08)',
+              border: '1px solid rgba(0, 229, 155, 0.25)',
+              borderRadius: 8,
+              padding: '8px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 6
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>🔒</span>
+                <span><strong>Garantia Estrita de Leitura:</strong> Nenhuma mensagem, áudio ou print é modificado ou excluído do WhatsApp.</span>
+              </div>
+              {liveDialogueFeed.length > 0 && (
+                <span style={{ fontSize: 10.5, color: 'var(--ink2)' }}>
+                  📖 {liveDialogueFeed.length} mensagens lidas em tempo real
+                </span>
+              )}
+            </div>
+
+            {/* BOTÕES DE AÇÃO */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              {isAuditing ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowAuditProgressModal(false)}
+                    style={{
+                      padding: '9px 16px',
+                      borderRadius: 8,
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid var(--line)',
+                      color: 'var(--ink1)',
+                      fontSize: 12,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Minimizar Pop-up
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { abortAuditRef.current = true; }}
+                    style={{
+                      padding: '9px 16px',
+                      borderRadius: 8,
+                      background: '#EF4444',
+                      border: 'none',
+                      color: '#fff',
+                      fontWeight: 800,
+                      fontSize: 12,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🛑 Parar Perícia
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowAuditProgressModal(false)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 20px',
+                    borderRadius: 10,
+                    background: 'var(--teal)',
+                    border: 'none',
+                    color: '#081018',
+                    fontWeight: 900,
+                    fontSize: 14,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 15px rgba(0, 229, 155, 0.4)'
+                  }}
+                >
+                  📊 Ver Laudo Pericial & Resultados Detalhados
+                </button>
+              )}
+            </div>
+
           </div>
         </div>
       )}
@@ -2269,6 +3208,127 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           </label>
         </div>
 
+        {/* DIGITAÇÃO RÁPIDA: VALOR TOTAL PAGO CONSOLIDADO (SOMA DE TODOS OS COMPROVANTES) */}
+        <div style={{
+          background: 'rgba(0, 229, 155, 0.05)',
+          border: '1px solid rgba(0, 229, 155, 0.3)',
+          borderRadius: 14,
+          padding: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 22 }}>💵</span>
+              <div>
+                <div style={{ fontSize: 13.5, fontWeight: 900, color: 'var(--teal)' }}>
+                  Digitar Valor Total Já Pago (Soma dos Comprovantes)
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--ink2)', marginTop: 2 }}>
+                  Você pode somar todos os comprovantes que já pagou e salvar o total aqui. A perícia e a planilha farão o cálculo de amortização e restituição diretamente em cima desse valor!
+                </div>
+              </div>
+            </div>
+
+            {manualTotalPaidSaved !== null && (
+              <span style={{
+                padding: '4px 12px',
+                borderRadius: 20,
+                background: 'rgba(0, 229, 155, 0.2)',
+                color: 'var(--teal)',
+                fontSize: 12,
+                fontWeight: 900,
+                border: '1px solid var(--teal)'
+              }}>
+                ✓ VALOR TOTAL SALVO: R$ {manualTotalPaidSaved.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 4 }}>
+                Valores Pagos Consolidados (R$):
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: 15000,00"
+                value={manualTotalPaidInput}
+                onChange={(e) => setManualTotalPaidInput(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '9px 12px',
+                  borderRadius: 8,
+                  background: 'rgba(0,0,0,0.5)',
+                  border: '1px solid var(--line)',
+                  color: '#fff',
+                  fontSize: 13,
+                  fontWeight: 700
+                }}
+              />
+            </div>
+
+            <div style={{ width: 170 }}>
+              <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink1)', display: 'block', marginBottom: 4 }}>
+                Data de Referência:
+              </label>
+              <input
+                type="date"
+                value={manualPaidDate}
+                onChange={(e) => setManualPaidDate(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '9px 12px',
+                  borderRadius: 8,
+                  background: 'rgba(0,0,0,0.5)',
+                  border: '1px solid var(--line)',
+                  color: '#fff',
+                  fontSize: 12
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                onClick={handleSaveManualTotalPaid}
+                style={{
+                  padding: '9px 18px',
+                  borderRadius: 8,
+                  background: 'var(--teal)',
+                  border: 'none',
+                  color: '#081018',
+                  fontWeight: 900,
+                  fontSize: 12.5,
+                  cursor: 'pointer'
+                }}
+              >
+                💾 Salvar Valor Pago
+              </button>
+
+              {manualTotalPaidSaved !== null && (
+                <button
+                  type="button"
+                  onClick={handleClearManualTotalPaid}
+                  style={{
+                    padding: '9px 14px',
+                    borderRadius: 8,
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid #EF4444',
+                    color: '#EF4444',
+                    fontWeight: 800,
+                    fontSize: 12,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* LISTA DE COMPROVANTES ANEXADOS */}
         {uploadedReceipts.length > 0 && (
           <div>
@@ -2953,6 +4013,22 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     </button>
                     <button
                       type="button"
+                      onClick={() => setDialogFilter('image')}
+                      style={{
+                        padding: '5px 10px',
+                        borderRadius: 6,
+                        border: 'none',
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        background: dialogFilter === 'image' ? '#F59E0B' : 'rgba(255,255,255,0.06)',
+                        color: dialogFilter === 'image' ? '#081018' : '#fff',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🖼️ Prints ({auditResult.fullDialog?.filter(d => d.type === 'IMAGE').length || 0})
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setDialogFilter('financial')}
                       style={{
                         padding: '5px 10px',
@@ -2960,7 +4036,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                         border: 'none',
                         fontSize: 11.5,
                         fontWeight: 700,
-                        background: dialogFilter === 'financial' ? '#F59E0B' : 'rgba(255,255,255,0.06)',
+                        background: dialogFilter === 'financial' ? 'var(--teal)' : 'rgba(255,255,255,0.06)',
                         color: dialogFilter === 'financial' ? '#081018' : '#fff',
                         cursor: 'pointer'
                       }}
@@ -3022,6 +4098,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   {(() => {
                     const filtered = (auditResult.fullDialog || []).filter(item => {
                       if (dialogFilter === 'audio' && item.type !== 'AUDIO') return false;
+                      if (dialogFilter === 'image' && item.type !== 'IMAGE') return false;
                       if (dialogFilter === 'financial' && !item.isFinancial) return false;
                       if (dialogSearch.trim()) {
                         const term = dialogSearch.toLowerCase();
@@ -3044,6 +4121,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     return filtered.map((item, idx) => {
                       const isMe = item.isFromMe;
                       const isAudio = item.type === 'AUDIO';
+                      const isImage = item.type === 'IMAGE';
                       return (
                         <div
                           key={item.id || idx}
@@ -3054,8 +4132,10 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                             borderRadius: 14,
                             background: isMe
                               ? 'linear-gradient(135deg, rgba(0, 229, 155, 0.15), rgba(15, 23, 42, 0.9))'
+                              : isImage
+                              ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(15, 23, 42, 0.95))'
                               : 'linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95))',
-                            border: `1px solid ${isMe ? 'rgba(0, 229, 155, 0.35)' : isAudio ? 'rgba(56, 189, 248, 0.4)' : 'rgba(255,255,255,0.1)'}`,
+                            border: `1px solid ${isMe ? 'rgba(0, 229, 155, 0.35)' : isAudio ? 'rgba(56, 189, 248, 0.4)' : isImage ? 'rgba(245, 158, 11, 0.4)' : 'rgba(255,255,255,0.1)'}`,
                             boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
                           }}
                         >
@@ -3069,8 +4149,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                                 fontWeight: 800,
                                 padding: '2px 6px',
                                 borderRadius: 4,
-                                background: isAudio ? '#38BDF8' : 'rgba(255,255,255,0.08)',
-                                color: isAudio ? '#081018' : 'var(--ink2)'
+                                background: isAudio ? '#38BDF8' : isImage ? '#F59E0B' : 'rgba(255,255,255,0.08)',
+                                color: (isAudio || isImage) ? '#081018' : 'var(--ink2)'
                               }}>
                                 {item.mediaTypeLabel}
                               </span>
@@ -3085,10 +4165,33 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                             color: isAudio ? '#E0F2FE' : '#fff',
                             fontStyle: isAudio ? 'italic' : 'normal',
                             lineHeight: 1.5,
-                            wordBreak: 'break-word'
+                            wordBreak: 'break-word',
+                            whiteSpace: 'pre-line'
                           }}>
                             {isAudio ? `"${item.content}"` : item.content}
                           </div>
+
+                          {isImage && item.receiptData && item.receiptData.valor_pago > 0 && (
+                            <div style={{
+                              marginTop: 8,
+                              padding: '8px 12px',
+                              borderRadius: 8,
+                              background: 'rgba(0, 229, 155, 0.1)',
+                              border: '1px solid rgba(0, 229, 155, 0.3)',
+                              fontSize: 11.5,
+                              color: '#fff',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 2
+                            }}>
+                              <div style={{ fontWeight: 800, color: 'var(--teal)' }}>
+                                ✓ Comprovante Extraído: R$ {Number(item.receiptData.valor_pago).toFixed(2)} ({item.receiptData.tipo_comprovante || 'PIX'})
+                              </div>
+                              {item.receiptData.favorecido_nome && <div>👤 <strong>Favorecido:</strong> {item.receiptData.favorecido_nome}</div>}
+                              {item.receiptData.data_pagamento && <div>📅 <strong>Data:</strong> {item.receiptData.data_pagamento}</div>}
+                              {item.receiptData.id_transacao_ou_autenticacao && <div>🔑 <strong>Autenticação:</strong> {item.receiptData.id_transacao_ou_autenticacao}</div>}
+                            </div>
+                          )}
 
                           {(item.resumoFinanceiro || item.taxaJuros || (item.valores && item.valores.length > 0)) && (
                             <div style={{

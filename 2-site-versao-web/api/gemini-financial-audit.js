@@ -67,7 +67,8 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Nenhum áudio fornecido em base64.' });
       }
 
-      const prompt = `Você é um auditor financeiro e perito judicial forense.
+      const prompt = `DIRETRIZ DE SEGURANÇA E PRIVACIDADE: O sistema opera estritamente em MODO LEITURA (READ-ONLY). Você NUNCA deve apagar, sugerir apagar, solicitar a exclusão ou alterar nenhuma mensagem, áudio ou mídia do WhatsApp. Todas as mídias e conversas permanecem 100% intactas.
+Você é um auditor financeiro e perito judicial forense.
 Ouça com extrema atenção este áudio gravado no WhatsApp em uma negociação de cobrança/empréstimo de dinheiro a juros.
 Transcreva o áudio fielmente para o português e identifique minuciosamente:
 1. transcricao: transcrição completa e fidedigna das palavras faladas.
@@ -106,7 +107,8 @@ Retorne EXCLUSIVAMENTE um JSON com esta estrutura:
         return res.status(400).json({ error: 'Nenhuma imagem fornecida em base64.' });
       }
 
-      const prompt = `Você é um perito contábil especialista em OCR de comprovantes de pagamento (PIX, TED, DOC, Recibos) e prints de telas de cobrança no Brasil.
+      const prompt = `DIRETRIZ DE SEGURANÇA E PRIVACIDADE: O sistema opera estritamente em MODO LEITURA (READ-ONLY). Você NUNCA deve apagar, sugerir apagar, solicitar a exclusão ou alterar qualquer imagem, print, mensagem ou arquivo do WhatsApp. A imagem é apenas para leitura e perícia.
+Você é um perito contábil especialista em OCR de comprovantes de pagamento (PIX, TED, DOC, Recibos) e prints de telas de cobrança ou conversas financeiras no Brasil.
 Analise a imagem enviada e extraia todos os dados fiscais e contábeis:
 1. data_pagamento: no formato AAAA-MM-DD (ex: 2026-05-14). Se não houver ano, deduza com base no contexto.
 2. valor_pago: número float (ex: 1250.00).
@@ -156,12 +158,15 @@ Retorne EXCLUSIVAMENTE um JSON com esta estrutura:
         nomeDevedor = ''
       } = payload || {};
 
-      const prompt = `Você é um Perito Contábil e Financeiro Judicial especializado em auditoria de contratos verbais, empréstimos, cobrança de juros e amortizações (Código Civil Brasileiro art. 354: a imputação do pagamento faz-se primeiro nos juros vencidos e, se sobrar saldo, no capital principal amortizado imediatamente).
+      const prompt = `DIRETRIZ DE SEGURANÇA E PRIVACIDADE ABSOLUTA:
+O sistema e a IA operam estritamente em MODO LEITURA (READ-ONLY). Você jamais deve apagar, sugerir apagar ou requerer exclusão de qualquer mensagem, áudio, print ou mídia do WhatsApp. Tudo deve ser mantido 100% intacto. Sua função é puramente pericial contábil e de cálculo: ler textos, ouvir áudios transcritos, ver prints/comprovantes e calcular com exatidão matemática.
+
+Você é um Perito Contábil e Financeiro Judicial especializado em auditoria de contratos verbais, empréstimos, cobrança de juros e amortizações (Código Civil Brasileiro art. 354: a imputação do pagamento faz-se primeiro nos juros vencidos e, se sobrar saldo, no capital principal amortizado imediatamente).
 
 Você recebeu o histórico completo cronológico de uma negociação no WhatsApp contendo:
 - Mensagens de texto trocadas entre credor (${nomeCredor || 'Credor'}) e devedor (${nomeDevedor || 'Devedor'})
 - Transcrições fiéis de áudios
-- Comprovantes de transferências bancárias / PIX
+- Comprovantes de transferências bancárias / PIX / prints de pagamento
 - Taxa informada de juros: ${taxaJurosMensal ? `${taxaJurosMensal}% ao mês` : 'Não informada (analisar pelo histórico)'}
 - Valor inicial aproximado do empréstimo: ${valorEmprestimoInformado ? `R$ ${valorEmprestimoInformado}` : 'Deduzir das primeiras mensagens'}
 
@@ -236,7 +241,8 @@ Retorne EXCLUSIVAMENTE um JSON com esta estrutura:
         nomeDevedor = ''
       } = payload || {};
 
-      const prompt = `Você é um perito contábil e auditor forense.
+      const prompt = `DIRETRIZ DE SEGURANÇA: MODO ESTREITAMENTE SOMENTE LEITURA (READ-ONLY). O sistema não apaga nem modifica nada no WhatsApp. Apenas lê as conversas e ouve áudios para identificar as operações.
+Você é um perito contábil e auditor forense.
 Analise detalhadamente o histórico de mensagens de texto e transcrições de áudios entre o credor (${nomeCredor || 'Credor'}) e o devedor (${nomeDevedor || 'Devedor'}).
 Identifique AUTOMATICAMENTE cada evento em que:
 1. Houve um EMPRÉSTIMO EM DINHEIRO concedido (valores transferidos via PIX, TED, entregues em espécie, emprestados).
