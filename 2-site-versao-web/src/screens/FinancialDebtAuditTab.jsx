@@ -66,6 +66,27 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   const [previewExchange, setPreviewExchange] = useState({ lastFromCredor: null, lastFromMe: null });
   const [loadingPreview, setLoadingPreview] = useState(false);
 
+  // Formatar data/hora de mensagens com segurança sem 'Invalid Date'
+  function formatLastActivity(ts) {
+    if (!ts) return null;
+    let d = null;
+    if (typeof ts === 'number' && !isNaN(ts) && ts > 0) {
+      d = new Date(ts > 100000000000 ? ts : ts * 1000);
+    } else if (typeof ts === 'string' && ts.trim()) {
+      const num = Number(ts);
+      if (!isNaN(num) && num > 0) {
+        d = new Date(num > 100000000000 ? num : num * 1000);
+      } else {
+        const parsed = Date.parse(ts);
+        if (!isNaN(parsed)) d = new Date(parsed);
+      }
+    } else if (ts instanceof Date && !isNaN(ts.getTime())) {
+      d = ts;
+    }
+    if (!d || isNaN(d.getTime())) return null;
+    return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  }
+
   useEffect(() => {
     let isMounted = true;
     if (!selectedContact) {
@@ -74,7 +95,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     }
 
     setLoadingPreview(true);
-    fetchLastChatExchange(selectedContact)
+    fetchLastChatExchange(selectedContact, chats)
       .then(res => {
         if (isMounted && res) {
           setPreviewExchange(res);
@@ -793,18 +814,15 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
         setSelectedContact(prev => {
           if (!prev || prev.phone === '5561993209444' || (prev.name && prev.name.toLowerCase().includes('estela'))) {
-            const bestJid = (primaryEstela.rawJid && primaryEstela.rawJid.includes('@')) 
-              ? primaryEstela.rawJid 
-              : (primaryEstela.lid && primaryEstela.lid.includes('@')) 
-                ? primaryEstela.lid 
-                : '5561993209444@s.whatsapp.net';
+            const validJids = Array.from(combinedCandidateJids);
+            const bestJid = validJids.find(j => j && (j.includes('@lid') || j.includes('@s.whatsapp.net'))) || '5561993209444@s.whatsapp.net';
             return {
               jid: bestJid,
-              phone: primaryEstela.realPhone || '5561993209444',
-              displayPhone: primaryEstela.displayPhone || '(61) 99320-9444',
-              name: primaryEstela.displayName || 'Estela 22',
-              lid: primaryEstela.lid || null,
-              candidateJids: Array.from(combinedCandidateJids)
+              phone: '5561993209444',
+              displayPhone: '(61) 99320-9444',
+              name: 'Estela 22',
+              lid: primaryEstela.lid || (bestJid.includes('@lid') ? bestJid : null),
+              candidateJids: validJids
             };
           }
           return prev;
@@ -4571,13 +4589,17 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     return false;
                   })
                   .map(c => {
-                    const rawJid = c.id || c.remoteJid || '';
+                    const rawJid = c.rawJid || ((c.remoteJid && c.remoteJid.includes('@')) ? c.remoteJid : (c.id && c.id.includes('@')) ? c.id : c.remoteJid || c.id || '');
                     const hasRealPhone = Boolean(c.hasRealPhone || (c.realPhone && isRealBrazilianPhone(c.realPhone)));
                     const dispPhone = hasRealPhone ? (c.displayPhone || formatPhoneBR(c.realPhone)) : '';
                     const dispName = c.displayName || c.name || c.pushName || (dispPhone ? `Contato ${dispPhone}` : 'Conversa WhatsApp');
-                    const isSel = (rawJid && selectedContact?.jid === rawJid) || 
-                      (hasRealPhone && selectedContact?.phone && selectedContact.phone.replace(/\D/g, '') === c.realPhone.replace(/\D/g, '')) ||
-                      (selectedContact?.name && dispName.toLowerCase().includes(selectedContact.name.toLowerCase()));
+                    const isSel = Boolean(
+                      selectedContact && (
+                        (rawJid && selectedContact.jid === rawJid) ||
+                        (hasRealPhone && selectedContact.phone && c.realPhone && selectedContact.phone.replace(/\D/g, '') === c.realPhone.replace(/\D/g, ''))
+                      )
+                    );
+                    const formattedAct = formatLastActivity(c.lastActivity);
                     return (
                       <div
                         key={rawJid || c.realPhone}
@@ -4638,16 +4660,16 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                             )}
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
-                            {c.lastActivity ? (
+                            {formattedAct ? (
                               <span style={{ fontSize: 11, color: '#38bdf8', fontFamily: 'monospace' }}>
-                                🕒 Última mensagem: {new Date(c.lastActivity > 100000000000 ? c.lastActivity : c.lastActivity * 1000).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                                🕒 Última mensagem: {formattedAct}
                               </span>
                             ) : (
                               <span style={{ fontSize: 10.5, color: 'var(--ink2)' }}>
                                 🕒 Sem mensagens recentes
                               </span>
                             )}
-                            {c.rawJid && (
+                            {c.rawJid && c.rawJid.includes('@lid') && (
                               <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace' }}>
                                 ID: {c.rawJid.replace('@lid', '').slice(-6)}@lid
                               </span>
@@ -4824,7 +4846,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                       type="button"
                       onClick={() => {
                         setLoadingPreview(true);
-                        fetchLastChatExchange(selectedContact).then(setPreviewExchange).finally(() => setLoadingPreview(false));
+                        fetchLastChatExchange(selectedContact, chats).then(setPreviewExchange).finally(() => setLoadingPreview(false));
                       }}
                       style={{
                         background: 'rgba(56, 189, 248, 0.15)',

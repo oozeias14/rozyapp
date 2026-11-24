@@ -2299,7 +2299,7 @@ export function extractCleanReadableText(m) {
 }
 
 // Busca rápida das últimas mensagens trocadas com o contato (última enviada por Mim e última enviada pelo Credor)
-export async function fetchLastChatExchange(contactOrJid) {
+export async function fetchLastChatExchange(contactOrJid, chats = []) {
   const { instanceName } = getEvolutionConfig();
   let candidateJids = [];
   let contactName = 'Credor';
@@ -2324,19 +2324,59 @@ export async function fetchLastChatExchange(contactOrJid) {
     if (clean) candidateJids.push(`${clean}@s.whatsapp.net`);
   }
 
-  // Se o contato for Estela, também garante inclusão das variações padrão
+  // Se o contato for Estela, garante todas as variações de números padrão
   if (contactName.toLowerCase().includes('estela')) {
     candidateJids.push('5561993209444@s.whatsapp.net');
     candidateJids.push('556193209444@s.whatsapp.net');
     candidateJids.push('61993209444@s.whatsapp.net');
+    candidateJids.push('6193209444@s.whatsapp.net');
   }
 
-  // Remove IDs que sejam apenas CUID de banco de dados (que não contenham '@') se houver outros com '@'
-  const withAt = candidateJids.filter(j => j && j.includes('@'));
-  const uniqueCandidates = Array.from(new Set(withAt.length > 0 ? withAt : candidateJids.filter(Boolean)));
-
+  // Agrega dados dos chats em memória se disponíveis
   let lastFromCredor = null;
   let lastFromMe = null;
+
+  if (Array.isArray(chats) && chats.length > 0) {
+    const isEstelaSearch = contactName.toLowerCase().includes('estela');
+    const matchedChats = chats.filter(c => {
+      const cJid = c.rawJid || c.remoteJid || '';
+      const cLid = c.lid || '';
+      const cName = (c.displayName || c.name || '').toLowerCase();
+      const cPhone = (c.realPhone || '').replace(/\D/g, '');
+      if (isEstelaSearch && (cName.includes('estela') || cPhone.includes('93209444') || cPhone.includes('993209444'))) {
+        return true;
+      }
+      return candidateJids.includes(cJid) || candidateJids.includes(cLid) || (cPhone && candidateJids.some(u => u.includes(cPhone)));
+    });
+
+    matchedChats.forEach(mc => {
+      if (mc.rawJid && mc.rawJid.includes('@')) candidateJids.push(mc.rawJid);
+      if (mc.lid && mc.lid.includes('@')) candidateJids.push(mc.lid);
+      if (Array.isArray(mc.candidateJids)) {
+        mc.candidateJids.forEach(j => {
+          if (j && j.includes('@')) candidateJids.push(j);
+        });
+      }
+      if (mc.lastMessage) {
+        const text = extractCleanReadableText(mc.lastMessage);
+        if (text) {
+          const isFromMe = mc.lastMessage.key?.fromMe ?? false;
+          const ts = mc.lastMessage.messageTimestamp || mc.lastActivity || 0;
+          const tsSec = typeof ts === 'number' ? (ts > 100000000000 ? Math.floor(ts / 1000) : ts) : Math.floor(new Date(ts).getTime() / 1000);
+          const dateStr = !isNaN(tsSec) && tsSec > 0 ? new Date(tsSec * 1000).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+          if (isFromMe && !lastFromMe) {
+            lastFromMe = { text, dateTime: dateStr, timestamp: tsSec };
+          } else if (!isFromMe && !lastFromCredor) {
+            lastFromCredor = { text, dateTime: dateStr, timestamp: tsSec };
+          }
+        }
+      }
+    });
+  }
+
+  // Remove IDs que sejam apenas CUID de banco de dados (que não contenham '@')
+  const withAt = candidateJids.filter(j => j && j.includes('@'));
+  const uniqueCandidates = Array.from(new Set(withAt.length > 0 ? withAt : candidateJids.filter(Boolean)));
 
   // 1. Tenta buscar mensagens diretamente via endpoint /chat/findMessages por remoteJid
   for (const cJid of uniqueCandidates) {
