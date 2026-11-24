@@ -332,9 +332,43 @@ export async function getPairingCode(phone) {
 
 export async function disconnectInstance() {
   const { instanceName } = getEvolutionConfig();
-  return await evolutionFetch(`/instance/logout/${instanceName}`, {
-    method: 'DELETE',
-  });
+  
+  // 1. Tenta logout formal da sessão do WhatsApp
+  try {
+    await evolutionFetch(`/instance/logout/${instanceName}`, {
+      method: 'DELETE',
+    });
+  } catch (e) {
+    console.warn('Logout antes do disconnect ignorado:', e);
+  }
+
+  // 2. Tenta deletar a instância e sua sessão salva no Evolution API
+  try {
+    await evolutionFetch(`/instance/delete/${instanceName}`, {
+      method: 'DELETE',
+    });
+  } catch (e) {
+    console.warn('Delete instance ignorado:', e);
+  }
+
+  // 3. Recria uma instância limpa pronta para nova leitura de QR Code ou Pairing
+  try {
+    const createData = await evolutionFetch(`/instance/create`, {
+      method: 'POST',
+      body: JSON.stringify({
+        instanceName,
+        token: '',
+        qrcode: true,
+        integration: 'WHATSAPP-BAILEYS',
+        reject_call: false,
+        sync_full_history: false,
+      }),
+    });
+    return createData;
+  } catch (e) {
+    console.warn('Erro ao recriar instância após disconnect:', e);
+    return { success: true };
+  }
 }
 
 // ── ENVIO DE MENSAGENS ─────────────────────────────────────────────

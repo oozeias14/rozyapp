@@ -1342,8 +1342,14 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
         setQrCodeData(b64);
       } else if (res?.instance?.state === 'open' || res?.state === 'open') {
         setStatus({ connected: true, state: 'open' });
-        setShowConnectModal(false);
-        alert('🎉 WhatsApp já está conectado!');
+        const wantFresh = window.confirm('O servidor da API Evolution informa que o WhatsApp consta como conectado.\n\nSe o seu WhatsApp NÃO estiver conectado no celular, clique em [OK] para DESCONECTAR a sessão travada e gerar um novo QR Code.\n\nSe já estiver conectado de verdade, clique em [Cancelar].');
+        if (wantFresh) {
+          await disconnectInstance();
+          setStatus({ connected: false, state: 'close' });
+          await handleFetchQrCode(true);
+        } else {
+          setShowConnectModal(false);
+        }
       } else if (res?.pairingCode || res?.code) {
         setPairingCodeResult(res.pairingCode || res.code);
         setConnectTab('pairing');
@@ -5541,14 +5547,35 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                 {resettingInstance ? '⏳ Reiniciando...' : '⚠️ Deu erro ao conectar? Clique para Limpar Sessão'}
               </button>
 
-              <button
-                type="button"
-                className="btn btn-ghost"
-                style={{ width: 'auto', padding: '5px 14px', fontSize: 12, margin: 0 }}
-                onClick={() => { setShowConnectModal(false); setQrCodeData(null); setPairingCodeResult(null); }}
-              >
-                Fechar
-              </button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button
+                  type="button"
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 8,
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: '#EF4444',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    fontSize: 11.5,
+                    fontWeight: 800,
+                    cursor: 'pointer'
+                  }}
+                  onClick={async () => {
+                    await handleDisconnect();
+                    await handleFetchQrCode(true);
+                  }}
+                >
+                  🔌 Desconectar WhatsApp
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ width: 'auto', padding: '5px 14px', fontSize: 12, margin: 0 }}
+                  onClick={() => { setShowConnectModal(false); setQrCodeData(null); setPairingCodeResult(null); }}
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
           </div>
         </div>

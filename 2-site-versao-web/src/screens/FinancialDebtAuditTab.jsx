@@ -8,6 +8,7 @@ import {
   fetchInstanceStatus,
   createOrConnectInstance,
   getPairingCode,
+  disconnectInstance,
   resetAndRecreateInstance,
   fetchWhatsAppChats,
   fetchWhatsAppContacts,
@@ -29,6 +30,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   const [generatingPairing, setGeneratingPairing] = useState(false);
   const [loadingQr, setLoadingQr] = useState(false);
   const [resettingInstance, setResettingInstance] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [connStatus, setConnStatus] = useState(status || { connected: false });
 
   // ── SELEÇÃO DE CONTATO / CREDOR ──
@@ -99,23 +101,26 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-fechamento do modal de conexão assim que o WhatsApp for escaneado/conectado
+  // Auto-fechamento do modal de conexão SOMENTE quando QR Code ou Pareamento ativo for escaneado/conectado
   useEffect(() => {
     if (!showConnectModalLocal) return;
     const interval = setInterval(async () => {
       try {
         const st = await fetchInstanceStatus();
-        if (st?.connected) {
+        // Só fecha automaticamente se a tela estava ativamente aguardando leitura do QR ou Pareamento
+        if (st?.connected && (qrCodeData || pairingCodeResult)) {
           setConnStatus(st);
           setShowConnectModalLocal(false);
           setQrCodeData(null);
           setPairingCodeResult(null);
           loadChats();
+        } else if (st) {
+          setConnStatus(st);
         }
       } catch (e) {}
     }, 2500);
     return () => clearInterval(interval);
-  }, [showConnectModalLocal]);
+  }, [showConnectModalLocal, qrCodeData, pairingCodeResult]);
 
   // ── COMPROVANTES AVULSOS ENVIADOS PELO USUÁRIO (PRINTS / PIX) ──
   const [uploadedReceipts, setUploadedReceipts] = useState([]);
@@ -268,48 +273,69 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     handleFetchQr();
   }
 
-  async function handleFetchQr() {
+  async function handleFetchQr(forceNew = false) {
     setLoadingQr(true);
     setConnectError(null);
     try {
-      const res = await createOrConnectInstance();
-      // Se a instância já estiver aberta/conectada, atualiza estado e fecha o modal
-      if (res?.instance?.state === 'open' || res?.state === 'open' || res?.status === 'open') {
-        setConnStatus({ connected: true, state: 'open' });
-        setShowConnectModalLocal(false);
-        loadChats();
-        return;
+      if (forceNew) {
+        await disconnectInstance().catch(() => {});
       }
+      const res = await createOrConnectInstance();
 
       let b64 = null;
-      if (typeof res === 'string') {
+      if (typeof res === 'string' && res.length > 50) {
         b64 = res;
       } else if (res?.qrcode?.base64) {
         b64 = res.qrcode.base64;
       } else if (res?.base64) {
         b64 = res.base64;
-      } else if (typeof res?.qrcode === 'string') {
+      } else if (typeof res?.qrcode === 'string' && res.qrcode.length > 50) {
         b64 = res.qrcode;
       }
 
       if (b64) {
         setQrCodeData(b64);
+      } else if (res?.instance?.state === 'open' || res?.state === 'open' || res?.status === 'open') {
+        setConnStatus({ connected: true, state: 'open' });
+        setConnectError('O servidor informa que há uma sessão aberta. Se você NÃO estiver conectado no celular, clique no botão "🔌 Desconectar WhatsApp" abaixo para limpar a sessão travada e gerar um novo QR Code.');
+      } else {
+        // Tenta restart para forçar novo QR Code
+        const retry = await resetAndRecreateInstance();
+        const retryB64 = retry?.qrcode?.base64 || retry?.base64;
+        if (retryB64) {
+          setQrCodeData(retryB64);
+        }
       }
     } catch (err) {
       console.warn('Erro ao gerar QR Code:', err);
       const errMsg = err.message || '';
-      if (errMsg.toLowerCase().includes('already in use') || errMsg.toLowerCase().includes('already open')) {
-        const st = await fetchInstanceStatus().catch(() => null);
-        if (st?.connected) {
-          setConnStatus(st);
-          setShowConnectModalLocal(false);
-          loadChats();
-          return;
-        }
-      }
       setConnectError(errMsg || 'Servidor inacessível');
     } finally {
       setLoadingQr(false);
+    }
+  }
+
+  // 🔌 Desconectar WhatsApp e limpar sessão travada no servidor
+  async function handleDisconnectWhatsApp() {
+    if (!window.confirm('Deseja realmente desconectar o WhatsApp e limpar a sessão?\n\nIsso limpará qualquer sessão antiga ou travada no servidor para você poder escanear um novo QR Code limpo.')) return;
+    setDisconnecting(true);
+    setConnectError(null);
+    try {
+      await disconnectInstance();
+      setConnStatus({ connected: false, state: 'close' });
+      setQrCodeData(null);
+      setPairingCodeResult(null);
+      setChats([]);
+      setSelectedContact(null);
+      alert('🔌 WhatsApp desconectado e sessão limpa com sucesso!\n\nGerando novo QR Code para conexão...');
+      setShowConnectModalLocal(true);
+      setTimeout(() => {
+        handleFetchQr(true);
+      }, 500);
+    } catch (err) {
+      alert('Erro ao desconectar WhatsApp: ' + (err.message || err));
+    } finally {
+      setDisconnecting(false);
     }
   }
 
@@ -2940,6 +2966,30 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               <span>📱</span> {connStatus?.connected ? 'Reconectar / QR Code' : 'Conectar Agora'}
             </button>
 
+            {/* Botão de Desconectar WhatsApp Solicitado pelo Usuário */}
+            <button
+              type="button"
+              onClick={handleDisconnectWhatsApp}
+              disabled={disconnecting}
+              title="Desconectar do WhatsApp e forçar limpeza de sessão"
+              style={{
+                fontSize: 11.5,
+                fontWeight: 800,
+                padding: '6px 12px',
+                borderRadius: 8,
+                background: 'rgba(239, 68, 68, 0.15)',
+                color: '#EF4444',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <span>🔌</span> {disconnecting ? 'Desconectando...' : 'Desconectar WhatsApp'}
+            </button>
+
             <button
               type="button"
               onClick={() => setShowConfigModal(true)}
@@ -3204,7 +3254,24 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 {resettingInstance ? '⏳ Reiniciando...' : '⚠️ Sessão travada? Limpar e Reiniciar'}
               </button>
 
-              <div style={{ display: 'flex', gap: 6 }}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={handleDisconnectWhatsApp}
+                  disabled={disconnecting}
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    color: '#EF4444',
+                    fontSize: 11.5,
+                    fontWeight: 800,
+                    padding: '4px 10px',
+                    borderRadius: 6,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {disconnecting ? '⏳ Desconectando...' : '🔌 Desconectar WhatsApp'}
+                </button>
                 <button
                   type="button"
                   onClick={() => { setShowConnectModalLocal(false); setShowConfigModal(true); }}
