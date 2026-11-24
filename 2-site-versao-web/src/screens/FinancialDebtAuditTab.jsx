@@ -42,6 +42,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   const [selectedContact, setSelectedContact] = useState(null); // { jid, name, phone }
   const [manualPhone, setManualPhone] = useState('');
   const [contactSearch, setContactSearch] = useState('');
+  const [linkingChat, setLinkingChat] = useState(null); // Chat com ID privado sendo vinculado manualmente
+  const [linkingPhoneInput, setLinkingPhoneInput] = useState('');
 
   // ── PASSO 2: MODO MANUAL VS MODO AUTOMÁTICO ──
   const [step2Mode, setStep2Mode] = useState('auto'); // 'auto' (padrão com IA no final) | 'manual'
@@ -452,6 +454,12 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
       const lidToPhone = await buildLidPhoneMapping(chatList, recentMsgs, contactList);
 
+      // Carrega vínculos manuais persistidos de telefones salvos pelo usuário
+      let customPhones = {};
+      try {
+        customPhones = JSON.parse(localStorage.getItem('wa_custom_contact_phones') || '{}');
+      } catch (e) {}
+
       // Identifica número do dono para não listar a si mesmo como credor
       let ownerClean = '';
       try {
@@ -467,9 +475,14 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         const ctId = ct.id || ct.remoteJid || ct.jid || '';
         const lowerId = ctId.toLowerCase();
         const ctDigits = extractCleanPhone(ctId);
+        const ctName = ct.name || ct.verifiedName || ct.pushName || ct.notify || ct.shortName || '';
+
+        const savedPhone = customPhones[ctDigits] || customPhones[lowerId] || (ctName ? customPhones[ctName.toLowerCase()] : '');
 
         let ctPhone = '';
-        if (lidToPhone.has(ctDigits)) {
+        if (savedPhone && isRealBrazilianPhone(savedPhone)) {
+          ctPhone = savedPhone;
+        } else if (lidToPhone.has(ctDigits)) {
           ctPhone = lidToPhone.get(ctDigits);
         } else if (isRealBrazilianPhone(ct.phoneNumber)) {
           ctPhone = extractCleanPhone(ct.phoneNumber);
@@ -481,7 +494,6 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           ctPhone = ctDigits;
         }
 
-        const ctName = ct.name || ct.verifiedName || ct.pushName || ct.notify || ct.shortName || '';
         const ctData = { ...ct, resolvedPhone: ctPhone, name: ctName };
 
         if (ctId) {
@@ -507,8 +519,15 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         let isLid = lowerJid.includes('@lid');
         let lid = isLid ? rawJid : (c.lid || null);
 
+        const ct = contactsMap.get(lowerJid) || {};
+        const bestName = ct.name || c.name || ct.verifiedName || c.pushName || ct.pushName || c.lastMessage?.pushName || '';
+
+        const savedPhone = customPhones[cleanDigits] || customPhones[lowerJid] || (bestName ? customPhones[bestName.toLowerCase()] : '');
+
         let realPhone = '';
-        if (lidToPhone.has(cleanDigits)) {
+        if (savedPhone && isRealBrazilianPhone(savedPhone)) {
+          realPhone = savedPhone;
+        } else if (lidToPhone.has(cleanDigits)) {
           realPhone = lidToPhone.get(cleanDigits);
         } else if (isRealBrazilianPhone(c.phoneNumber)) {
           realPhone = extractCleanPhone(c.phoneNumber);
@@ -521,9 +540,6 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         } else if (isRealBrazilianPhone(cleanDigits) && !isLid) {
           realPhone = cleanDigits;
         }
-
-        const ct = (realPhone ? contactsMap.get(realPhone) : null) || contactsMap.get(lowerJid) || {};
-        const bestName = ct.name || c.name || ct.verifiedName || c.pushName || ct.pushName || c.lastMessage?.pushName || '';
 
         const key = (realPhone && isRealBrazilianPhone(realPhone)) ? realPhone : lowerJid;
         mergedMap.set(key, {
@@ -546,19 +562,23 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         let isLid = lowerJid.includes('@lid');
         let lid = isLid ? rawJid : null;
 
+        const ct = contactsMap.get(lowerJid) || {};
+        const pushName = m.pushName || '';
+        const bestName = ct.name || ct.verifiedName || pushName || ct.pushName || '';
+        const msgTime = m.messageTimestamp || 0;
+
+        const savedPhone = customPhones[cleanDigits] || customPhones[lowerJid] || (bestName ? customPhones[bestName.toLowerCase()] : '');
+
         let realPhone = '';
-        if (lidToPhone.has(cleanDigits)) {
+        if (savedPhone && isRealBrazilianPhone(savedPhone)) {
+          realPhone = savedPhone;
+        } else if (lidToPhone.has(cleanDigits)) {
           realPhone = lidToPhone.get(cleanDigits);
         } else if (isRealBrazilianPhone(m.key?.remoteJidAlt)) {
           realPhone = extractCleanPhone(m.key.remoteJidAlt);
         } else if (isRealBrazilianPhone(cleanDigits) && !isLid) {
           realPhone = cleanDigits;
         }
-
-        const ct = (realPhone ? contactsMap.get(realPhone) : null) || contactsMap.get(lowerJid) || {};
-        const pushName = m.pushName || '';
-        const bestName = ct.name || ct.verifiedName || pushName || ct.pushName || '';
-        const msgTime = m.messageTimestamp || 0;
 
         const key = (realPhone && isRealBrazilianPhone(realPhone)) ? realPhone : lowerJid;
         if (mergedMap.has(key)) {
@@ -589,8 +609,13 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         let isLid = lowerId.includes('@lid');
         let lid = isLid ? ctId : (ct.lid || null);
 
+        const ctName = ct.name || ct.verifiedName || ct.pushName || ct.notify || ct.shortName || '';
+        const savedPhone = customPhones[ctDigits] || customPhones[lowerId] || (ctName ? customPhones[ctName.toLowerCase()] : '');
+
         let realPhone = '';
-        if (lidToPhone.has(ctDigits)) {
+        if (savedPhone && isRealBrazilianPhone(savedPhone)) {
+          realPhone = savedPhone;
+        } else if (lidToPhone.has(ctDigits)) {
           realPhone = lidToPhone.get(ctDigits);
         } else if (isRealBrazilianPhone(ct.phoneNumber)) {
           realPhone = extractCleanPhone(ct.phoneNumber);
@@ -602,7 +627,6 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           realPhone = ctDigits;
         }
 
-        const ctName = ct.name || ct.verifiedName || ct.pushName || ct.notify || ct.shortName || '';
         const key = (realPhone && isRealBrazilianPhone(realPhone)) ? realPhone : lowerId;
 
         if (mergedMap.has(key)) {
@@ -685,6 +709,65 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     }
   }
 
+  // Iniciar vínculo manual de telefone para contato com ID privado
+  function handlePromptLinkPhone(c) {
+    setLinkingChat(c);
+    setLinkingPhoneInput(c.realPhone || manualPhone || '');
+  }
+
+  // Salvar vínculo manual de telefone com DDD
+  function handleSaveLinkedPhone() {
+    if (!linkingChat) return;
+    const clean = extractCleanPhone(linkingPhoneInput);
+    if (!clean || clean.length < 8) {
+      alert('Por favor, digite o número com DDD (ex: 61 9320-9444 ou 61993209444).');
+      return;
+    }
+    const fullPhone = clean.startsWith('55') ? clean : '55' + clean;
+    const dispPhone = formatPhoneBR(fullPhone) || fullPhone;
+    const rawJid = linkingChat.rawJid || linkingChat.id || '';
+    const lid = linkingChat.lid || (rawJid.includes('@lid') ? rawJid : '');
+    const cleanLid = extractCleanPhone(lid || rawJid);
+    const ctName = linkingChat.displayName || linkingChat.name || '';
+
+    // 1. Salva no localStorage para persistir para sempre
+    try {
+      const saved = JSON.parse(localStorage.getItem('wa_custom_contact_phones') || '{}');
+      if (cleanLid) saved[cleanLid] = fullPhone;
+      if (rawJid) saved[rawJid] = fullPhone;
+      if (ctName) saved[ctName.toLowerCase()] = fullPhone;
+      localStorage.setItem('wa_custom_contact_phones', JSON.stringify(saved));
+    } catch (e) {}
+
+    // 2. Atualiza a lista chats em memória na hora!
+    setChats(prev => prev.map(item => {
+      const isMatch = item.rawJid === rawJid || (cleanLid && (item.lid === lid || item.rawJid?.includes(cleanLid))) || (ctName && item.displayName?.toLowerCase() === ctName.toLowerCase());
+      if (isMatch) {
+        return {
+          ...item,
+          realPhone: fullPhone,
+          displayPhone: dispPhone,
+          hasRealPhone: true,
+          candidateJids: Array.from(new Set([...(item.candidateJids || []), `${fullPhone}@s.whatsapp.net`, `${clean}@s.whatsapp.net`, rawJid, lid].filter(Boolean)))
+        };
+      }
+      return item;
+    }));
+
+    // 3. Define como contato selecionado para a perícia
+    setSelectedContact({
+      jid: `${fullPhone}@s.whatsapp.net`,
+      phone: fullPhone,
+      displayPhone: dispPhone,
+      name: ctName || `Credor (${dispPhone})`,
+      lid: lid || null,
+      candidateJids: Array.from(new Set([`${fullPhone}@s.whatsapp.net`, `${clean}@s.whatsapp.net`, rawJid, lid].filter(Boolean)))
+    });
+
+    setLinkingChat(null);
+    setLinkingPhoneInput('');
+  }
+
   // Selecionar por clique na lista
   function handleSelectChat(c) {
     const rawJid = c.rawJid || c.id || c.remoteJid || '';
@@ -705,7 +788,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   function handleSetManualPhone() {
     const clean = extractCleanPhone(manualPhone);
     if (!clean || clean.length < 8) {
-      alert('Por favor, digite um número de telefone válido com DDD (ex: 61993209444 ou 6193209444).');
+      alert('Por favor, digite um número de telefone válido com DDD (ex: 61 9320-9444 ou 61993209444).');
       return;
     }
     const fullPhone = clean.startsWith('55') ? clean : '55' + clean;
@@ -719,18 +802,48 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       return sigs.some(s => s && (cDigits.includes(s) || s.includes(cDigits)));
     }) || chats.find(c => {
       const q = manualPhone.toLowerCase().trim();
-      return (c.displayName || '').toLowerCase().includes(q);
+      return q.length >= 3 && (c.displayName || '').toLowerCase().includes(q);
+    }) || chats.find(c => {
+      return contactSearch && (c.displayName || '').toLowerCase().includes(contactSearch.toLowerCase().trim());
     });
 
     const contactName = foundChat?.displayName || foundChat?.name || `Credor (${displayPhone})`;
+    const rawJid = foundChat?.rawJid || foundChat?.id || '';
+    const lid = foundChat?.lid || (rawJid.includes('@lid') ? rawJid : null);
+    const cleanLid = extractCleanPhone(lid || rawJid);
+
+    // Salva a vinculação no localStorage
+    try {
+      const saved = JSON.parse(localStorage.getItem('wa_custom_contact_phones') || '{}');
+      if (cleanLid) saved[cleanLid] = fullPhone;
+      if (rawJid) saved[rawJid] = fullPhone;
+      if (contactName) saved[contactName.toLowerCase()] = fullPhone;
+      localStorage.setItem('wa_custom_contact_phones', JSON.stringify(saved));
+    } catch (e) {}
+
+    // Atualiza o contato na lista de chats
+    if (foundChat) {
+      setChats(prev => prev.map(item => {
+        if (item.rawJid === rawJid || (cleanLid && item.rawJid?.includes(cleanLid)) || (contactName && item.displayName === contactName)) {
+          return {
+            ...item,
+            realPhone: fullPhone,
+            displayPhone,
+            hasRealPhone: true,
+            candidateJids: Array.from(new Set([...(item.candidateJids || []), jid, `${clean}@s.whatsapp.net`, rawJid, lid].filter(Boolean)))
+          };
+        }
+        return item;
+      }));
+    }
 
     setSelectedContact({
       jid,
       phone: fullPhone,
       displayPhone,
       name: contactName,
-      lid: foundChat?.lid || null,
-      candidateJids: Array.from(new Set([jid, `${clean}@s.whatsapp.net`, foundChat?.rawJid, foundChat?.lid].filter(Boolean)))
+      lid,
+      candidateJids: Array.from(new Set([jid, `${clean}@s.whatsapp.net`, rawJid, lid].filter(Boolean)))
     });
   }
 
@@ -4171,6 +4284,77 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               }}
             />
 
+            {linkingChat && (
+              <div style={{
+                padding: '12px 16px',
+                borderRadius: 12,
+                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(0, 229, 155, 0.15))',
+                border: '1.5px solid #38bdf8',
+                marginBottom: 10,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 900, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>✏️</span> Vincular Telefone com DDD para: {linkingChat.displayName || 'este contato'}
+                </div>
+                <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.4 }}>
+                  Digite o número do WhatsApp com DDD (ex: <strong>61 9320-9444</strong>) para que o telefone fique visível em definitivo:
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    type="text"
+                    autoFocus
+                    placeholder="Ex: 61 9320-9444 ou 61993209444"
+                    value={linkingPhoneInput}
+                    onChange={(e) => setLinkingPhoneInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleSaveLinkedPhone(); }}
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      border: '1px solid var(--teal)',
+                      background: 'rgba(0,0,0,0.6)',
+                      color: '#fff',
+                      fontSize: 13,
+                      outline: 'none'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveLinkedPhone}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: 8,
+                      border: 'none',
+                      background: 'var(--teal)',
+                      color: '#081018',
+                      fontWeight: 900,
+                      fontSize: 12.5,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    ✓ Salvar e Selecionar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLinkingChat(null)}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid var(--line)',
+                      color: '#fff',
+                      fontSize: 12,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div style={{
               maxHeight: 320,
               overflowY: 'auto',
@@ -4291,9 +4475,30 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                             </span>
                           )}
                           {!hasRealPhone && (
-                            <span style={{ fontSize: 10.5, color: '#f59e0b', fontFamily: 'monospace' }}>
-                              🔒 Contato com ID Privado do WhatsApp (sem telefone público)
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 10.5, color: '#f59e0b', fontFamily: 'monospace' }}>
+                                🔒 Contato com ID Privado do WhatsApp
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handlePromptLinkPhone(c);
+                                }}
+                                style={{
+                                  padding: '2px 8px',
+                                  borderRadius: 6,
+                                  background: 'rgba(56, 189, 248, 0.2)',
+                                  border: '1px solid rgba(56, 189, 248, 0.5)',
+                                  color: '#38bdf8',
+                                  fontSize: 10.5,
+                                  fontWeight: 800,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                ✏️ Informar Telefone (ex: 61 9320-9444)
+                              </button>
+                            </div>
                           )}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
