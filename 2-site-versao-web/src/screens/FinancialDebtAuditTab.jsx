@@ -858,17 +858,29 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           try {
             const base64Audio = await fetchMediaBase64FromMessage(msg);
             if (base64Audio) {
-              const resp = await fetch('/api/gemini-financial-audit', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  action: 'transcribe_audio',
-                  base64Data: base64Audio,
-                  mimeType: 'audio/ogg'
-                })
-              });
-              if (resp.ok) {
-                const audData = await resp.json();
+              let audData = null;
+              for (let att = 1; att <= 3; att++) {
+                try {
+                  const resp = await fetch('/api/gemini-financial-audit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      action: 'transcribe_audio',
+                      base64Data: base64Audio,
+                      mimeType: 'audio/ogg'
+                    })
+                  });
+                  if (resp.ok) {
+                    audData = await resp.json();
+                    break;
+                  }
+                  if (att < 3) await new Promise(r => setTimeout(r, 2000 * att));
+                } catch (e) {
+                  if (att < 3) await new Promise(r => setTimeout(r, 2000 * att));
+                }
+              }
+
+              if (audData && audData.transcricao) {
                 audioTranscripts.push({
                   date: dateStr,
                   sender: senderLabel,
@@ -876,8 +888,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   valores: audData.valores_mencionados || [],
                   taxaJuros: audData.taxa_juros_mencionada || ''
                 });
-                await new Promise(r => setTimeout(r, 60));
               }
+              await new Promise(r => setTimeout(r, 1500));
             }
           } catch (e) {}
         }
@@ -904,8 +916,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     text: `[Print / Comprovante ${imgData.tipo_comprovante || 'PIX'}: R$ ${Number(imgData.valor_pago || 0).toFixed(2)} para ${imgData.favorecido_nome || 'Favorecido'}]`
                   });
                 }
-                await new Promise(r => setTimeout(r, 60));
               }
+              await new Promise(r => setTimeout(r, 1000));
             }
           } catch (e) {}
         }
@@ -1129,11 +1141,25 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     txt += `• Data da Última Mensagem da Conversa: ${auditResult.lastMessage?.dateTime || auditResult.lastMessage?.date || '-'}\r\n`;
     txt += `• Ocorrências de Palavras-Chave (Áudios/Textos): ${auditResult.keywordEvents?.length || 0}\r\n`;
     txt += `• Mensagens de Texto Lidas: ${auditResult.metrics?.totalTextos || auditResult.textRecords?.length || 0}\r\n`;
-    txt += `• Áudios de Voz Escutados e Transcritos: ${auditResult.metrics?.totalAudios || auditResult.audioTranscripts?.length || 0}\r\n`;
+    txt += `• Áudios de Voz Analisados: ${auditResult.metrics?.totalAudios || 0} (${auditResult.metrics?.totalAudiosSucesso || 0} transcritos / ${auditResult.metrics?.totalAudiosFalha || 0} avisos)\r\n`;
     txt += `• Imagens e Prints Periciados via OCR: ${auditResult.metrics?.totalImagens || 0}\r\n`;
     txt += `• Comprovantes Bancários Identificados: ${auditResult.receipts?.length || 0}\r\n`;
     txt += `• Período Histórico Abrangido: de ${auditResult.metrics?.periodoInicio || '-'} até ${auditResult.metrics?.periodoFim || '-'}\r\n`;
+    if ((auditResult.transcriptionErrors || []).length > 0) {
+      txt += `• Detalhamento de Áudios Não Lidos: ${auditResult.transcriptionErrors.length} áudio(s) catalogado(s) com motivo discriminado abaixo\r\n`;
+    }
     txt += '================================================================================\r\n\r\n';
+
+    if ((auditResult.transcriptionErrors || []).length > 0) {
+      txt += '--------------------------------------------------------------------------------\r\n';
+      txt += `AUDITORIA DE ÁUDIOS COM AVISO OU MÍDIA EXPIRADA (${auditResult.transcriptionErrors.length} OCORRÊNCIAS):\r\n`;
+      txt += '--------------------------------------------------------------------------------\r\n';
+      auditResult.transcriptionErrors.forEach(err => {
+        txt += `• Áudio #${err.count} [${err.dateTime}] de ${err.sender}:\r\n`;
+        txt += `  ↳ Motivo registrado: ${err.reason}\r\n\r\n`;
+      });
+      txt += '--------------------------------------------------------------------------------\r\n\r\n';
+    }
     txt += '--------------------------------------------------------------------------------\r\n';
     txt += 'VEREDITO OFICIAL DA PERÍCIA (QUEM DEVE A QUEM):\r\n';
     if (auditResult.status === 'QUITADO_PAGO_A_MAIS') {
@@ -1375,6 +1401,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       const audioTranscripts = [];
       const whatsappImageReceipts = [];
       const fullConversationDialog = [];
+      const transcriptionErrors = [];
+      const messageErrors = [];
       let textCount = 0;
       let audioCount = 0;
       let imageCount = 0;
@@ -1486,7 +1514,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             const base64Audio = await fetchMediaBase64FromMessage(msg);
             if (base64Audio) {
               let audData = null;
-              // Até 3 tentativas com pausa para respeitar cota do Gemini e evitar 429
+              let lastApiError = null;
+              // Até 3 tentativas com pausas espaçadas de 2.5s, 5s e 7.5s para total estabilidade sem limite 429
               for (let att = 1; att <= 3; att++) {
                 try {
                   const resp = await fetch('/api/gemini-financial-audit', {
@@ -1502,9 +1531,12 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     audData = await resp.json();
                     break;
                   }
-                  if (att < 3) await new Promise(r => setTimeout(r, 1500 * att));
+                  const errJson = await resp.json().catch(() => ({}));
+                  lastApiError = errJson?.error || `HTTP ${resp.status}`;
+                  if (att < 3) await new Promise(r => setTimeout(r, 2500 * att));
                 } catch (e) {
-                  if (att < 3) await new Promise(r => setTimeout(r, 1500 * att));
+                  lastApiError = e.message;
+                  if (att < 3) await new Promise(r => setTimeout(r, 2500 * att));
                 }
               }
 
@@ -1553,28 +1585,58 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
                 addLog(`✓ Áudio #${audioCount} de ${senderNameOnly} transcrito com sucesso: "${(audData.resumo_financeiro || audData.transcricao).slice(0, 80)}..."`, 'success');
               } else {
+                const failReason = lastApiError || 'IA não identificou palavras compreensíveis no áudio (ruído ou fala baixa)';
+                transcriptionErrors.push({
+                  id: audioLiveId,
+                  count: audioCount,
+                  sender: senderNameOnly,
+                  dateTime: dateTimeDisplay,
+                  reason: failReason,
+                  type: 'EMPTY_OR_UNINTELLIGIBLE'
+                });
+                addLog(`⚠️ [Aviso Áudio #${audioCount}] ${senderNameOnly} (${dateTimeDisplay}): ${failReason}`, 'warn');
                 setLiveDialogueFeed(prev => prev.map(item => item.id === audioLiveId ? {
                   ...item,
                   status: 'done',
-                  transcription: '[Áudio sem texto legível detectado]'
+                  transcription: `[⚠️ Falha na transcrição: ${failReason}]`
                 } : item));
               }
 
-              // Pausa de 1200ms entre áudios para manter a cota da IA estável e sem rate-limit (429)
-              await new Promise(r => setTimeout(r, 1200));
+              // Pausa suave de 2000ms (2s) entre áudios para manter a cota da IA 100% estável e sem rate-limit (429)
+              await new Promise(r => setTimeout(r, 2000));
             } else {
+              const mediaReason = msg.fromFile ? 'Áudio citado no histórico exportado do WhatsApp (som não anexado no arquivo .txt)' : 'Arquivo de mídia expirado ou indisponível nos servidores do WhatsApp';
+              transcriptionErrors.push({
+                id: audioLiveId,
+                count: audioCount,
+                sender: senderNameOnly,
+                dateTime: dateTimeDisplay,
+                reason: mediaReason,
+                type: 'MEDIA_UNAVAILABLE'
+              });
+              addLog(`⚠️ [Aviso Áudio #${audioCount}] ${senderNameOnly} (${dateTimeDisplay}): ${mediaReason}`, 'warn');
               setLiveDialogueFeed(prev => prev.map(item => item.id === audioLiveId ? {
                 ...item,
                 status: 'done',
-                transcription: msg.fromFile ? '[Áudio do WhatsApp citado no histórico .txt]' : '[Mídia do áudio expirada no servidor do WhatsApp]'
+                transcription: `[⚠️ Mídia Indisponível: ${mediaReason}]`
               } : item));
             }
           } catch (audioErr) {
+            const excReason = 'Erro na requisição: ' + (audioErr.message || audioErr);
+            transcriptionErrors.push({
+              id: audioLiveId,
+              count: audioCount,
+              sender: senderNameOnly,
+              dateTime: dateTimeDisplay,
+              reason: excReason,
+              type: 'EXCEPTION'
+            });
             console.warn('Erro ao transcrever áudio:', audioErr);
+            addLog(`❌ [Erro Áudio #${audioCount}] ${senderNameOnly} (${dateTimeDisplay}): ${excReason}`, 'error');
             setLiveDialogueFeed(prev => prev.map(item => item.id === audioLiveId ? {
               ...item,
               status: 'done',
-              transcription: '[Erro na transcrição do áudio]'
+              transcription: `[❌ Erro na transcrição: ${excReason}]`
             } : item));
           }
         }
@@ -1648,7 +1710,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   receiptData: ocrData,
                   isFinancial: isReceipt || valPago > 0
                 });
-                await new Promise(r => setTimeout(r, 800));
+                await new Promise(r => setTimeout(r, 1500));
               }
             }
           } catch (imgErr) {
@@ -2147,6 +2209,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         status: finalStatus,
         timeline: amortizationTimeline,
         audioTranscripts,
+        transcriptionErrors,
+        messageErrors,
         textRecords,
         fullDialog: fullConversationDialog,
         receipts: allPayments,
@@ -2161,6 +2225,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           totalMensagens: rawMessages.length,
           totalTextos: textCount,
           totalAudios: audioCount,
+          totalAudiosSucesso: audioTranscripts.length,
+          totalAudiosFalha: transcriptionErrors.length,
           totalImagens: imageCount,
           totalComprovantes: allPayments.length,
           periodoInicio: rawMessages.length > 0 ? (rawMessages[0].isoDate || (rawMessages[0].messageTimestamp ? new Date(rawMessages[0].messageTimestamp * 1000).toLocaleDateString('pt-BR') : 'Início')) : '-',
@@ -5799,7 +5865,9 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   {auditResult.metrics?.totalAudios || auditResult.audioTranscripts?.length || 0}
                 </div>
                 <div style={{ fontSize: 10.5, color: 'var(--ink2)', marginTop: 2 }}>
-                  Transcritos com IA
+                  {auditResult.metrics?.totalAudiosFalha > 0 
+                    ? `${auditResult.metrics?.totalAudiosSucesso || 0} transcritos (${auditResult.metrics?.totalAudiosFalha} avisos)`
+                    : '100% Transcritos com IA'}
                 </div>
               </div>
 
@@ -5836,6 +5904,64 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               </div>
             </div>
           </div>
+
+          {/* PAINEL DE AUDITORIA DE ERROS / AVISOS EM ÁUDIOS OU MENSAGENS */}
+          {auditResult.transcriptionErrors && auditResult.transcriptionErrors.length > 0 && (
+            <div style={{
+              background: 'rgba(245, 158, 11, 0.08)',
+              border: '1.5px solid rgba(245, 158, 11, 0.45)',
+              borderRadius: 14,
+              padding: '16px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 900, color: '#F59E0B', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 18 }}>⚠️</span>
+                  AUDITORIA DE ÁUDIOS COM AVISO OU MÍDIA EXPIRADA ({auditResult.transcriptionErrors.length} Ocorrência(s))
+                </div>
+                <div style={{ fontSize: 11.5, color: '#E2E8F0', fontWeight: 700 }}>
+                  {auditResult.metrics?.totalAudiosSucesso || 0} transcritos com sucesso / {auditResult.metrics?.totalAudios || 0} totais
+                </div>
+              </div>
+
+              <div style={{ fontSize: 11.5, color: '#CBD5E1', lineHeight: 1.5 }}>
+                Para máxima precisão e fidelidade forense, o sistema registrou o status exato de cada arquivo de áudio que não pôde ser convertido em texto (como áudios antigos com mídia expirada no WhatsApp ou citados em arquivo .txt sem áudio binário):
+              </div>
+
+              <div style={{
+                maxHeight: '260px',
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+                paddingRight: 4
+              }}>
+                {auditResult.transcriptionErrors.map((err, idx) => (
+                  <div key={idx} style={{
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    background: 'rgba(0, 0, 0, 0.45)',
+                    borderLeft: '4px solid #F59E0B',
+                    fontSize: 12
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
+                      <strong style={{ color: '#F59E0B' }}>
+                        🎙️ Áudio #{err.count} — {err.sender}
+                      </strong>
+                      <span style={{ fontSize: 11, color: 'var(--ink2)', fontFamily: 'monospace' }}>
+                        🕒 {err.dateTime}
+                      </span>
+                    </div>
+                    <div style={{ color: '#E2E8F0', fontSize: 11.5 }}>
+                      ↳ <em>Motivo Registrado:</em> {err.reason}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* 🎯 MEGA PAINEL DE VEREDITO OFICIAL DA PERÍCIA (QUEM DEVE A QUEM)  */}
@@ -5886,6 +6012,30 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 </div>
                 <div style={{ fontSize: 13.5, color: '#E2E8F0', marginTop: 8, lineHeight: 1.6 }}>
                   Sua dívida está <strong>TOTALMENTE QUITADA</strong>. Você pagou um total de <strong>R$ {auditResult.totalPago.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>, enquanto a dívida legal recalculada em dias corridos somava <strong>R$ {(auditResult.totalEmprestado + auditResult.totalJurosDevidos).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong>. O valor pago a mais de <strong>R$ {auditResult.totalPagoAMais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> é indébito e deve ser devolvido imediatamente pelo credor.
+                </div>
+                <div style={{
+                  marginTop: 12,
+                  padding: '10px 16px',
+                  borderRadius: 10,
+                  background: 'rgba(0, 229, 155, 0.12)',
+                  border: '1px solid rgba(0, 229, 155, 0.35)',
+                  fontSize: 13,
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 8
+                }}>
+                  <div>
+                    <span style={{ fontWeight: 900, color: 'var(--teal)' }}>⚖️ DIREITO À RESTITUIÇÃO EM DOBRO (Art. 42 CDC & Art. 940 CC):</span>
+                    <div style={{ fontSize: 11.5, color: '#CBD5E1', marginTop: 2 }}>
+                      Cobranças continuadas de quantias já quitadas geram direito legal à devolução em dobro do montante indébito:
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: '#00E59B', fontFamily: 'monospace' }}>
+                    R$ {(auditResult.totalPagoAMais * 2).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </div>
                 </div>
               </div>
             ) : (

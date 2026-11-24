@@ -107,7 +107,8 @@ export default function App() {
     }
     const isAdmin = profile.role === 'admin' || profile.role === 'admin2';
     const isStaff = isAdmin || profile.role === 'coord';
-    const limitSeconds = isAdmin ? 4 * 60 * 60 : (isStaff ? 30 * 60 : 10 * 60);
+    // SESSÃO ILIMITADA & PERMANENTE: Não desconecta o usuário por tempo nem inatividade!
+    const limitSeconds = 999999999;
     localStorage.setItem('is_staff_user', isStaff ? 'true' : 'false');
     localStorage.setItem('session_limit_seconds', limitSeconds.toString());
 
@@ -117,27 +118,10 @@ export default function App() {
       localStorage.setItem('session_start_time', startTime);
     }
 
-    const elapsedSeconds = Math.floor((Date.now() - parseInt(startTime, 10)) / 1000);
-    const remainingSeconds = limitSeconds - elapsedSeconds;
-
-    if (remainingSeconds <= 0) {
-      handleLogout();
-      return;
-    }
-
-    setTimeLeft(remainingSeconds);
+    // Sessão permanente: não há logout por expiração de tempo
+    setTimeLeft(null);
 
     const interval = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev === null) return null;
-        if (prev <= 1) {
-          clearInterval(interval);
-          handleLogout();
-          return 0;
-        }
-        return prev - 1;
-      });
-
       if (profile && profile.id) {
         addUsageTime(profile.id, 1, profile);
       }
