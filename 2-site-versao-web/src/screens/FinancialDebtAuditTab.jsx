@@ -124,6 +124,10 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   const [testResult, setTestResult] = useState(null);
   const [connectError, setConnectError] = useState(null);
 
+  // ── SISTEMA DE NAVEGAÇÃO EM ETAPAS (WIZARD STEPPER) ──
+  // 1: Credor | 2: Empréstimos & Juros | 3: Comprovantes & Mídia | 4: Executar & Laudo
+  const [wizardStep, setWizardStep] = useState(1);
+
   // ── PASSO 3: VALOR TOTAL PAGO CONSOLIDADO (MANUAL) ──
   const [manualTotalPaidInput, setManualTotalPaidInput] = useState(() => {
     return localStorage.getItem('wa_audit_manual_total_paid') || '';
@@ -826,6 +830,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     setAuditResult(null);
     setShowAuditProgressModal(true);
     setCountdownSeconds(180);
+    setWizardStep(4);
 
     const targetContactPhone = selectedContact?.phone || (selectedContact?.jid ? selectedContact.jid.replace('@s.whatsapp.net', '') : manualPhone) || 'Credor';
     const targetContactName = selectedContact?.name || 'Credor';
@@ -1667,6 +1672,410 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     }
   }
 
+  // ── GERADOR DE LAUDO OFICIAL EM WORD (.DOC) ─────────────────────────
+  function exportAuditToWord() {
+    if (!auditResult) {
+      alert('Nenhum resultado de perícia disponível para exportar.');
+      return;
+    }
+    try {
+      const targetPhone = selectedContact?.phone || (selectedContact?.jid ? selectedContact.jid.replace('@s.whatsapp.net', '') : manualPhone) || 'Credor';
+      const targetDisplay = auditResult.targetContactDisplay || targetPhone;
+      const safePhone = String(targetPhone).replace(/\D/g, '') || 'credor';
+      const isPaidOff = auditResult.status === 'QUITADO_PAGO_A_MAIS';
+      const nowStr = new Date().toLocaleString('pt-BR');
+
+      const verdictTitle = isPaidOff
+        ? `O NÚMERO ${targetDisplay} DEVE RESTITUIR R$ ${auditResult.totalPagoAMais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} AO USUÁRIO (QUITADO / PAGO A MAIS)`
+        : `O USUÁRIO DEVE R$ ${auditResult.saldoFinalReal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} AO NÚMERO ${targetDisplay} (SALDO RESTANTE RECALCULADO)`;
+
+      const docHtml = `
+        <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+        <head>
+          <meta charset='utf-8'>
+          <title>Laudo Pericial Financeiro - ${targetDisplay}</title>
+          <style>
+            body { font-family: 'Segoe UI', Calibri, Arial, sans-serif; font-size: 11pt; color: #1e293b; line-height: 1.5; margin: 25mm 20mm; }
+            h1 { color: #0f172a; font-size: 18pt; border-bottom: 3px solid #00B377; padding-bottom: 8px; margin-bottom: 4px; }
+            h2 { color: #0284C7; font-size: 13pt; margin-top: 22px; margin-bottom: 8px; border-bottom: 1.5px solid #cbd5e1; padding-bottom: 4px; }
+            .header-subtitle { font-size: 10pt; color: #64748b; margin-bottom: 20px; }
+            .box { padding: 14px 18px; border-radius: 8px; margin: 16px 0; }
+            .verdict-box { background-color: ${isPaidOff ? '#ecfdf5' : '#fffbeb'}; border: 2px solid ${isPaidOff ? '#10b981' : '#f59e0b'}; }
+            .verdict-title { font-size: 13pt; font-weight: bold; color: ${isPaidOff ? '#047857' : '#b45309'}; margin-bottom: 6px; }
+            .verdict-text { font-size: 10.5pt; color: #1e293b; line-height: 1.5; }
+            table { width: 100%; border-collapse: collapse; margin: 14px 0 20px 0; }
+            th { background-color: #0f172a; color: #ffffff; padding: 8px 10px; font-size: 9.5pt; text-align: left; border: 1px solid #334155; }
+            td { padding: 7px 10px; font-size: 9pt; border: 1px solid #cbd5e1; }
+            tr:nth-child(even) { background-color: #f8fafc; }
+            .badge-teal { background: #d1fae5; color: #065f46; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+            .badge-amber { background: #fef3c7; color: #92400e; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+            .footer-sign { margin-top: 40px; border-top: 1px dashed #94a3b8; padding-top: 20px; font-size: 10pt; color: #475569; text-align: center; }
+          </style>
+        </head>
+        <body>
+          <h1>LAUDO PERICIAL CONTÁBIL & AUDITORIA FORENSE</h1>
+          <div class="header-subtitle">
+            Sistema Órbita Forense (Módulo IA de Perícia Financeira de Conversa & Amortizações)<br>
+            Emissão: <strong>${nowStr}</strong> • Fundamento Legal: <strong>Código Civil Brasileiro (Art. 354)</strong>
+          </div>
+
+          <div class="box verdict-box">
+            <div class="verdict-title">⚖️ VEREDITO OFICIAL DA PERÍCIA (QUEM DEVE A QUEM):</div>
+            <div style="font-size: 12pt; font-weight: bold; margin-bottom: 6px;">${verdictTitle}</div>
+            <div class="verdict-text">
+              ${isPaidOff
+                ? `Após a recomposição cronológica de todos os mútuos financeiros e amortizações legais (Código Civil art. 354 com juros lineares pro-rata die em dias corridos), constatou-se que a dívida está <strong>TOTALMENTE QUITADA</strong>. O valor global pago de R$ ${auditResult.totalPago.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} superou a obrigação contratada acrescida de juros legítimos. O saldo remanescente de <strong>R$ ${auditResult.totalPagoAMais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> constitui indébito e deve ser restituído imediatamente pelo credor ao devedor.`
+                : `Após a recomposição cronológica de todos os mútuos financeiros e pagamentos comprovados, restam <strong>R$ ${auditResult.saldoFinalReal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> do capital principal a pagar. Todos os pagamentos intermediários abateram integralmente os juros vencidos da respectiva data, havendo amortização de R$ ${auditResult.totalAmortizado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} do saldo principal.`}
+            </div>
+          </div>
+
+          <h2>1. Identificação das Partes e da Operação</h2>
+          <table>
+            <tr><td width="30%"><strong>Credor / Cobrador:</strong></td><td>${selectedContact?.name || 'Credor'} (${targetDisplay})</td></tr>
+            <tr><td><strong>Modo de Auditoria:</strong></td><td>${auditResult.executionMode === 'auto' ? 'Automático (Detectado por Inteligência Artificial)' : 'Manual (Informado pelo Usuário)'}</td></tr>
+            <tr><td><strong>Metodologia Aplicada:</strong></td><td>Amortização Linear Legal (Código Civil Art. 354: Juros primeiro, saldo principal em seguida)</td></tr>
+            <tr><td><strong>Regime de Juros:</strong></td><td>Pro-Rata Die (cálculo diário em dias corridos sobre o capital principal pendente)</td></tr>
+          </table>
+
+          <h2>2. Resumo Geral dos Valores Apurados</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Descrição do Item</th>
+                <th>Valor Apurado (R$)</th>
+                <th>Detalhamento / Observações</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Total do Principal Contratado</strong></td>
+                <td><strong>R$ ${auditResult.totalEmprestado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></td>
+                <td>Soma de todos os mútuos em dinheiro concedidos</td>
+              </tr>
+              <tr>
+                <td><strong>Total Efetivamente Pago</strong></td>
+                <td style="color: #047857; font-weight: bold;">R$ ${auditResult.totalPago.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                <td>Comprovado por recibos, PIX e histórico de pagamentos (${auditResult.receipts.length} comprovantes)</td>
+              </tr>
+              <tr>
+                <td><strong>Juros Legais Devidos (Dias Corridos)</strong></td>
+                <td>R$ ${auditResult.totalJurosDevidos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                <td>Apuração diária pro-rata die com base na taxa mensal pactuada</td>
+              </tr>
+              <tr>
+                <td><strong>Juros Efetivamente Abatidos</strong></td>
+                <td>R$ ${auditResult.totalJurosCobrados.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                <td>Juros quitados pelos pagamentos antes da amortização do capital</td>
+              </tr>
+              <tr>
+                <td><strong>Capital Principal Amortizado</strong></td>
+                <td style="color: #0284C7; font-weight: bold;">R$ ${auditResult.totalAmortizado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                <td>Excedente dos pagamentos que reduziu diretamente o principal</td>
+              </tr>
+              <tr style="background-color: ${isPaidOff ? '#ecfdf5' : '#fffbeb'};">
+                <td><strong>${isPaidOff ? 'VALOR PAGO A MAIS (A RESTITUIR)' : 'SALDO DEVEDOR REAL RESTANTE'}</strong></td>
+                <td style="font-size: 11pt; font-weight: bold; color: ${isPaidOff ? '#047857' : '#b45309'};">
+                  R$ ${(isPaidOff ? auditResult.totalPagoAMais : auditResult.saldoFinalReal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </td>
+                <td>${isPaidOff ? 'Repetição de indébito exigível perante o credor' : 'Saldo remanescente devido legalmente'}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          ${auditResult.aiReport?.diagnostico_pericial ? `
+            <h2>3. Parecer Técnico & Diagnóstico Pericial</h2>
+            <div style="background-color: #f8fafc; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 10pt;">
+              ${auditResult.aiReport.diagnostico_pericial}
+            </div>
+          ` : ''}
+
+          ${(auditResult.aiReport?.irregularidades_detectadas?.length || 0) > 0 ? `
+            <h2>4. Irregularidades e Cobranças Abusivas Detectadas</h2>
+            <ul>
+              ${auditResult.aiReport.irregularidades_detectadas.map(i => `<li style="margin-bottom: 6px;">${i}</li>`).join('')}
+            </ul>
+          ` : ''}
+
+          <h2>5. Relação de Empréstimos Contratados</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Valor (R$)</th>
+                <th>Taxa (% a.m.)</th>
+                <th>Descrição / Finalidade</th>
+                <th>Evidência</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(auditResult.debtConditions || []).map(c => `
+                <tr>
+                  <td>${c.date}</td>
+                  <td>R$ ${Number(c.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  <td>${c.monthlyRate}% a.m.</td>
+                  <td>${c.description || 'Empréstimo em Dinheiro'}</td>
+                  <td style="font-size: 8.5pt; color: #475569;">${c.evidence || '-'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <h2>6. Relação de Pagamentos e Comprovantes Identificados</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Valor Pago (R$)</th>
+                <th>Origem</th>
+                <th>Autenticação / ID</th>
+                <th>Evidência</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${auditResult.receipts.map(r => `
+                <tr>
+                  <td>${r.date}</td>
+                  <td style="color: #047857; font-weight: bold;">R$ ${Number(r.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  <td>${r.origin}</td>
+                  <td>${r.authId || '-'}</td>
+                  <td style="font-size: 8.5pt; color: #475569;">${r.evidence || '-'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <h2>7. Extrato Cronológico de Amortizações (Código Civil Art. 354)</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Dias</th>
+                <th>Descrição do Evento</th>
+                <th>Saldo Ant.</th>
+                <th>Juros Período</th>
+                <th>Valor Pago</th>
+                <th>Juros Pagos</th>
+                <th>Principal Amortizado</th>
+                <th>Saldo Devedor</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${auditResult.timeline.map(t => `
+                <tr>
+                  <td>${t.data}</td>
+                  <td>${t.diasCorridos}</td>
+                  <td>${t.descricao}</td>
+                  <td>R$ ${t.saldoAnterior.toFixed(2)}</td>
+                  <td>R$ ${t.jurosPeriodo.toFixed(2)}</td>
+                  <td style="font-weight: bold; color: ${t.valorPago > 0 ? '#047857' : '#000'};">R$ ${t.valorPago.toFixed(2)}</td>
+                  <td>R$ ${t.jurosAbatidos.toFixed(2)}</td>
+                  <td style="font-weight: bold; color: #0284C7;">R$ ${t.amortizacaoCapital.toFixed(2)}</td>
+                  <td style="font-weight: bold;">R$ ${t.saldoDevedor.toFixed(2)}</td>
+                  <td><span class="${t.status?.includes('PAGO') ? 'badge-teal' : 'badge-amber'}">${t.status}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <div class="footer-sign">
+            <strong>ÓRBITA FORENSE • PERÍCIA CONTÁBIL DIGITAL</strong><br>
+            Relatório gerado automaticamente por algoritmos de auditoria forense e inteligência artificial.<br>
+            Válido como instrumento comprobatório contábil fundamentado na legislação civil e bancária brasileira.
+          </div>
+        </body>
+        </html>
+      `;
+
+      const blob = new Blob(['\ufeff', docHtml], { type: 'application/msword;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `laudo_pericial_financeiro_${safePhone}_${new Date().toISOString().slice(0, 10)}.doc`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      addLog(`📄 Laudo pericial em Word (.doc) baixado com sucesso!`, 'success');
+    } catch (e) {
+      console.error('Erro ao exportar Word:', e);
+      alert('Erro ao gerar documento Word: ' + e.message);
+    }
+  }
+
+  // ── IMPRESSÃO / SALVAR EM PDF ───────────────────────────────────────
+  function exportAuditToPdf() {
+    if (!auditResult) {
+      alert('Nenhum resultado de perícia disponível para exportar.');
+      return;
+    }
+    try {
+      const targetPhone = selectedContact?.phone || (selectedContact?.jid ? selectedContact.jid.replace('@s.whatsapp.net', '') : manualPhone) || 'Credor';
+      const targetDisplay = auditResult.targetContactDisplay || targetPhone;
+      const isPaidOff = auditResult.status === 'QUITADO_PAGO_A_MAIS';
+      const nowStr = new Date().toLocaleString('pt-BR');
+
+      const verdictTitle = isPaidOff
+        ? `O NÚMERO ${targetDisplay} DEVE RESTITUIR R$ ${auditResult.totalPagoAMais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} AO USUÁRIO (QUITADO / PAGO A MAIS)`
+        : `O USUÁRIO DEVE R$ ${auditResult.saldoFinalReal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} AO NÚMERO ${targetDisplay} (SALDO RESTANTE RECALCULADO)`;
+
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        alert('Permita popups no navegador para gerar a impressão / PDF.');
+        return;
+      }
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Laudo Pericial Financeiro - ${targetDisplay}</title>
+          <style>
+            @page { size: A4; margin: 15mm 12mm; }
+            body { font-family: 'Segoe UI', Calibri, Arial, sans-serif; font-size: 10pt; color: #1e293b; line-height: 1.45; margin: 0; padding: 10px; }
+            h1 { color: #0f172a; font-size: 16pt; border-bottom: 2px solid #00B377; padding-bottom: 4px; margin-top: 0; }
+            h2 { color: #0284C7; font-size: 12pt; margin-top: 16px; margin-bottom: 6px; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; }
+            .header-info { font-size: 9pt; color: #64748b; margin-bottom: 12px; }
+            .verdict-box { padding: 12px; border-radius: 6px; margin: 12px 0; background-color: ${isPaidOff ? '#ecfdf5' : '#fffbeb'}; border: 2px solid ${isPaidOff ? '#10b981' : '#f59e0b'}; }
+            .verdict-title { font-size: 12pt; font-weight: bold; color: ${isPaidOff ? '#047857' : '#b45309'}; margin-bottom: 4px; }
+            table { width: 100%; border-collapse: collapse; margin: 10px 0 14px 0; font-size: 8.5pt; }
+            th { background-color: #0f172a; color: #ffffff; padding: 6px 8px; text-align: left; border: 1px solid #334155; }
+            td { padding: 5px 8px; border: 1px solid #cbd5e1; }
+            tr:nth-child(even) { background-color: #f8fafc; }
+            .footer-sign { margin-top: 30px; border-top: 1px dashed #94a3b8; padding-top: 15px; font-size: 9pt; color: #475569; text-align: center; }
+            @media print {
+              .no-print { display: none !important; }
+              body { padding: 0; }
+              tr { page-break-inside: avoid; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="no-print" style="background: #0f172a; color: #fff; padding: 10px 14px; border-radius: 6px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+            <span>💡 <strong>Dica de Impressão:</strong> Na janela de impressão, selecione o destino <strong>"Salvar como PDF"</strong>.</span>
+            <button onclick="window.print()" style="background: #00E59B; color: #081018; font-weight: bold; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">🖨️ Imprimir / Salvar PDF</button>
+          </div>
+
+          <h1>LAUDO PERICIAL CONTÁBIL & AUDITORIA FORENSE</h1>
+          <div class="header-info">
+            Sistema Órbita Forense • Emissão: <strong>${nowStr}</strong> • Fundamento: <strong>Código Civil Brasileiro (Art. 354 - Pro-Rata Die)</strong>
+          </div>
+
+          <div class="verdict-box">
+            <div class="verdict-title">⚖️ VEREDITO OFICIAL DA PERÍCIA (QUEM DEVE A QUEM):</div>
+            <div style="font-size: 11pt; font-weight: bold; margin-bottom: 4px;">${verdictTitle}</div>
+            <div style="font-size: 9.5pt; line-height: 1.45;">
+              ${isPaidOff
+                ? `A dívida está <strong>TOTALMENTE QUITADA</strong>. O valor global pago de R$ ${auditResult.totalPago.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} superou o principal e juros devidos. O saldo credor de <strong>R$ ${auditResult.totalPagoAMais.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> constitui repetição de indébito exigível imediatamente perante o credor.`
+                : `Restam <strong>R$ ${auditResult.saldoFinalReal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> do capital principal a pagar. Os pagamentos amortizaram R$ ${auditResult.totalAmortizado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} do saldo principal após quitação dos juros devidos no período.`}
+            </div>
+          </div>
+
+          <h2>1. Dados das Partes e Metodologia</h2>
+          <table>
+            <tr><td width="30%"><strong>Credor Auditado:</strong></td><td>${selectedContact?.name || 'Credor'} (${targetDisplay})</td></tr>
+            <tr><td><strong>Modo de Auditoria:</strong></td><td>${auditResult.executionMode === 'auto' ? 'Automático (Identificado por Inteligência Artificial)' : 'Manual (Cadastrado pelo Usuário)'}</td></tr>
+            <tr><td><strong>Critério Legal:</strong></td><td>Código Civil Art. 354 • Amortização Linear (Juros primeiro, Principal em seguida)</td></tr>
+            <tr><td><strong>Regime de Juros:</strong></td><td>Pro-Rata Die (cálculo diário em dias corridos)</td></tr>
+          </table>
+
+          <h2>2. Resumo Geral dos Valores Apurados</h2>
+          <table>
+            <thead>
+              <tr><th>Descrição do Item</th><th>Valor Apurado (R$)</th><th>Observações</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>Total do Principal Contratado</strong></td><td><strong>R$ ${auditResult.totalEmprestado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></td><td>Soma dos empréstimos concedidos</td></tr>
+              <tr><td><strong>Total Efetivamente Pago</strong></td><td style="color: #047857; font-weight: bold;">R$ ${auditResult.totalPago.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td><td>${auditResult.receipts.length} pagamentos identificados</td></tr>
+              <tr><td><strong>Juros Legais Devidos (Dias Corridos)</strong></td><td>R$ ${auditResult.totalJurosDevidos.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td><td>Juros pro-rata die pactuados</td></tr>
+              <tr><td><strong>Principal Amortizado</strong></td><td style="color: #0284C7; font-weight: bold;">R$ ${auditResult.totalAmortizado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td><td>Redução do saldo principal</td></tr>
+              <tr style="background-color: ${isPaidOff ? '#ecfdf5' : '#fffbeb'};">
+                <td><strong>${isPaidOff ? 'VALOR PAGO A MAIS (A RESTITUIR)' : 'SALDO DEVEDOR REAL RESTANTE'}</strong></td>
+                <td style="font-weight: bold; color: ${isPaidOff ? '#047857' : '#b45309'};">R$ ${(isPaidOff ? auditResult.totalPagoAMais : auditResult.saldoFinalReal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                <td>${isPaidOff ? 'Indébito a restituir' : 'Saldo remanescente devedor'}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          ${auditResult.aiReport?.diagnostico_pericial ? `
+            <h2>3. Parecer Técnico & Diagnóstico Pericial</h2>
+            <div style="background-color: #f8fafc; padding: 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 9pt;">
+              ${auditResult.aiReport.diagnostico_pericial}
+            </div>
+          ` : ''}
+
+          <h2>4. Empréstimos Contratados</h2>
+          <table>
+            <thead>
+              <tr><th>Data</th><th>Valor (R$)</th><th>Taxa (% a.m.)</th><th>Descrição</th><th>Evidência</th></tr>
+            </thead>
+            <tbody>
+              ${(auditResult.debtConditions || []).map(c => `
+                <tr>
+                  <td>${c.date}</td>
+                  <td>R$ ${Number(c.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  <td>${c.monthlyRate}% a.m.</td>
+                  <td>${c.description || 'Empréstimo em Dinheiro'}</td>
+                  <td>${c.evidence || '-'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <h2>5. Extrato Cronológico de Amortizações (Código Civil Art. 354)</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Dias</th>
+                <th>Descrição</th>
+                <th>Saldo Ant.</th>
+                <th>Juros</th>
+                <th>Valor Pago</th>
+                <th>Juros Pagos</th>
+                <th>Amortizado</th>
+                <th>Saldo Dev.</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${auditResult.timeline.map(t => `
+                <tr>
+                  <td>${t.data}</td>
+                  <td>${t.diasCorridos}</td>
+                  <td>${t.descricao}</td>
+                  <td>R$ ${t.saldoAnterior.toFixed(2)}</td>
+                  <td>R$ ${t.jurosPeriodo.toFixed(2)}</td>
+                  <td style="font-weight: bold; color: ${t.valorPago > 0 ? '#047857' : '#000'};">R$ ${t.valorPago.toFixed(2)}</td>
+                  <td>R$ ${t.jurosAbatidos.toFixed(2)}</td>
+                  <td style="font-weight: bold; color: #0284C7;">R$ ${t.amortizacaoCapital.toFixed(2)}</td>
+                  <td style="font-weight: bold;">R$ ${t.saldoDevedor.toFixed(2)}</td>
+                  <td>${t.status}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <div class="footer-sign">
+            <strong>ÓRBITA FORENSE • PERÍCIA CONTÁBIL DIGITAL</strong><br>
+            Relatório emitido em conformidade com o Art. 354 do Código Civil Brasileiro.
+          </div>
+        </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+      }, 500);
+      addLog(`📑 Janela de impressão e geração de PDF iniciada!`, 'success');
+    } catch (e) {
+      console.error('Erro ao exportar PDF:', e);
+      alert('Erro ao gerar laudo em PDF: ' + e.message);
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
@@ -2206,7 +2615,10 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   <button
                     type="button"
                     className="btn-ghost"
-                    onClick={() => setShowAuditProgressModal(false)}
+                    onClick={() => {
+                    setShowAuditProgressModal(false);
+                    setWizardStep(4);
+                  }}
                     style={{ width: 32, height: 32, borderRadius: 8, padding: 0, margin: 0, border: '1px solid var(--line)', color: '#fff', cursor: 'pointer', fontSize: 14 }}
                   >
                     ✕
@@ -2507,7 +2919,10 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 <>
                   <button
                     type="button"
-                    onClick={() => setShowAuditProgressModal(false)}
+                    onClick={() => {
+                    setShowAuditProgressModal(false);
+                    setWizardStep(4);
+                  }}
                     style={{
                       padding: '9px 16px',
                       borderRadius: 8,
@@ -2540,7 +2955,10 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               ) : (
                 <button
                   type="button"
-                  onClick={() => setShowAuditProgressModal(false)}
+                  onClick={() => {
+                    setShowAuditProgressModal(false);
+                    setWizardStep(4);
+                  }}
                   style={{
                     width: '100%',
                     padding: '12px 20px',
@@ -2563,14 +2981,109 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         </div>
       )}
 
-      {/* BLOCO EM GRID: PASSO 1 (CONTATO) + PASSO 2 (CONDIÇÕES: MANUAL VS AUTOMÁTICO) */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* 🧭 SELETOR DE ETAPAS INTERATIVO (WIZARD STEPPER)                 */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-        gap: 16
+        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+        gap: 10,
+        margin: '6px 0 16px 0'
       }}>
+        {[
+          { step: 1, icon: '👤', title: 'Etapa 1', subtitle: 'Selecionar Credor' },
+          { step: 2, icon: '⚙️', title: 'Etapa 2', subtitle: 'Empréstimos & Taxas' },
+          { step: 3, icon: '🧾', title: 'Etapa 3', subtitle: 'Comprovantes & Mídia' },
+          { step: 4, icon: '🚀', title: 'Etapa 4', subtitle: 'Executar & Laudo' }
+        ].map(s => {
+          const isActive = wizardStep === s.step;
+          const isCompleted = (s.step === 1 && (selectedContact || uploadedChatFile)) ||
+                              (s.step === 2 && (debtConditions.length > 0 || autoDetectedDebts.length > 0 || step2Mode === 'auto')) ||
+                              (s.step === 3 && (uploadedReceipts.length > 0 || manualTotalPaidSaved > 0 || selectedContact)) ||
+                              (s.step === 4 && auditResult);
+          return (
+            <div
+              key={s.step}
+              onClick={() => setWizardStep(s.step)}
+              style={{
+                padding: '12px 16px',
+                borderRadius: 12,
+                background: isActive
+                  ? 'linear-gradient(135deg, rgba(0, 229, 155, 0.22), rgba(15, 23, 42, 0.95))'
+                  : 'rgba(15, 23, 42, 0.75)',
+                border: `1.5px solid ${isActive ? 'var(--teal)' : isCompleted ? 'rgba(0, 229, 155, 0.4)' : 'var(--line)'}`,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                transition: 'all 0.2s ease',
+                boxShadow: isActive ? '0 4px 18px rgba(0, 229, 155, 0.25)' : 'none'
+              }}
+            >
+              <div style={{
+                width: 32,
+                height: 32,
+                borderRadius: '50%',
+                background: isActive ? 'var(--teal)' : isCompleted ? 'rgba(0, 229, 155, 0.2)' : 'rgba(255,255,255,0.06)',
+                color: isActive ? '#081018' : isCompleted ? 'var(--teal)' : 'var(--ink2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 14,
+                fontWeight: 900
+              }}>
+                {isCompleted && !isActive ? '✓' : s.icon}
+              </div>
+              <div>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: isActive ? 'var(--teal)' : 'var(--ink2)', textTransform: 'uppercase' }}>
+                  {s.title}
+                </div>
+                <div style={{ fontSize: 12.5, fontWeight: 900, color: '#fff' }}>
+                  {s.subtitle}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
-        {/* PASSO 1: SELECIONAR CONTATO / CREDOR */}
+      {/* Banner de atalho caso já exista laudo gerado e usuário esteja em etapas anteriores */}
+      {auditResult && wizardStep !== 4 && (
+        <div style={{
+          padding: '10px 16px',
+          borderRadius: 10,
+          background: 'rgba(0, 229, 155, 0.12)',
+          border: '1px solid var(--teal)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 10
+        }}>
+          <span style={{ fontSize: 12.5, color: '#fff', fontWeight: 800 }}>
+            💡 Você possui um Laudo Pericial calculado! Deseja ver os resultados e downloads?
+          </span>
+          <button
+            type="button"
+            onClick={() => setWizardStep(4)}
+            style={{
+              padding: '6px 14px',
+              borderRadius: 8,
+              background: 'var(--teal)',
+              border: 'none',
+              color: '#081018',
+              fontWeight: 900,
+              fontSize: 12,
+              cursor: 'pointer'
+            }}
+          >
+            Ver Laudo & Baixar Arquivos ➔
+          </button>
+        </div>
+      )}
+
+      {/* ────────────────── ETAPA 1: SELECIONAR CONTATO / CREDOR ────────────────── */}
+      {wizardStep === 1 && (
         <div style={{
           background: 'rgba(15, 23, 42, 0.9)',
           border: '1px solid var(--line)',
@@ -2733,22 +3246,53 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               <span style={{ fontSize: 20 }}>✅</span>
             </div>
           )}
+          {/* Navegação da Etapa 1 */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+            <button
+              type="button"
+              onClick={() => {
+                if (!selectedContact && !uploadedChatFile && !manualPhone) {
+                  alert('Por favor, selecione uma conversa do credor ou informe um número de telefone antes de avançar.');
+                  return;
+                }
+                setWizardStep(2);
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '12px 24px',
+                borderRadius: 10,
+                background: 'var(--teal)',
+                color: '#081018',
+                fontSize: 13,
+                fontWeight: 900,
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: '0 4px 15px rgba(0, 229, 155, 0.35)'
+              }}
+            >
+              Avançar para Etapa 2: Empréstimos & Taxas ➔
+            </button>
+          </div>
         </div>
+      )}
 
-        {/* PASSO 2: CONDIÇÕES DE EMPRÉSTIMO & JUROS (COM BOTÕES MANUAL VS AUTOMÁTICO) */}
+      {/* ────────────────── ETAPA 2: CONDIÇÕES DE EMPRÉSTIMO & JUROS ────────────────── */}
+      {wizardStep === 2 && (
         <div style={{
           background: 'rgba(15, 23, 42, 0.9)',
           border: '1px solid var(--line)',
           borderRadius: 16,
-          padding: 20,
+          padding: 22,
           display: 'flex',
           flexDirection: 'column',
-          gap: 14
+          gap: 16
         }}>
           {/* TÍTULO E BOTÕES MANUAL / AUTOMÁTICO */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-            <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>⚙️</span> Passo 2: Condições de Empréstimo & Juros
+            <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>⚙️</span> Etapa 2: Condições de Empréstimo & Juros
             </div>
 
             {/* SELETOR DE MODO: MANUAL VS AUTOMÁTICO */}
@@ -3195,24 +3739,68 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           }}>
             ⚖️ <strong>Regra de Amortização (Código Civil art. 354):</strong> Pagamentos abatem primeiro os juros acumulados até a data e todo o restante <strong>abate imediatamente o saldo principal</strong>.
           </div>
-        </div>
-      </div>
 
-      {/* BLOCO: PASSO 3 (UPLOAD DE COMPROVANTES DE PAGAMENTO + BACKUP DE CONVERSA) */}
-      <div style={{
-        background: 'rgba(15, 23, 42, 0.9)',
-        border: '1px solid var(--line)',
-        borderRadius: 16,
-        padding: 22,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>🧾</span> Passo 3: Anexar Comprovantes de Pagamento (PIX, TED, Recibos)
-            </div>
+          {/* Navegação da Etapa 2 */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, flexWrap: 'wrap', gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => setWizardStep(1)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '10px 18px',
+                borderRadius: 10,
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid var(--line)',
+                color: '#fff',
+                fontSize: 12.5,
+                fontWeight: 800,
+                cursor: 'pointer'
+              }}
+            >
+              ⬅ Voltar para Etapa 1
+            </button>
+            <button
+              type="button"
+              onClick={() => setWizardStep(3)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '12px 24px',
+                borderRadius: 10,
+                background: 'var(--teal)',
+                color: '#081018',
+                fontSize: 13,
+                fontWeight: 900,
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: '0 4px 15px rgba(0, 229, 155, 0.35)'
+              }}
+            >
+              Avançar para Etapa 3: Comprovantes ➔
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ────────────────── ETAPA 3: COMPROVANTES & BACKUP DA CONVERSA ────────────────── */}
+      {wizardStep === 3 && (
+        <div style={{
+          background: 'rgba(15, 23, 42, 0.9)',
+          border: '1px solid var(--line)',
+          borderRadius: 16,
+          padding: 22,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>🧾</span> Etapa 3: Anexar Comprovantes de Pagamento (PIX, TED, Recibos)
+              </div>
             <div style={{ fontSize: 12.5, color: 'var(--ink2)', marginTop: 4 }}>
               Envie fotos ou prints de todos os comprovantes que você pagou para que a IA faça o cruzamento com a conversa.
             </div>
@@ -3447,10 +4035,138 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             <input type="file" accept=".txt" style={{ display: 'none' }} onChange={handleChatFileUpload} />
           </label>
         </div>
-      </div>
 
-      {/* BOTÃO PRINCIPAL DE AÇÃO: EXECUTAR PERÍCIA */}
-      <div style={{ textAlign: 'center' }}>
+        {/* Navegação da Etapa 3 */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, flexWrap: 'wrap', gap: 10 }}>
+          <button
+            type="button"
+            onClick={() => setWizardStep(2)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '10px 18px',
+              borderRadius: 10,
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid var(--line)',
+              color: '#fff',
+              fontSize: 12.5,
+              fontWeight: 800,
+              cursor: 'pointer'
+            }}
+          >
+            ⬅ Voltar para Etapa 2
+          </button>
+          <button
+            type="button"
+            onClick={() => setWizardStep(4)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '12px 24px',
+              borderRadius: 10,
+              background: 'linear-gradient(135deg, #00E59B, #00B377)',
+              color: '#081018',
+              fontSize: 13,
+              fontWeight: 900,
+              border: 'none',
+              cursor: 'pointer',
+              boxShadow: '0 4px 15px rgba(0, 229, 155, 0.35)'
+            }}
+          >
+            Avançar para Etapa 4: Executar Perícia ➔
+          </button>
+        </div>
+      </div>
+    )}
+
+      {/* ────────────────── ETAPA 4: EXECUTAR PERÍCIA & RESULTADOS DO LAUDO ────────────────── */}
+      {wizardStep === 4 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+          {/* RESUMO DAS ETAPAS ANTERIORES E AÇÕES DE RETORNO */}
+          <div style={{
+            background: 'rgba(15, 23, 42, 0.9)',
+            border: '1px solid var(--line)',
+            borderRadius: 16,
+            padding: 20,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+              <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>🚀</span> Etapa 4: Executar Perícia Forense & Gerar Laudo
+              </div>
+              <button
+                type="button"
+                onClick={() => setWizardStep(1)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 14px',
+                  borderRadius: 8,
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid var(--line)',
+                  color: 'var(--teal)',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: 'pointer'
+                }}
+              >
+                ⚙️ Ajustar Configurações
+              </button>
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: 10,
+              padding: 12,
+              borderRadius: 10,
+              background: 'rgba(0,0,0,0.3)',
+              border: '1px solid rgba(255,255,255,0.05)'
+            }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--ink2)', fontWeight: 700 }}>👤 CREDOR / ALVO:</div>
+                <div style={{ fontSize: 13, fontWeight: 900, color: '#fff', marginTop: 2 }}>
+                  {selectedContact?.name || 'Credor'}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--teal)' }}>
+                  {selectedContact?.phone || manualPhone || (uploadedChatFile ? uploadedChatFile.name : 'Não selecionado')}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--ink2)', fontWeight: 700 }}>⚙️ MODO DE EMPRÉSTIMO:</div>
+                <div style={{ fontSize: 13, fontWeight: 900, color: '#38BDF8', marginTop: 2 }}>
+                  {step2Mode === 'auto' ? '🤖 Automático (Robô & IA)' : '📝 Manual'}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink2)' }}>
+                  {step2Mode === 'auto'
+                    ? `${autoDetectedDebts.length} débito(s) pré-escaneado(s)`
+                    : `${debtConditions.length} empréstimo(s) cadastrado(s)`}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--ink2)', fontWeight: 700 }}>🧾 COMPROVANTES:</div>
+                <div style={{ fontSize: 13, fontWeight: 900, color: '#10B981', marginTop: 2 }}>
+                  {manualTotalPaidSaved > 0
+                    ? `R$ ${manualTotalPaidSaved.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                    : `${uploadedReceipts.length} anexo(s) + WhatsApp`}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink2)' }}>
+                  {manualTotalPaidSaved > 0 ? 'Total pago fixado manualmente' : 'Leitura de OCR e histórico'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* BOTÃO PRINCIPAL DE AÇÃO: EXECUTAR PERÍCIA */}
+          <div style={{ textAlign: 'center' }}>
         <button
           type="button"
           onClick={runFullDebtForensicAudit}
@@ -3785,6 +4501,48 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
               <button
                 type="button"
+                onClick={exportAuditToWord}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '11px 18px',
+                  borderRadius: 10,
+                  background: 'linear-gradient(135deg, #10B981, #059669)',
+                  color: '#ffffff',
+                  fontSize: 13,
+                  fontWeight: 900,
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 15px rgba(16, 185, 129, 0.3)'
+                }}
+              >
+                <span>📄</span> Baixar Laudo Word (.doc)
+              </button>
+
+              <button
+                type="button"
+                onClick={exportAuditToPdf}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '11px 18px',
+                  borderRadius: 10,
+                  background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                  color: '#081018',
+                  fontSize: 13,
+                  fontWeight: 900,
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 15px rgba(245, 158, 11, 0.3)'
+                }}
+              >
+                <span>📑</span> Imprimir / Salvar em PDF
+              </button>
+
+              <button
+                type="button"
                 onClick={downloadTranscriptTxt}
                 style={{
                   display: 'inline-flex',
@@ -3801,7 +4559,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   boxShadow: '0 4px 15px rgba(56, 189, 248, 0.3)'
                 }}
               >
-                <span>📄</span> Baixar Diálogo & Áudios (.txt)
+                <span>📝</span> Baixar Diálogo & Áudios (.txt)
               </button>
             </div>
           </div>
@@ -4323,6 +5081,9 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               </div>
             )}
           </div>
+        </div>
+      )}
+
         </div>
       )}
 
