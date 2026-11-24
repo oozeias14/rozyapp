@@ -585,6 +585,26 @@ export function isRealBrazilianPhone(p) {
   return isValidBrazilianDdd(ddd);
 }
 
+// Normaliza celular brasileiro garantindo o 9º dígito (ex: 61 9320-9444 -> 5561993209444)
+export function normalizeBrazilianPhoneWith9(raw) {
+  if (!raw) return '';
+  let clean = String(raw).replace(/\D/g, '');
+  if (clean.startsWith('55') && clean.length >= 12) {
+    clean = clean.substring(2);
+  } else if (clean.startsWith('0') && clean.length >= 11) {
+    clean = clean.substring(1);
+  }
+  // Se tiver 10 dígitos (DDD + 8 dígitos) e for celular (começando com 6, 7, 8 ou 9), adiciona o '9'
+  if (clean.length === 10) {
+    const ddd = clean.substring(0, 2);
+    const firstDigit = clean.charAt(2);
+    if (['6', '7', '8', '9'].includes(firstDigit)) {
+      clean = `${ddd}9${clean.substring(2)}`;
+    }
+  }
+  return clean.length === 11 ? `55${clean}` : (clean.length === 10 ? `55${clean}` : clean);
+}
+
 // Helper para mapear LIDs (@lid) para números de telefone reais (@s.whatsapp.net)
 export async function buildLidPhoneMapping(chats = [], messages = [], contacts = [], statusRecords = []) {
   const lidToPhone = new Map();

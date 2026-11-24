@@ -20,7 +20,8 @@ import {
   getPhoneSignatures,
   fetchRecentMessagesSummary,
   isValidBrazilianDdd,
-  isRealBrazilianPhone
+  isRealBrazilianPhone,
+  normalizeBrazilianPhoneWith9
 } from '../lib/evolutionApi';
 
 export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
@@ -427,6 +428,10 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     } else if (clean.startsWith('0') && clean.length >= 11) {
       clean = clean.substring(1);
     }
+    // Auto-adiciona 9 se for celular brasileiro com 10 dígitos (ex: 61 9320-9444 -> 61 99320-9444)
+    if (clean.length === 10 && ['6', '7', '8', '9'].includes(clean.charAt(2))) {
+      clean = `${clean.substring(0, 2)}9${clean.substring(2)}`;
+    }
     if (clean.length === 11) {
       const ddd = clean.slice(0, 2);
       if (isValidBrazilianDdd(ddd)) {
@@ -661,12 +666,18 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         // JIDs candidatos para busca de mensagens
         const candidateJids = [item.rawJid];
         if (phone) {
-          candidateJids.push(`${phone}@s.whatsapp.net`);
-          if (phone.startsWith('55')) {
-            candidateJids.push(`${phone.substring(2)}@s.whatsapp.net`);
-          } else {
-            candidateJids.push(`55${phone}@s.whatsapp.net`);
+          let pDigits = phone.startsWith('55') ? phone.substring(2) : phone;
+          let pWith9 = pDigits;
+          let pWithout9 = pDigits;
+          if (pDigits.length === 10 && ['6', '7', '8', '9'].includes(pDigits.charAt(2))) {
+            pWith9 = `${pDigits.substring(0, 2)}9${pDigits.substring(2)}`;
+          } else if (pDigits.length === 11 && pDigits.charAt(2) === '9') {
+            pWithout9 = `${pDigits.substring(0, 2)}${pDigits.substring(3)}`;
           }
+          candidateJids.push(`55${pWith9}@s.whatsapp.net`);
+          candidateJids.push(`${pWith9}@s.whatsapp.net`);
+          candidateJids.push(`55${pWithout9}@s.whatsapp.net`);
+          candidateJids.push(`${pWithout9}@s.whatsapp.net`);
         }
         if (item.lid) candidateJids.push(item.lid);
 
@@ -718,13 +729,28 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   // Salvar vínculo manual de telefone com DDD
   function handleSaveLinkedPhone() {
     if (!linkingChat) return;
-    const clean = extractCleanPhone(linkingPhoneInput);
+    let clean = extractCleanPhone(linkingPhoneInput);
     if (!clean || clean.length < 8) {
-      alert('Por favor, digite o número com DDD (ex: 61 9320-9444 ou 61993209444).');
+      alert('Por favor, digite o número com DDD (ex: 61 9320-9444 ou 61 99320-9444).');
       return;
     }
-    const fullPhone = clean.startsWith('55') ? clean : '55' + clean;
-    const dispPhone = formatPhoneBR(fullPhone) || fullPhone;
+    if (clean.startsWith('55') && clean.length >= 12) {
+      clean = clean.substring(2);
+    } else if (clean.startsWith('0') && clean.length >= 11) {
+      clean = clean.substring(1);
+    }
+
+    let cleanSem9 = clean;
+    if (clean.length === 10 && ['6', '7', '8', '9'].includes(clean.charAt(2))) {
+      // Auto-injeta o 9 (ex: 61 9320-9444 vira 61 99320-9444)
+      clean = `${clean.substring(0, 2)}9${clean.substring(2)}`;
+    } else if (clean.length === 11 && clean.charAt(2) === '9') {
+      cleanSem9 = `${clean.substring(0, 2)}${clean.substring(3)}`;
+    }
+
+    const fullPhone = '55' + clean;
+    const fullPhoneSem9 = '55' + cleanSem9;
+    const dispPhone = formatPhoneBR(fullPhone) || `(${clean.slice(0, 2)}) ${clean.slice(2, 7)}-${clean.slice(7)}`;
     const rawJid = linkingChat.rawJid || linkingChat.id || '';
     const lid = linkingChat.lid || (rawJid.includes('@lid') ? rawJid : '');
     const cleanLid = extractCleanPhone(lid || rawJid);
@@ -739,6 +765,15 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       localStorage.setItem('wa_custom_contact_phones', JSON.stringify(saved));
     } catch (e) {}
 
+    const candidateJids = Array.from(new Set([
+      `${fullPhone}@s.whatsapp.net`,
+      `${fullPhoneSem9}@s.whatsapp.net`,
+      `${clean}@s.whatsapp.net`,
+      `${cleanSem9}@s.whatsapp.net`,
+      rawJid,
+      lid
+    ].filter(Boolean)));
+
     // 2. Atualiza a lista chats em memória na hora!
     setChats(prev => prev.map(item => {
       const isMatch = item.rawJid === rawJid || (cleanLid && (item.lid === lid || item.rawJid?.includes(cleanLid))) || (ctName && item.displayName?.toLowerCase() === ctName.toLowerCase());
@@ -748,7 +783,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           realPhone: fullPhone,
           displayPhone: dispPhone,
           hasRealPhone: true,
-          candidateJids: Array.from(new Set([...(item.candidateJids || []), `${fullPhone}@s.whatsapp.net`, `${clean}@s.whatsapp.net`, rawJid, lid].filter(Boolean)))
+          candidateJids: Array.from(new Set([...(item.candidateJids || []), ...candidateJids]))
         };
       }
       return item;
@@ -761,7 +796,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       displayPhone: dispPhone,
       name: ctName || `Credor (${dispPhone})`,
       lid: lid || null,
-      candidateJids: Array.from(new Set([`${fullPhone}@s.whatsapp.net`, `${clean}@s.whatsapp.net`, rawJid, lid].filter(Boolean)))
+      candidateJids
     });
 
     setLinkingChat(null);
@@ -786,17 +821,32 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
   // Definir por número digitado
   function handleSetManualPhone() {
-    const clean = extractCleanPhone(manualPhone);
+    let clean = extractCleanPhone(manualPhone);
     if (!clean || clean.length < 8) {
-      alert('Por favor, digite um número de telefone válido com DDD (ex: 61 9320-9444 ou 61993209444).');
+      alert('Por favor, digite um número de telefone válido com DDD (ex: 61 9320-9444 ou 61 99320-9444).');
       return;
     }
-    const fullPhone = clean.startsWith('55') ? clean : '55' + clean;
+    if (clean.startsWith('55') && clean.length >= 12) {
+      clean = clean.substring(2);
+    } else if (clean.startsWith('0') && clean.length >= 11) {
+      clean = clean.substring(1);
+    }
+
+    let cleanSem9 = clean;
+    if (clean.length === 10 && ['6', '7', '8', '9'].includes(clean.charAt(2))) {
+      // Auto-injeta o nono dígito (ex: 61 9320-9444 vira 61 99320-9444)
+      clean = `${clean.substring(0, 2)}9${clean.substring(2)}`;
+    } else if (clean.length === 11 && clean.charAt(2) === '9') {
+      cleanSem9 = `${clean.substring(0, 2)}${clean.substring(3)}`;
+    }
+
+    const fullPhone = '55' + clean;
+    const fullPhoneSem9 = '55' + cleanSem9;
     const jid = fullPhone + '@s.whatsapp.net';
-    const displayPhone = formatPhoneBR(fullPhone) || fullPhone;
+    const displayPhone = formatPhoneBR(fullPhone) || `(${clean.slice(0, 2)}) ${clean.slice(2, 7)}-${clean.slice(7)}`;
 
     // Tenta encontrar se o contato já existe na agenda ou conversas por telefone ou nome
-    const sigs = getPhoneSignatures(fullPhone);
+    const sigs = [...getPhoneSignatures(fullPhone), ...getPhoneSignatures(fullPhoneSem9)];
     const foundChat = chats.find(c => {
       const cDigits = (c.realPhone || c.displayPhone || '').replace(/\D/g, '');
       return sigs.some(s => s && (cDigits.includes(s) || s.includes(cDigits)));
@@ -821,6 +871,15 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       localStorage.setItem('wa_custom_contact_phones', JSON.stringify(saved));
     } catch (e) {}
 
+    const candidateJids = Array.from(new Set([
+      jid,
+      `${fullPhoneSem9}@s.whatsapp.net`,
+      `${clean}@s.whatsapp.net`,
+      `${cleanSem9}@s.whatsapp.net`,
+      rawJid,
+      lid
+    ].filter(Boolean)));
+
     // Atualiza o contato na lista de chats
     if (foundChat) {
       setChats(prev => prev.map(item => {
@@ -830,7 +889,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             realPhone: fullPhone,
             displayPhone,
             hasRealPhone: true,
-            candidateJids: Array.from(new Set([...(item.candidateJids || []), jid, `${clean}@s.whatsapp.net`, rawJid, lid].filter(Boolean)))
+            candidateJids: Array.from(new Set([...(item.candidateJids || []), ...candidateJids]))
           };
         }
         return item;
@@ -843,7 +902,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       displayPhone,
       name: contactName,
       lid,
-      candidateJids: Array.from(new Set([jid, `${clean}@s.whatsapp.net`, rawJid, lid].filter(Boolean)))
+      candidateJids
     });
   }
 
@@ -4239,7 +4298,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               </button>
             </div>
             <div style={{ fontSize: 11, color: 'var(--ink2)' }}>
-              💡 <strong>Dica:</strong> Se o contato aparecer com ID privado (LID) ou sem o número completo, basta digitar o número dele aqui (ex: <strong>61 9320-9444</strong>) e clicar em <strong>Definir Número</strong>!
+              💡 <strong>Dica:</strong> Se o número for informado sem o 9 (ex: <strong>61 9320-9444</strong>), o sistema adiciona o <strong>9</strong> automaticamente (<strong>(61) 99320-9444</strong>) e busca todas as variações para evitar erros no WhatsApp e carregar todo o histórico!
             </div>
           </div>
 
