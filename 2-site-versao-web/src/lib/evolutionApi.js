@@ -371,6 +371,54 @@ export async function disconnectInstance() {
   }
 }
 
+// 🔄 Desconecta a sessão antiga e rotaciona o nome da instância para eliminar definitivamente qualquer sessão fantasma/travada
+export async function disconnectAndRotateInstance() {
+  const cfg = getEvolutionConfig();
+  const oldInstance = cfg.instanceName || DEFAULT_INSTANCE_NAME;
+
+  // 1. Tenta logout e delete da instância anterior
+  try {
+    await evolutionFetch(`/instance/logout/${oldInstance}`, { method: 'DELETE' });
+  } catch (e) {}
+  try {
+    await evolutionFetch(`/instance/delete/${oldInstance}`, { method: 'DELETE' });
+  } catch (e) {}
+
+  // 2. Calcula novo nome de instância limpo (ex: dr_candido -> dr_candido_2 -> dr_candido_3)
+  let base = oldInstance.replace(/_\d+$/, '');
+  if (!base) base = 'dr_candido';
+  const match = oldInstance.match(/_(\d+)$/);
+  const nextNum = match ? parseInt(match[1], 10) + 1 : 2;
+  const newInstance = `${base}_${nextNum}`;
+
+  // 3. Atualiza localmente e no Supabase
+  await saveEvolutionConfig({
+    serverUrl: cfg.serverUrl,
+    apiKey: cfg.apiKey,
+    instanceName: newInstance,
+  });
+
+  // 4. Cria a nova instância limpa no Evolution API com qrcode: true
+  try {
+    const createData = await evolutionFetch(`/instance/create`, {
+      method: 'POST',
+      body: JSON.stringify({
+        instanceName: newInstance,
+        token: '',
+        qrcode: true,
+        integration: 'WHATSAPP-BAILEYS',
+        reject_call: false,
+        sync_full_history: false,
+      }),
+    });
+    return { ...createData, newInstanceName: newInstance };
+  } catch (err) {
+    // Se por acaso já existir, conecta diretamente para puxar o QR Code
+    const connectData = await evolutionFetch(`/instance/connect/${newInstance}`);
+    return { ...connectData, newInstanceName: newInstance };
+  }
+}
+
 // ── ENVIO DE MENSAGENS ─────────────────────────────────────────────
 
 export async function sendWhatsAppMessage(number, text) {

@@ -9,6 +9,7 @@ import {
   createOrConnectInstance,
   getPairingCode,
   disconnectInstance,
+  disconnectAndRotateInstance,
   resetAndRecreateInstance,
   fetchWhatsAppChats,
   fetchWhatsAppContacts,
@@ -278,8 +279,15 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     setConnectError(null);
     try {
       if (forceNew) {
-        await disconnectInstance().catch(() => {});
+        const rotRes = await disconnectAndRotateInstance().catch(() => null);
+        let rotB64 = rotRes?.qrcode?.base64 || rotRes?.base64 || (typeof rotRes?.qrcode === 'string' ? rotRes.qrcode : null);
+        if (rotB64) {
+          setQrCodeData(rotB64);
+          setConnectError(null);
+          return;
+        }
       }
+
       const res = await createOrConnectInstance();
 
       let b64 = null;
@@ -295,15 +303,17 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
       if (b64) {
         setQrCodeData(b64);
+        setConnectError(null);
       } else if (res?.instance?.state === 'open' || res?.state === 'open' || res?.status === 'open') {
         setConnStatus({ connected: true, state: 'open' });
-        setConnectError('O servidor informa que há uma sessão aberta. Se você NÃO estiver conectado no celular, clique no botão "🔌 Desconectar WhatsApp" abaixo para limpar a sessão travada e gerar um novo QR Code.');
+        setConnectError('O servidor informa que há uma sessão aberta. Se você NÃO estiver conectado no celular, use o botão "🔌 Limpar Sessão e Gerar Novo QR Code" abaixo.');
       } else {
-        // Tenta restart para forçar novo QR Code
-        const retry = await resetAndRecreateInstance();
+        // Tenta rotação limpa para obter um QR Code novo
+        const retry = await disconnectAndRotateInstance().catch(() => null);
         const retryB64 = retry?.qrcode?.base64 || retry?.base64;
         if (retryB64) {
           setQrCodeData(retryB64);
+          setConnectError(null);
         }
       }
     } catch (err) {
@@ -315,23 +325,41 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     }
   }
 
-  // 🔌 Desconectar WhatsApp e limpar sessão travada no servidor
-  async function handleDisconnectWhatsApp() {
-    if (!window.confirm('Deseja realmente desconectar o WhatsApp e limpar a sessão?\n\nIsso limpará qualquer sessão antiga ou travada no servidor para você poder escanear um novo QR Code limpo.')) return;
+  // 🔌 Desconectar WhatsApp e limpar sessão travada no servidor com rotação de instância
+  async function handleDisconnectWhatsApp(forceNewInstance = true) {
+    if (!window.confirm('Deseja realmente desconectar o WhatsApp e limpar a sessão travada?\n\nIsso removerá a sessão antiga do servidor e gerará um novo QR Code limpo para você escanear no celular.')) return;
     setDisconnecting(true);
     setConnectError(null);
+    setQrCodeData(null);
+    setPairingCodeResult(null);
     try {
-      await disconnectInstance();
+      const res = await disconnectAndRotateInstance();
       setConnStatus({ connected: false, state: 'close' });
-      setQrCodeData(null);
-      setPairingCodeResult(null);
       setChats([]);
       setSelectedContact(null);
-      alert('🔌 WhatsApp desconectado e sessão limpa com sucesso!\n\nGerando novo QR Code para conexão...');
+
+      // Extrai o novo QR Code retornado pela instância recém-criada
+      let b64 = null;
+      if (typeof res === 'string' && res.length > 50) {
+        b64 = res;
+      } else if (res?.qrcode?.base64) {
+        b64 = res.qrcode.base64;
+      } else if (res?.base64) {
+        b64 = res.base64;
+      } else if (typeof res?.qrcode === 'string' && res.qrcode.length > 50) {
+        b64 = res.qrcode;
+      }
+
+      if (b64) {
+        setQrCodeData(b64);
+        setConnectError(null);
+      }
       setShowConnectModalLocal(true);
-      setTimeout(() => {
-        handleFetchQr(true);
-      }, 500);
+      if (!b64) {
+        setTimeout(() => {
+          handleFetchQr();
+        }, 500);
+      }
     } catch (err) {
       alert('Erro ao desconectar WhatsApp: ' + (err.message || err));
     } finally {
@@ -365,12 +393,18 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   async function handleResetSession() {
     setResettingInstance(true);
     setConnectError(null);
+    setQrCodeData(null);
+    setPairingCodeResult(null);
     try {
-      await resetAndRecreateInstance();
-      setQrCodeData(null);
-      setPairingCodeResult(null);
-      await handleFetchQr();
-      alert('Sessão limpa! Escaneie o novo QR Code que apareceu na tela.');
+      const res = await disconnectAndRotateInstance();
+      let b64 = res?.qrcode?.base64 || res?.base64 || (typeof res?.qrcode === 'string' ? res.qrcode : null);
+      if (b64) {
+        setQrCodeData(b64);
+        setConnectError(null);
+      } else {
+        await handleFetchQr();
+      }
+      alert('Sessão renovada com sucesso! Escaneie o novo QR Code gerado.');
     } catch (err) {
       const msg = err.message || 'Erro ao reiniciar sessão';
       setConnectError(msg);
@@ -3051,7 +3085,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
             {connectError && (
               <div style={{
-                padding: 10,
+                padding: '12px 14px',
                 borderRadius: 8,
                 background: 'rgba(239, 68, 68, 0.15)',
                 border: '1px solid rgba(239, 68, 68, 0.4)',
@@ -3060,25 +3094,47 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 lineHeight: 1.4,
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 6
+                gap: 8
               }}>
                 <div>⚠️ {connectError}</div>
-                <div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button
                     type="button"
-                    onClick={() => { setShowConnectModalLocal(false); setShowConfigModal(true); }}
+                    onClick={() => handleDisconnectWhatsApp(true)}
+                    disabled={disconnecting}
                     style={{
-                      padding: '5px 10px',
+                      padding: '7px 14px',
                       borderRadius: 6,
                       background: '#EF4444',
                       color: '#fff',
                       border: 'none',
+                      fontSize: 12,
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      boxShadow: '0 2px 8px rgba(239,68,68,0.3)'
+                    }}
+                  >
+                    <span>🔌</span> {disconnecting ? 'Limpando sessão...' : 'Limpar Sessão e Gerar Novo QR Code'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setShowConnectModalLocal(false); setShowConfigModal(true); }}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 6,
+                      background: 'rgba(255,255,255,0.08)',
+                      color: '#fff',
+                      border: '1px solid var(--line)',
                       fontSize: 11.5,
-                      fontWeight: 800,
+                      fontWeight: 700,
                       cursor: 'pointer'
                     }}
                   >
-                    ⚙️ Configurar URL / Chave do Servidor
+                    ⚙️ Configurar Servidor
                   </button>
                 </div>
               </div>
