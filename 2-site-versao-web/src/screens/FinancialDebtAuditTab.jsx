@@ -22,7 +22,8 @@ import {
   isValidBrazilianDdd,
   isRealBrazilianPhone,
   normalizeBrazilianPhoneWith9,
-  fetchLastChatExchange
+  fetchLastChatExchange,
+  resolveTargetContactChat
 } from '../lib/evolutionApi';
 
 export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
@@ -58,6 +59,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   const [loadingChats, setLoadingChats] = useState(false);
   const [selectedContact, setSelectedContact] = useState(() => ({ ...DEFAULT_AUDIT_CONTACT })); // { jid, name, phone }
   const [manualPhone, setManualPhone] = useState('');
+  const [showManualInput, setShowManualInput] = useState(false);
   const [contactSearch, setContactSearch] = useState('');
   const [linkingChat, setLinkingChat] = useState(null); // Chat com ID privado sendo vinculado manualmente
   const [linkingPhoneInput, setLinkingPhoneInput] = useState('');
@@ -510,326 +512,23 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     return '';
   }
 
-  // Carregar conversas ativas e contatos reais do WhatsApp (Unificação Completa de Contatos)
+  // Sincroniza o contato padrão Estela 22 diretamente com a Evolution API
   async function loadChats() {
     setLoadingChats(true);
     try {
-      const [chatList, contactList, recentMsgs] = await Promise.all([
-        fetchWhatsAppChats().catch(() => []),
-        fetchWhatsAppContacts().catch(() => []),
-        fetchRecentMessagesSummary(300).catch(() => [])
-      ]);
-
-      const lidToPhone = await buildLidPhoneMapping(chatList, recentMsgs, contactList);
-
-      // Carrega vínculos manuais persistidos de telefones salvos pelo usuário
-      let customPhones = {};
-      try {
-        customPhones = JSON.parse(localStorage.getItem('wa_custom_contact_phones') || '{}');
-      } catch (e) {}
-
-      // Identifica número do dono para não listar a si mesmo como credor
-      let ownerClean = '';
-      try {
-        const cfg = getEvolutionConfig();
-        const st = await fetchInstanceStatus().catch(() => null);
-        const ownerJid = st?.instance?.ownerJid || st?.ownerJid || cfg?.ownerJid || '';
-        if (ownerJid) ownerClean = extractCleanPhone(ownerJid);
-      } catch (e) {}
-
-      // Mapeamento de contatos com TODAS as variações telefônicas brasileiras
-      const contactsMap = new Map();
-      (contactList || []).forEach(ct => {
-        const ctId = ct.id || ct.remoteJid || ct.jid || '';
-        const lowerId = ctId.toLowerCase();
-        const ctDigits = extractCleanPhone(ctId);
-        const ctName = ct.name || ct.verifiedName || ct.pushName || ct.notify || ct.shortName || '';
-
-        const savedPhone = customPhones[ctDigits] || customPhones[lowerId] || (ctName ? customPhones[ctName.toLowerCase()] : '');
-
-        let ctPhone = '';
-        if (savedPhone && isRealBrazilianPhone(savedPhone)) {
-          ctPhone = savedPhone;
-        } else if (lidToPhone.has(ctDigits)) {
-          ctPhone = lidToPhone.get(ctDigits);
-        } else if (isRealBrazilianPhone(ct.phoneNumber)) {
-          ctPhone = extractCleanPhone(ct.phoneNumber);
-        } else if (isRealBrazilianPhone(ct.number)) {
-          ctPhone = extractCleanPhone(ct.number);
-        } else if (isRealBrazilianPhone(ct.remoteJidAlt)) {
-          ctPhone = extractCleanPhone(ct.remoteJidAlt);
-        } else if (isRealBrazilianPhone(ctDigits) && !lowerId.includes('@lid')) {
-          ctPhone = ctDigits;
-        }
-
-        const ctData = { ...ct, resolvedPhone: ctPhone, name: ctName };
-
-        if (ctId) {
-          contactsMap.set(ctId.toLowerCase(), ctData);
-        }
-        if (ctPhone && isRealBrazilianPhone(ctPhone)) {
-          getPhoneSignatures(ctPhone).forEach(sig => {
-            contactsMap.set(sig, ctData);
-          });
-        }
-      });
-
-      // Mapa para unir conversas ativas e contatos salvos sem duplicidades
-      const mergedMap = new Map();
-
-      // 1. Processa conversas ativas do WhatsApp
-      (chatList || []).forEach(c => {
-        const actualJid = (c.remoteJid && c.remoteJid.includes('@')) ? c.remoteJid :
-          (c.jid && c.jid.includes('@')) ? c.jid :
-          (c.id && c.id.includes('@')) ? c.id : (c.remoteJid || c.jid || c.id || '');
-        const rawJid = actualJid;
-        const lowerJid = rawJid.toLowerCase();
-        if (!rawJid || lowerJid.includes('@g.us') || lowerJid.includes('@broadcast') || lowerJid.includes('status@broadcast')) return;
-
-        let cleanDigits = extractCleanPhone(c.remoteJid || rawJid);
-        let isLid = lowerJid.includes('@lid') || (c.remoteJid && c.remoteJid.includes('@lid'));
-        let lid = isLid ? (c.remoteJid && c.remoteJid.includes('@lid') ? c.remoteJid : rawJid) : (c.lid || null);
-
-        const ct = contactsMap.get(lowerJid) || {};
-        const bestName = ct.name || c.name || ct.verifiedName || c.pushName || ct.pushName || c.lastMessage?.pushName || '';
-
-        const savedPhone = customPhones[cleanDigits] || customPhones[lowerJid] || (bestName ? customPhones[bestName.toLowerCase()] : '');
-
-        let realPhone = '';
-        if (savedPhone && isRealBrazilianPhone(savedPhone)) {
-          realPhone = savedPhone;
-        } else if (lidToPhone.has(cleanDigits)) {
-          realPhone = lidToPhone.get(cleanDigits);
-        } else if (isRealBrazilianPhone(c.phoneNumber)) {
-          realPhone = extractCleanPhone(c.phoneNumber);
-        } else if (isRealBrazilianPhone(c.remoteJidAlt)) {
-          realPhone = extractCleanPhone(c.remoteJidAlt);
-        } else if (isRealBrazilianPhone(c.lastMessage?.key?.remoteJidAlt)) {
-          realPhone = extractCleanPhone(c.lastMessage.key.remoteJidAlt);
-        } else if (contactsMap.has(lowerJid) && contactsMap.get(lowerJid).resolvedPhone) {
-          realPhone = contactsMap.get(lowerJid).resolvedPhone;
-        } else if (isRealBrazilianPhone(cleanDigits) && !isLid) {
-          realPhone = cleanDigits;
-        }
-
-        const key = (realPhone && isRealBrazilianPhone(realPhone)) ? realPhone : lowerJid;
-        mergedMap.set(key, {
-          rawJid,
-          lid,
-          realPhone: isRealBrazilianPhone(realPhone) ? realPhone : '',
-          displayName: bestName,
-          lastActivity: c.conversationTimestamp || c.timestamp || c.updatedAt || 0,
-          source: 'chat'
-        });
-      });
-
-      // 2. Processa mensagens recentes para achar conversas ativas extras
-      (recentMsgs || []).forEach(m => {
-        const rawJid = m.key?.remoteJid || '';
-        const lowerJid = rawJid.toLowerCase();
-        if (!rawJid || lowerJid.includes('@g.us') || lowerJid.includes('@broadcast') || lowerJid.includes('status@broadcast')) return;
-
-        let cleanDigits = extractCleanPhone(rawJid);
-        let isLid = lowerJid.includes('@lid');
-        let lid = isLid ? rawJid : null;
-
-        const ct = contactsMap.get(lowerJid) || {};
-        const pushName = m.pushName || '';
-        const bestName = ct.name || ct.verifiedName || pushName || ct.pushName || '';
-        const msgTime = m.messageTimestamp || 0;
-
-        const savedPhone = customPhones[cleanDigits] || customPhones[lowerJid] || (bestName ? customPhones[bestName.toLowerCase()] : '');
-
-        let realPhone = '';
-        if (savedPhone && isRealBrazilianPhone(savedPhone)) {
-          realPhone = savedPhone;
-        } else if (lidToPhone.has(cleanDigits)) {
-          realPhone = lidToPhone.get(cleanDigits);
-        } else if (isRealBrazilianPhone(m.key?.remoteJidAlt)) {
-          realPhone = extractCleanPhone(m.key.remoteJidAlt);
-        } else if (isRealBrazilianPhone(cleanDigits) && !isLid) {
-          realPhone = cleanDigits;
-        }
-
-        const key = (realPhone && isRealBrazilianPhone(realPhone)) ? realPhone : lowerJid;
-        if (mergedMap.has(key)) {
-          const existing = mergedMap.get(key);
-          if (!existing.displayName && bestName) existing.displayName = bestName;
-          if (msgTime > (existing.lastActivity || 0)) existing.lastActivity = msgTime;
-          if (!existing.realPhone && isRealBrazilianPhone(realPhone)) existing.realPhone = realPhone;
-          if (!existing.lid && lid) existing.lid = lid;
-        } else {
-          mergedMap.set(key, {
-            rawJid,
-            lid,
-            realPhone: isRealBrazilianPhone(realPhone) ? realPhone : '',
-            displayName: bestName,
-            lastActivity: msgTime,
-            source: 'message'
-          });
-        }
-      });
-
-      // 3. Processa a agenda de contatos do telefone (garante contatos salvos mesmo sem mensagens recentes)
-      (contactList || []).forEach(ct => {
-        const ctId = ct.id || ct.remoteJid || ct.jid || '';
-        const lowerId = ctId.toLowerCase();
-        if (lowerId.includes('@g.us') || lowerId.includes('@broadcast')) return;
-
-        let ctDigits = extractCleanPhone(ctId);
-        let isLid = lowerId.includes('@lid');
-        let lid = isLid ? ctId : (ct.lid || null);
-
-        const ctName = ct.name || ct.verifiedName || ct.pushName || ct.notify || ct.shortName || '';
-        const savedPhone = customPhones[ctDigits] || customPhones[lowerId] || (ctName ? customPhones[ctName.toLowerCase()] : '');
-
-        let realPhone = '';
-        if (savedPhone && isRealBrazilianPhone(savedPhone)) {
-          realPhone = savedPhone;
-        } else if (lidToPhone.has(ctDigits)) {
-          realPhone = lidToPhone.get(ctDigits);
-        } else if (isRealBrazilianPhone(ct.phoneNumber)) {
-          realPhone = extractCleanPhone(ct.phoneNumber);
-        } else if (isRealBrazilianPhone(ct.number)) {
-          realPhone = extractCleanPhone(ct.number);
-        } else if (isRealBrazilianPhone(ct.remoteJidAlt)) {
-          realPhone = extractCleanPhone(ct.remoteJidAlt);
-        } else if (isRealBrazilianPhone(ctDigits) && !isLid) {
-          realPhone = ctDigits;
-        }
-
-        const key = (realPhone && isRealBrazilianPhone(realPhone)) ? realPhone : lowerId;
-
-        if (mergedMap.has(key)) {
-          const existing = mergedMap.get(key);
-          if (!existing.displayName && ctName) existing.displayName = ctName;
-          if (!existing.realPhone && isRealBrazilianPhone(realPhone)) existing.realPhone = realPhone;
-        } else {
-          mergedMap.set(key, {
-            rawJid: ctId,
-            lid,
-            realPhone: isRealBrazilianPhone(realPhone) ? realPhone : '',
-            displayName: ctName,
-            lastActivity: 0,
-            source: 'contact'
-          });
-        }
-      });
-
-      // 4. Monta lista final normalizada para o componente
-      const finalChats = [];
-      for (const [key, item] of mergedMap.entries()) {
-        // Ignora a própria conta do usuário
-        if (ownerClean && (item.realPhone === ownerClean || item.realPhone.startsWith(ownerClean) || ownerClean.startsWith(item.realPhone))) {
-          continue;
-        }
-
-        const hasRealPhone = Boolean(item.realPhone && isRealBrazilianPhone(item.realPhone));
-        const phone = hasRealPhone ? item.realPhone : '';
-        const formattedPhone = hasRealPhone ? formatPhoneBR(phone) : '';
-        const name = item.displayName ? item.displayName.trim() : '';
-
-        // JIDs candidatos para busca de mensagens
-        const candidateJids = [item.rawJid];
-        if (phone) {
-          let pDigits = phone.startsWith('55') ? phone.substring(2) : phone;
-          let pWith9 = pDigits;
-          let pWithout9 = pDigits;
-          if (pDigits.length === 10 && ['6', '7', '8', '9'].includes(pDigits.charAt(2))) {
-            pWith9 = `${pDigits.substring(0, 2)}9${pDigits.substring(2)}`;
-          } else if (pDigits.length === 11 && pDigits.charAt(2) === '9') {
-            pWithout9 = `${pDigits.substring(0, 2)}${pDigits.substring(3)}`;
-          }
-          candidateJids.push(`55${pWith9}@s.whatsapp.net`);
-          candidateJids.push(`${pWith9}@s.whatsapp.net`);
-          candidateJids.push(`55${pWithout9}@s.whatsapp.net`);
-          candidateJids.push(`${pWithout9}@s.whatsapp.net`);
-        }
-        if (item.lid) candidateJids.push(item.lid);
-
-        finalChats.push({
-          id: item.rawJid,
-          remoteJid: item.rawJid,
-          rawJid: item.rawJid,
-          lid: item.lid,
-          realPhone: phone,
-          displayPhone: formattedPhone || (hasRealPhone ? phone : ''),
-          displayName: name || (formattedPhone ? formattedPhone : 'Contato WhatsApp'),
-          hasCustomName: Boolean(name),
-          hasRealPhone,
-          lastActivity: item.lastActivity || 0,
-          candidateJids: Array.from(new Set(candidateJids.filter(Boolean)))
-        });
-      }
-
-      // Ordenação: 
-      // 0. Contato padrão "Estela 22" / 61 99320-9444 em PRIMEIRO LUGAR
-      // 1. Quem tem telefone real verificado no topo
-      // 2. Quem tem nome salvo na agenda no topo
-      // 3. Quem teve mensagem/interação mais recente
-      // 4. Ordem alfabética
-      finalChats.sort((a, b) => {
-        const isEstelaA = (a.displayName || '').toLowerCase().includes('estela 22') || (a.realPhone || '').includes('61993209444') || (a.realPhone || '').includes('6193209444');
-        const isEstelaB = (b.displayName || '').toLowerCase().includes('estela 22') || (b.realPhone || '').includes('61993209444') || (b.realPhone || '').includes('6193209444');
-        if (isEstelaA && !isEstelaB) return -1;
-        if (!isEstelaA && isEstelaB) return 1;
-
-        if (a.hasRealPhone && !b.hasRealPhone) return -1;
-        if (!a.hasRealPhone && b.hasRealPhone) return 1;
-        if (a.hasCustomName && !b.hasCustomName) return -1;
-        if (!a.hasCustomName && b.hasCustomName) return 1;
-        if (a.lastActivity && b.lastActivity && a.lastActivity !== b.lastActivity) {
-          return b.lastActivity - a.lastActivity;
-        }
-        return (a.displayName || '').localeCompare(b.displayName || '');
-      });
-
-      setChats(finalChats);
-
-      // Se o contato padrão Estela estiver ativo, sincroniza e agrega os JIDs de todas as conversas encontradas com "Estela"
-      const estelaChats = finalChats.filter(c => 
-        (c.displayName || '').toLowerCase().includes('estela') ||
-        (c.realPhone || '').includes('61993209444') ||
-        (c.realPhone || '').includes('6193209444')
-      );
-
-      if (estelaChats.length > 0) {
-        // Ordena para que o chat com mensagem mais recente seja o primário
-        estelaChats.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0));
-        const primaryEstela = estelaChats[0];
-
-        // Coleta todos os LIDs e JIDs de todas as conversas "Estela" para não perder mensagens
-        const combinedCandidateJids = new Set([
-          '5561993209444@s.whatsapp.net',
-          '556193209444@s.whatsapp.net',
-          '61993209444@s.whatsapp.net',
-          '6193209444@s.whatsapp.net'
-        ]);
-
-        estelaChats.forEach(ec => {
-          if (ec.rawJid) combinedCandidateJids.add(ec.rawJid);
-          if (ec.lid) combinedCandidateJids.add(ec.lid);
-          (ec.candidateJids || []).forEach(j => combinedCandidateJids.add(j));
-        });
-
-        setSelectedContact(prev => {
-          if (!prev || prev.phone === '5561993209444' || (prev.name && prev.name.toLowerCase().includes('estela'))) {
-            const validJids = Array.from(combinedCandidateJids);
-            const bestJid = validJids.find(j => j && (j.includes('@lid') || j.includes('@s.whatsapp.net'))) || '5561993209444@s.whatsapp.net';
-            return {
-              jid: bestJid,
-              phone: '5561993209444',
-              displayPhone: '(61) 99320-9444',
-              name: 'Estela 22',
-              lid: primaryEstela.lid || (bestJid.includes('@lid') ? bestJid : null),
-              candidateJids: validJids
-            };
-          }
-          return prev;
-        });
+      const target = selectedContact || DEFAULT_AUDIT_CONTACT;
+      const res = await resolveTargetContactChat(target);
+      if (res && res.candidateJids && res.candidateJids.length > 0) {
+        setSelectedContact(prev => ({
+          ...(prev || DEFAULT_AUDIT_CONTACT),
+          jid: res.resolvedJid || (prev?.jid || DEFAULT_AUDIT_CONTACT.jid),
+          lid: res.matchedChat?.lid || (res.resolvedJid?.includes('@lid') ? res.resolvedJid : prev?.lid),
+          candidateJids: res.candidateJids,
+          lastActivity: res.matchedChat?.lastActivity || prev?.lastActivity || 0
+        }));
       }
     } catch (err) {
-      console.warn('Erro ao carregar conversas e contatos:', err);
+      console.warn('Erro ao sincronizar contato padrão:', err);
     } finally {
       setLoadingChats(false);
     }
@@ -4348,7 +4047,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         </div>
       )}
 
-      {/* ────────────────── ETAPA 1: SELECIONAR CONTATO / CREDOR ────────────────── */}
+      {/* ────────────────── ETAPA 1: CONTATO / CREDOR PADRÃO ────────────────── */}
       {wizardStep === 1 && (
         <div style={{
           background: 'rgba(15, 23, 42, 0.9)',
@@ -4357,10 +4056,10 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           padding: 20,
           display: 'flex',
           flexDirection: 'column',
-          gap: 14
+          gap: 16
         }}>
           <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>👤</span> Etapa 1: Selecionar Número do Credor
+            <span>👤</span> Etapa 1: Credor & Conversa Selecionada para a Perícia
           </div>
 
           {/* GUIA PASSO A PASSO ETAPA 1 */}
@@ -4374,427 +4073,80 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             gap: 6
           }}>
             <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>📌</span> Passo a Passo desta Etapa 1:
+              <span>📌</span> Contato Padrão Definido com Sucesso:
             </div>
             <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.6 }}>
-              <strong>1. Conectar WhatsApp:</strong> Verifique no topo se está como <em>"WhatsApp Web Conectado"</em> (se não estiver, clique em <em>"Conectar Agora"</em>).<br />
-              <strong>2. Selecionar o Contato:</strong> Escolha na lista abaixo a conversa da pessoa/credor que você quer periciar (ou digite o telefone dela no campo com DDD).<br />
-              <strong>3. Avançar:</strong> Após selecionar o contato, clique no botão <strong>"Avançar para Etapa 2 ➔"</strong> no final desta página.
+              O sistema está configurado exclusivamente para auditar o contato <strong>Estela 22</strong> com o número oficial <strong>(61) 99320-9444</strong>.<br />
+              Nenhuma conversa ou contato de terceiros será listado ou misturado à perícia.
             </div>
           </div>
 
-          <div style={{ fontSize: 12.5, color: 'var(--ink2)' }}>
-            Escolha uma conversa do WhatsApp conectado ou digite o número da pessoa que está cobrando:
-          </div>
-
-          {/* Opção Digitar Número */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="text"
-                placeholder="Ex: 61 9320-9444 ou 61993209444 (com DDD)"
-                value={manualPhone}
-                onChange={(e) => setManualPhone(e.target.value)}
-                style={{
-                  flex: 1,
-                  padding: '10px 14px',
-                  borderRadius: 10,
-                  border: '1px solid var(--teal)',
-                  background: 'rgba(0,0,0,0.4)',
-                  color: '#fff',
-                  fontSize: 13
-                }}
-              />
-              <button
-                type="button"
-                onClick={handleSetManualPhone}
-                style={{
-                  padding: '10px 20px',
-                  borderRadius: 10,
-                  border: 'none',
-                  background: 'var(--teal)',
-                  color: '#081018',
-                  fontWeight: 900,
-                  fontSize: 13,
-                  cursor: 'pointer'
-                }}
-              >
-                Definir Número
-              </button>
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--ink2)' }}>
-              💡 <strong>Dica:</strong> Se o número for informado sem o 9 (ex: <strong>61 9320-9444</strong>), o sistema adiciona o <strong>9</strong> automaticamente (<strong>(61) 99320-9444</strong>) e busca todas as variações para evitar erros no WhatsApp e carregar todo o histórico!
-            </div>
-          </div>
-
-          {/* Conversas e Contatos do WhatsApp */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--ink1)' }}>
-                Conversas & Agenda ({chats.length} {chats.length === 1 ? 'contato' : 'contatos'}):
-              </span>
-              <button
-                type="button"
-                onClick={loadChats}
-                disabled={loadingChats || !connStatus?.connected}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--teal)',
-                  fontSize: 11.5,
-                  cursor: 'pointer',
-                  fontWeight: 700
-                }}
-              >
-                {loadingChats ? '🔄 Atualizando...' : '🔄 Recarregar'}
-              </button>
-            </div>
-
-            <input
-              type="text"
-              placeholder="🔍 Digite o nome ou número com DDD (ex: Estela, 61 99999-8888)..."
-              value={contactSearch}
-              onChange={(e) => setContactSearch(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '10px 14px',
-                borderRadius: 10,
-                border: '1px solid rgba(0, 229, 155, 0.4)',
-                background: 'rgba(0,0,0,0.4)',
-                color: '#fff',
-                fontSize: 12.5,
-                marginBottom: 10,
-                outline: 'none'
-              }}
-            />
-
-            {linkingChat && (
+          {/* CARD PRINCIPAL DO CONTATO PADRÃO: ESTELA 22 */}
+          {selectedContact ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{
-                padding: '12px 16px',
-                borderRadius: 12,
-                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(0, 229, 155, 0.15))',
-                border: '1.5px solid #38bdf8',
-                marginBottom: 10,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8
-              }}>
-                <div style={{ fontSize: 13, fontWeight: 900, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span>✏️</span> Vincular Telefone com DDD para: {linkingChat.displayName || 'este contato'}
-                </div>
-                <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.4 }}>
-                  Digite o número do WhatsApp com DDD (ex: <strong>61 9320-9444</strong>) para que o telefone fique visível em definitivo:
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    type="text"
-                    autoFocus
-                    placeholder="Ex: 61 9320-9444 ou 61993209444"
-                    value={linkingPhoneInput}
-                    onChange={(e) => setLinkingPhoneInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleSaveLinkedPhone(); }}
-                    style={{
-                      flex: 1,
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      border: '1px solid var(--teal)',
-                      background: 'rgba(0,0,0,0.6)',
-                      color: '#fff',
-                      fontSize: 13,
-                      outline: 'none'
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSaveLinkedPhone}
-                    style={{
-                      padding: '8px 16px',
-                      borderRadius: 8,
-                      border: 'none',
-                      background: 'var(--teal)',
-                      color: '#081018',
-                      fontWeight: 900,
-                      fontSize: 12.5,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    ✓ Salvar e Selecionar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLinkingChat(null)}
-                    style={{
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      background: 'rgba(255,255,255,0.06)',
-                      border: '1px solid var(--line)',
-                      color: '#fff',
-                      fontSize: 12,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <div style={{
-              maxHeight: 320,
-              overflowY: 'auto',
-              borderRadius: 10,
-              border: '1px solid var(--line)',
-              background: 'rgba(0,0,0,0.2)'
-            }}>
-              {chats.length === 0 ? (
-                <div style={{ padding: 16, textAlign: 'center', fontSize: 12, color: 'var(--ink2)' }}>
-                  {loadingChats ? '⏳ Carregando conversas e contatos...' : (connStatus?.connected ? 'Nenhuma conversa ou contato encontrado.' : 'Conecte o WhatsApp no botão acima para listar todas as conversas.')}
-                </div>
-              ) : (
-                chats
-                  .filter(c => {
-                    if (!contactSearch || !contactSearch.trim()) return true;
-                    const q = contactSearch.toLowerCase().trim();
-                    const qDigits = q.replace(/\D/g, '');
-
-                    const name = (c.displayName || c.name || c.pushName || c.subject || '').toLowerCase();
-                    const dispPhone = (c.displayPhone || '').toLowerCase();
-                    const realPhone = (c.realPhone || '').toLowerCase();
-                    const rawJid = (c.id || c.remoteJid || '').toLowerCase();
-                    const phoneDigits = (c.realPhone || c.displayPhone || rawJid || '').replace(/\D/g, '');
-
-                    // 1. Match textual direto
-                    if (name.includes(q) || dispPhone.includes(q) || realPhone.includes(q) || rawJid.includes(q)) {
-                      return true;
-                    }
-
-                    // 2. Match por dígitos numéricos (com ou sem DDD)
-                    if (qDigits.length >= 2 && phoneDigits.includes(qDigits)) {
-                      return true;
-                    }
-
-                    // 3. Match multi-palavras (ex: "Estela 61")
-                    const tokens = q.split(/\s+/).filter(Boolean);
-                    if (tokens.length > 1) {
-                      const allTokensMatch = tokens.every(tok => {
-                        const tokDigits = tok.replace(/\D/g, '');
-                        const matchName = name.includes(tok);
-                        const matchPhone = dispPhone.includes(tok) || realPhone.includes(tok);
-                        const matchDigits = tokDigits.length >= 2 && phoneDigits.includes(tokDigits);
-                        return matchName || matchPhone || matchDigits;
-                      });
-                      if (allTokensMatch) return true;
-                    }
-
-                    return false;
-                  })
-                  .map(c => {
-                    const rawJid = c.rawJid || ((c.remoteJid && c.remoteJid.includes('@')) ? c.remoteJid : (c.id && c.id.includes('@')) ? c.id : c.remoteJid || c.id || '');
-                    const hasRealPhone = Boolean(c.hasRealPhone || (c.realPhone && isRealBrazilianPhone(c.realPhone)));
-                    const dispPhone = hasRealPhone ? (c.displayPhone || formatPhoneBR(c.realPhone)) : '';
-                    const dispName = c.displayName || c.name || c.pushName || (dispPhone ? `Contato ${dispPhone}` : 'Conversa WhatsApp');
-                    const isSel = Boolean(
-                      selectedContact && (
-                        (rawJid && selectedContact.jid === rawJid) ||
-                        (hasRealPhone && selectedContact.phone && c.realPhone && selectedContact.phone.replace(/\D/g, '') === c.realPhone.replace(/\D/g, ''))
-                      )
-                    );
-                    const formattedAct = formatLastActivity(c.lastActivity);
-                    return (
-                      <div
-                        key={rawJid || c.realPhone}
-                        onClick={() => handleSelectChat(c)}
-                        style={{
-                          padding: '10px 14px',
-                          borderBottom: '1px solid rgba(255,255,255,0.06)',
-                          cursor: 'pointer',
-                          background: isSel ? 'rgba(0, 229, 155, 0.18)' : 'transparent',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 12,
-                          transition: 'background 0.2s ease'
-                        }}
-                      >
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <span style={{ 
-                              fontWeight: isSel ? 900 : 700, 
-                              color: isSel ? 'var(--teal)' : '#fff',
-                              fontSize: 13.5,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap'
-                            }}>
-                              {dispName}
-                            </span>
-                            {dispPhone ? (
-                              <span style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                fontSize: 11.5,
-                                fontWeight: 800,
-                                padding: '2px 8px',
-                                borderRadius: 6,
-                                background: isSel ? 'rgba(0, 229, 155, 0.25)' : 'rgba(56, 189, 248, 0.12)',
-                                color: isSel ? '#00e59b' : '#38bdf8',
-                                border: isSel ? '1px solid var(--teal)' : '1px solid rgba(56, 189, 248, 0.3)',
-                                fontFamily: 'monospace'
-                              }}>
-                                📞 {dispPhone}
-                              </span>
-                            ) : (
-                              <span style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                fontSize: 11,
-                                padding: '2px 6px',
-                                borderRadius: 6,
-                                background: 'rgba(255, 255, 255, 0.05)',
-                                color: 'var(--ink2)'
-                              }}>
-                                💬 Conversa WhatsApp
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
-                            {formattedAct ? (
-                              <span style={{ fontSize: 11, color: '#38bdf8', fontFamily: 'monospace' }}>
-                                🕒 Última mensagem: {formattedAct}
-                              </span>
-                            ) : (
-                              <span style={{ fontSize: 10.5, color: 'var(--ink2)' }}>
-                                🕒 Sem mensagens recentes
-                              </span>
-                            )}
-                            {c.rawJid && c.rawJid.includes('@lid') && (
-                              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace' }}>
-                                ID: {c.rawJid.replace('@lid', '').slice(-6)}@lid
-                              </span>
-                            )}
-                          </div>
-                          {hasRealPhone && (
-                            <span style={{ fontSize: 10.5, color: 'var(--ink2)', fontFamily: 'monospace' }}>
-                              Número puro: +{c.realPhone}
-                            </span>
-                          )}
-                          {!hasRealPhone && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 2 }}>
-                              <span style={{ fontSize: 10.5, color: '#f59e0b', fontFamily: 'monospace' }}>
-                                🔒 Contato com ID Privado do WhatsApp
-                              </span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handlePromptLinkPhone(c);
-                                }}
-                                style={{
-                                  padding: '3px 10px',
-                                  borderRadius: 6,
-                                  background: (c.displayName || '').toLowerCase().includes('estela') ? 'rgba(0, 229, 155, 0.2)' : 'rgba(56, 189, 248, 0.2)',
-                                  border: (c.displayName || '').toLowerCase().includes('estela') ? '1px solid var(--teal)' : '1px solid rgba(56, 189, 248, 0.5)',
-                                  color: (c.displayName || '').toLowerCase().includes('estela') ? 'var(--teal)' : '#38bdf8',
-                                  fontSize: 10.5,
-                                  fontWeight: 800,
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                {(c.displayName || '').toLowerCase().includes('estela') ? '✏️ Vincular a (61) 99320-9444' : '✏️ Informar Telefone (ex: 61 9320-9444)'}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                          {isSel ? (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedContact(null);
-                              }}
-                              style={{ 
-                                padding: '4px 10px', 
-                                borderRadius: 6, 
-                                background: 'rgba(239, 68, 68, 0.2)', 
-                                border: '1px solid rgba(239, 68, 68, 0.5)',
-                                color: '#ff6b6b', 
-                                fontSize: 11, 
-                                fontWeight: 900,
-                                cursor: 'pointer'
-                              }}
-                              title="Clique para desmarcar este contato"
-                            >
-                              ✕ Desmarcar
-                            </button>
-                          ) : (
-                            <span style={{ 
-                              padding: '4px 10px', 
-                              borderRadius: 6, 
-                              background: 'rgba(255,255,255,0.06)', 
-                              color: 'var(--ink2)', 
-                              fontSize: 11,
-                              fontWeight: 700
-                            }}>
-                              Selecionar
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
-              )}
-            </div>
-          </div>
-
-          {/* Contato Selecionado */}
-          {selectedContact && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{
-                padding: '14px 18px',
-                borderRadius: 12,
-                background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.16), rgba(56, 189, 248, 0.10))',
+                padding: '16px 20px',
+                borderRadius: 14,
+                background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.18), rgba(56, 189, 248, 0.12))',
                 border: '1.5px solid var(--teal)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                gap: 12,
-                boxShadow: '0 4px 14px rgba(0, 229, 155, 0.12)'
+                gap: 14,
+                boxShadow: '0 4px 18px rgba(0, 229, 155, 0.15)'
               }}>
                 <div>
-                  <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                    ✓ CREDOR / CONTATO SELECIONADO:
+                  <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                    ✓ CREDOR / CONTATO PADRÃO ATIVO:
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
-                    <div style={{ fontSize: 15, fontWeight: 900, color: '#fff' }}>
+                    <div style={{ fontSize: 17, fontWeight: 900, color: '#fff' }}>
                       {selectedContact.name}
                     </div>
                     <div style={{ 
-                      fontSize: 13, 
+                      fontSize: 13.5, 
                       fontWeight: 800, 
                       color: '#00e59b',
-                      background: 'rgba(0, 229, 155, 0.2)',
-                      padding: '3px 10px',
+                      background: 'rgba(0, 229, 155, 0.22)',
+                      padding: '3px 12px',
                       borderRadius: 8,
-                      border: '1px solid rgba(0, 229, 155, 0.4)',
+                      border: '1px solid rgba(0, 229, 155, 0.5)',
                       fontFamily: 'monospace'
                     }}>
                       📞 {selectedContact.displayPhone || formatPhoneBR(selectedContact.phone) || selectedContact.phone}
                     </div>
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 2 }}>
-                    Identificador WhatsApp: {
-                      (selectedContact.jid && selectedContact.jid.includes('@')) 
+                  <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span>Identificador WhatsApp:</span>
+                    <code style={{ color: '#38bdf8', background: 'rgba(56, 189, 248, 0.12)', padding: '2px 6px', borderRadius: 4 }}>
+                      {(selectedContact.jid && selectedContact.jid.includes('@')) 
                         ? selectedContact.jid 
                         : (selectedContact.lid && selectedContact.lid.includes('@')) 
                           ? selectedContact.lid 
-                          : `${selectedContact.phone || '5561993209444'}@s.whatsapp.net`
-                    }
+                          : `${selectedContact.phone || '5561993209444'}@s.whatsapp.net`}
+                    </code>
+                    <span style={{ color: 'var(--teal)', fontWeight: 700 }}>• 🔒 Protocolo Forense Read-Only</span>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowManualInput(prev => !prev)}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: 8,
+                      border: '1px solid rgba(56, 189, 248, 0.4)',
+                      background: 'rgba(56, 189, 248, 0.15)',
+                      color: '#38bdf8',
+                      fontSize: 12,
+                      fontWeight: 800,
+                      cursor: 'pointer'
+                    }}
+                    title="Clique para alterar ou testar outro número de credor"
+                  >
+                    ✏️ Alterar Número
+                  </button>
                   <button
                     type="button"
                     onClick={() => {
@@ -4804,37 +4156,107 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     style={{
                       padding: '8px 14px',
                       borderRadius: 8,
-                      border: '1px solid rgba(239, 68, 68, 0.5)',
-                      background: 'rgba(239, 68, 68, 0.2)',
+                      border: '1px solid rgba(239, 68, 68, 0.4)',
+                      background: 'rgba(239, 68, 68, 0.15)',
                       color: '#ff6b6b',
                       fontSize: 12,
-                      fontWeight: 900,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6
+                      fontWeight: 800,
+                      cursor: 'pointer'
                     }}
-                    title="Clique para desmarcar este contato e escolher outro da lista ou digitar outro número"
+                    title="Clique para desmarcar este contato"
                   >
-                    ✕ Desmarcar / Escolher Outro
+                    ✕ Desmarcar
                   </button>
-                  <span style={{ fontSize: 24 }}>✅</span>
                 </div>
               </div>
 
+              {/* OPÇÃO EXPANDÍVEL PARA ALTERAR NÚMERO */}
+              {showManualInput && (
+                <div style={{
+                  padding: 14,
+                  borderRadius: 12,
+                  background: 'rgba(0, 0, 0, 0.4)',
+                  border: '1px dashed rgba(56, 189, 248, 0.4)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10
+                }}>
+                  <div style={{ fontSize: 12.5, color: '#fff', fontWeight: 700 }}>
+                    Digite outro número de credor com DDD para periciar (ou restaure o padrão Estela 22):
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      type="text"
+                      placeholder="Ex: 61 9320-9444 ou 61993209444"
+                      value={manualPhone}
+                      onChange={(e) => setManualPhone(e.target.value)}
+                      style={{
+                        flex: 1,
+                        padding: '10px 14px',
+                        borderRadius: 10,
+                        border: '1px solid var(--teal)',
+                        background: 'rgba(0,0,0,0.6)',
+                        color: '#fff',
+                        fontSize: 13
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleSetManualPhone();
+                        setShowManualInput(false);
+                      }}
+                      style={{
+                        padding: '10px 18px',
+                        borderRadius: 10,
+                        border: 'none',
+                        background: 'var(--teal)',
+                        color: '#081018',
+                        fontWeight: 900,
+                        fontSize: 12.5,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Definir e Selecionar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedContact({ ...DEFAULT_AUDIT_CONTACT });
+                        setManualPhone('');
+                        setShowManualInput(false);
+                        loadChats();
+                      }}
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: 10,
+                        border: '1px solid var(--teal)',
+                        background: 'rgba(0, 229, 155, 0.15)',
+                        color: 'var(--teal)',
+                        fontWeight: 800,
+                        fontSize: 12,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ↺ Restaurar Estela 22
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* PAINEL DE CONFIRMAÇÃO DAS ÚLTIMAS MENSAGENS TROCADAS */}
               <div style={{
-                padding: '12px 16px',
+                padding: '14px 18px',
                 borderRadius: 12,
                 background: 'rgba(0, 0, 0, 0.55)',
                 border: '1px solid rgba(0, 229, 155, 0.35)',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 8,
+                gap: 10,
                 boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 900, color: 'var(--teal)', letterSpacing: 0.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 900, color: 'var(--teal)', letterSpacing: 0.5, display: 'flex', alignItems: 'center', gap: 6 }}>
                     💬 CONFIRMAÇÃO DE CONTATO (ÚLTIMAS MENSAGENS TROCADAS):
                   </span>
                   {loadingPreview ? (
@@ -4856,7 +4278,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                         fontSize: 11,
                         cursor: 'pointer',
                         fontWeight: 800,
-                        padding: '3px 8px'
+                        padding: '4px 10px'
                       }}
                       title="Recarregar últimas mensagens trocadas para confirmar contato"
                     >
@@ -4865,17 +4287,21 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   )}
                 </div>
 
-                {/* estela: ultima msg */}
+                <div style={{ fontSize: 11, color: 'var(--ink2)', lineHeight: 1.4 }}>
+                  Esta confirmação verifica que a perícia está acessando exatamente a conversa real com <strong>{selectedContact.name}</strong>, sem misturar com canais, grupos ou mensagens avulsas:
+                </div>
+
+                {/* estela 22: ultima msg */}
                 <div style={{
-                  padding: '9px 12px',
+                  padding: '10px 14px',
                   borderRadius: 8,
                   background: 'rgba(56, 189, 248, 0.09)',
                   borderLeft: '4px solid #38bdf8',
                   fontSize: 12.5
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                    <strong style={{ color: '#38bdf8', fontSize: 12 }}>
-                      {selectedContact.name || 'Estela'}:
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <strong style={{ color: '#38bdf8', fontSize: 12.5 }}>
+                      {selectedContact.name || 'Estela 22'}:
                     </strong>
                     {previewExchange.lastFromCredor?.dateTime && (
                       <span style={{ fontSize: 10.5, color: 'var(--ink2)', fontFamily: 'monospace' }}>
@@ -4884,20 +4310,20 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     )}
                   </div>
                   <div style={{ color: '#fff', wordBreak: 'break-word', fontSize: 13, fontStyle: previewExchange.lastFromCredor ? 'normal' : 'italic' }}>
-                    {previewExchange.lastFromCredor?.text || (loadingPreview ? 'Buscando mensagem recebida...' : '(Nenhuma mensagem recebida recente encontrada)')}
+                    {previewExchange.lastFromCredor?.text || (loadingPreview ? 'Buscando mensagem recebida de Estela 22...' : '(Nenhuma mensagem recente encontrada)')}
                   </div>
                 </div>
 
                 {/* eu : ultima msg */}
                 <div style={{
-                  padding: '9px 12px',
+                  padding: '10px 14px',
                   borderRadius: 8,
                   background: 'rgba(0, 229, 155, 0.09)',
                   borderLeft: '4px solid var(--teal)',
                   fontSize: 12.5
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                    <strong style={{ color: 'var(--teal)', fontSize: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <strong style={{ color: 'var(--teal)', fontSize: 12.5 }}>
                       Eu:
                     </strong>
                     {previewExchange.lastFromMe?.dateTime && (
@@ -4907,16 +4333,14 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     )}
                   </div>
                   <div style={{ color: '#fff', wordBreak: 'break-word', fontSize: 13, fontStyle: previewExchange.lastFromMe ? 'normal' : 'italic' }}>
-                    {previewExchange.lastFromMe?.text || (loadingPreview ? 'Buscando mensagem enviada...' : '(Nenhuma mensagem enviada recente encontrada)')}
+                    {previewExchange.lastFromMe?.text || (loadingPreview ? 'Buscando mensagem enviada para Estela 22...' : '(Nenhuma mensagem enviada recente encontrada)')}
                   </div>
                 </div>
               </div>
             </div>
-          )}
-
-          {!selectedContact && (
+          ) : (
             <div style={{
-              padding: '12px 16px',
+              padding: '16px 20px',
               borderRadius: 12,
               background: 'rgba(255, 255, 255, 0.04)',
               border: '1px dashed rgba(255, 255, 255, 0.2)',
@@ -4926,24 +4350,27 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               gap: 12
             }}>
               <div style={{ fontSize: 13, color: 'var(--ink2)' }}>
-                ℹ️ <strong>Nenhum contato selecionado.</strong> Clique em qualquer contato da lista abaixo para selecionar ou digite um número acima.
+                ℹ️ <strong>Nenhum contato selecionado.</strong> Clique no botão ao lado para restaurar Estela 22 como contato padrão.
               </div>
               <button
                 type="button"
-                onClick={() => setSelectedContact({ ...DEFAULT_AUDIT_CONTACT })}
+                onClick={() => {
+                  setSelectedContact({ ...DEFAULT_AUDIT_CONTACT });
+                  loadChats();
+                }}
                 style={{
-                  padding: '6px 14px',
+                  padding: '8px 16px',
                   borderRadius: 8,
-                  background: 'rgba(0, 229, 155, 0.15)',
+                  background: 'rgba(0, 229, 155, 0.2)',
                   border: '1px solid var(--teal)',
                   color: 'var(--teal)',
-                  fontSize: 12,
+                  fontSize: 12.5,
                   fontWeight: 800,
                   cursor: 'pointer',
                   whiteSpace: 'nowrap'
                 }}
               >
-                Restaurar Estela 22
+                ✓ Ativar Estela 22 Padrão
               </button>
             </div>
           )}

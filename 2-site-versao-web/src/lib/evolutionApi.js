@@ -2068,6 +2068,127 @@ export async function scanSentMessagesLast24h() {
   return sentPhoneSigs;
 }
 
+// ── RESOLUÇÃO DETERMINÍSTICA DO CHAT DO ALVO (ESTELA 22) ───────────────────
+// Descobre dinamicamente os JIDs (@lid ou @s.whatsapp.net) reais da conversa no WhatsApp
+export async function resolveTargetContactChat(contactOrPhone) {
+  const { instanceName } = getEvolutionConfig();
+  let targetPhone = '';
+  let targetName = '';
+  let knownJids = [];
+
+  if (contactOrPhone && typeof contactOrPhone === 'object') {
+    targetName = (contactOrPhone.name || '').toLowerCase();
+    targetPhone = (contactOrPhone.phone || contactOrPhone.realPhone || '').replace(/\D/g, '');
+    if (contactOrPhone.jid) knownJids.push(contactOrPhone.jid);
+    if (contactOrPhone.rawJid) knownJids.push(contactOrPhone.rawJid);
+    if (contactOrPhone.lid) knownJids.push(contactOrPhone.lid);
+    if (Array.isArray(contactOrPhone.candidateJids)) {
+      knownJids.push(...contactOrPhone.candidateJids);
+    }
+  } else if (typeof contactOrPhone === 'string') {
+    targetPhone = contactOrPhone.replace(/\D/g, '');
+    if (contactOrPhone.includes('@')) knownJids.push(contactOrPhone.trim());
+  }
+
+  // Se não foi informado número, usa Estela 22 como padrão absoluto
+  if (!targetPhone && !targetName) {
+    targetName = 'estela';
+    targetPhone = '5561993209444';
+  }
+
+  const phoneSigs = new Set();
+  if (targetPhone) {
+    getPhoneSignatures(targetPhone).forEach(s => {
+      if (s && s.length >= 8) phoneSigs.add(s);
+    });
+  }
+
+  // Se o alvo for Estela, injeta todas as variações conhecidas com e sem o nono dígito
+  if (targetName.includes('estela') || targetPhone.includes('93209444') || targetPhone.includes('993209444')) {
+    phoneSigs.add('5561993209444');
+    phoneSigs.add('556193209444');
+    phoneSigs.add('61993209444');
+    phoneSigs.add('6193209444');
+    phoneSigs.add('993209444');
+    phoneSigs.add('93209444');
+  }
+
+  const candidateJids = new Set(knownJids.filter(j => j && j.includes('@')));
+  if (phoneSigs.size > 0) {
+    phoneSigs.forEach(p => {
+      candidateJids.add(`${p}@s.whatsapp.net`);
+      if (p.startsWith('55')) candidateJids.add(`${p.substring(2)}@s.whatsapp.net`);
+      else candidateJids.add(`55${p}@s.whatsapp.net`);
+    });
+  }
+
+  let matchedChat = null;
+  let resolvedJid = null;
+
+  try {
+    const chats = await fetchWhatsAppChats().catch(() => []);
+    if (Array.isArray(chats) && chats.length > 0) {
+      // 1ª passada estrita: procura por "estela 22" ou telefone com 993209444 / 93209444
+      for (const c of chats) {
+        const rawJid = (c.remoteJid || c.id || c.jid || '').toLowerCase();
+        // NUNCA aceita grupos, newsletters, canais ou transmissões
+        if (rawJid.includes('@g.us') || rawJid.includes('@broadcast') || rawJid.includes('@newsletter') || rawJid.includes('status')) {
+          continue;
+        }
+
+        const cName = (c.name || c.subject || c.pushName || c.displayName || '').toLowerCase();
+        const cPhone = extractCleanPhone(c.phoneNumber || c.number || rawJid || c.remoteJidAlt || '');
+
+        const matchesExactPhone = Boolean(cPhone && cPhone.length >= 8 && Array.from(phoneSigs).some(sig => cPhone.includes(sig) || sig.includes(cPhone)));
+        const matchesEstela22 = cName.includes('estela 22') || (cName.includes('estela') && (cName.includes('22') || matchesExactPhone));
+        const matchesName = targetName && targetName.length >= 4 ? (cName.includes(targetName) && !cName.includes('lu estela') && !cName.includes('scarlaty')) : false;
+
+        if (matchesEstela22 || matchesExactPhone || matchesName) {
+          matchedChat = c;
+          resolvedJid = c.remoteJid || c.id || c.jid;
+          if (resolvedJid) candidateJids.add(resolvedJid);
+          if (c.lid) candidateJids.add(c.lid);
+          break;
+        }
+      }
+
+      // 2ª passada: se ainda não encontrou e busca "estela", busca por "estela" sem outros sobrenomes
+      if (!matchedChat && (targetName.includes('estela') || phoneSigs.has('93209444'))) {
+        for (const c of chats) {
+          const rawJid = (c.remoteJid || c.id || c.jid || '').toLowerCase();
+          if (rawJid.includes('@g.us') || rawJid.includes('@broadcast') || rawJid.includes('@newsletter') || rawJid.includes('status')) continue;
+          const cName = (c.name || c.subject || c.pushName || c.displayName || '').toLowerCase();
+          if (cName.includes('estela') && !cName.includes('lu ') && !cName.includes('scarlaty')) {
+            matchedChat = c;
+            resolvedJid = c.remoteJid || c.id || c.jid;
+            if (resolvedJid) candidateJids.add(resolvedJid);
+            if (c.lid) candidateJids.add(c.lid);
+            break;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Erro ao resolver chat do alvo:', err);
+  }
+
+  const validCandidates = Array.from(candidateJids).filter(j => 
+    j && 
+    j.includes('@') && 
+    !j.includes('@g.us') && 
+    !j.includes('@broadcast') && 
+    !j.includes('@newsletter') && 
+    !j.includes('status')
+  );
+
+  return {
+    resolvedJid: resolvedJid || validCandidates[0] || '5561993209444@s.whatsapp.net',
+    candidateJids: validCandidates,
+    matchedChat,
+    phoneSigs: Array.from(phoneSigs)
+  };
+}
+
 // ── EXTRAÇÃO COMPLETA DE CONVERSA HISTÓRICA E MÍDIAS ──────────────────
 
 export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
@@ -2076,56 +2197,13 @@ export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
   const limit = 100;
   const seenMsgIds = new Set();
 
-  // Extrai todas as formas de identificação do contato (telefone real, LID, JIDs)
-  let targetJid = '';
-  let targetPhone = '';
-  let targetLid = '';
-  const candidateJids = [];
-
-  if (remoteJidOrContact && typeof remoteJidOrContact === 'object') {
-    targetJid = (remoteJidOrContact.jid || remoteJidOrContact.rawJid || '').trim();
-    targetPhone = (remoteJidOrContact.phone || remoteJidOrContact.realPhone || extractCleanPhone(targetJid) || '').trim();
-    targetLid = (remoteJidOrContact.lid || (targetJid.includes('@lid') ? targetJid : '')).trim();
-    if (Array.isArray(remoteJidOrContact.candidateJids)) {
-      candidateJids.push(...remoteJidOrContact.candidateJids);
-    }
-  } else {
-    targetJid = String(remoteJidOrContact || '').trim();
-    targetPhone = extractCleanPhone(targetJid);
-    if (targetJid.includes('@lid')) targetLid = targetJid;
-  }
-
-  if (targetJid) candidateJids.push(targetJid);
-  if (targetLid) candidateJids.push(targetLid);
-
-  if (targetPhone && targetPhone.length >= 8) {
-    let cleanP = targetPhone.replace(/\D/g, '');
-    candidateJids.push(`${cleanP}@s.whatsapp.net`);
-    if (!cleanP.startsWith('55') && (cleanP.length === 10 || cleanP.length === 11)) {
-      candidateJids.push(`55${cleanP}@s.whatsapp.net`);
-    } else if (cleanP.startsWith('55') && cleanP.length >= 12) {
-      candidateJids.push(`${cleanP.substring(2)}@s.whatsapp.net`);
-      const sem55 = cleanP.substring(2);
-      if (sem55.length === 11) {
-        // Variação sem o 9º dígito
-        const ddd = sem55.substring(0, 2);
-        const rest8 = sem55.substring(3);
-        candidateJids.push(`55${ddd}${rest8}@s.whatsapp.net`);
-        candidateJids.push(`${ddd}${rest8}@s.whatsapp.net`);
-      } else if (sem55.length === 10) {
-        // Variação com o 9º dígito
-        const ddd = sem55.substring(0, 2);
-        const rest8 = sem55.substring(2);
-        candidateJids.push(`55${ddd}9${rest8}@s.whatsapp.net`);
-        candidateJids.push(`${ddd}9${rest8}@s.whatsapp.net`);
-      }
-    }
-  }
-
-  const uniqueCandidates = Array.from(new Set(candidateJids.filter(Boolean)));
+  const resolved = await resolveTargetContactChat(remoteJidOrContact);
+  const uniqueCandidates = resolved.candidateJids;
+  const phoneSigs = new Set(resolved.phoneSigs.filter(s => s && s.length >= 8));
 
   // Fase 1: Busca direta paginada por cada JID candidato
   for (const cJid of uniqueCandidates) {
+    if (!cJid || !cJid.includes('@')) continue;
     let page = 1;
     let consecutiveEmpty = 0;
 
@@ -2170,6 +2248,10 @@ export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
         } else {
           consecutiveEmpty = 0;
           for (const msg of records) {
+            const rj = (msg.key?.remoteJid || msg.remoteJid || '').toLowerCase();
+            // BLOQUEIA notícias, transmissões, canais e grupos
+            if (rj.includes('@broadcast') || rj.includes('@newsletter') || rj.includes('@g.us')) continue;
+
             const mId = msg.key?.id || msg.id;
             if (mId && !seenMsgIds.has(mId)) {
               seenMsgIds.add(mId);
@@ -2188,11 +2270,9 @@ export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
     if (allMessages.length > 0) break;
   }
 
-  // Fase 2: Fallback resiliente — se a busca por JID falhar, busca nas mensagens recentes e filtra em memória
-  if (allMessages.length === 0 && (targetPhone || uniqueCandidates.length > 0)) {
-    const phoneSigs = new Set(targetPhone ? getPhoneSignatures(targetPhone) : []);
-    if (targetLid) phoneSigs.add(extractCleanPhone(targetLid));
-
+  // Fase 2: Fallback estrito — se a busca por JID direto não retornar mensagens,
+  // consulta mensagens recentes mas FILTRA ESTRITAMENTE sem vazar broadcasts ou outras conversas
+  if (allMessages.length === 0) {
     for (let p = 1; p <= 50; p++) {
       try {
         const genData = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
@@ -2204,17 +2284,24 @@ export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
         if (!Array.isArray(recs) || recs.length === 0) break;
 
         for (const msg of recs) {
-          const rj = msg.key?.remoteJid || msg.remoteJid || '';
-          const part = msg.key?.participant || msg.participant || '';
-          const alt = msg.key?.remoteJidAlt || msg.remoteJidAlt || '';
+          const rj = (msg.key?.remoteJid || msg.remoteJid || '').toLowerCase();
+          // BLOQUEIA notícias, transmissões, canais e grupos
+          if (rj.includes('@broadcast') || rj.includes('@newsletter') || rj.includes('@g.us') || rj.includes('status')) {
+            continue;
+          }
+
+          const part = (msg.key?.participant || msg.participant || '').toLowerCase();
+          const alt = (msg.key?.remoteJidAlt || msg.remoteJidAlt || '').toLowerCase();
           const cleanRj = extractCleanPhone(rj);
           const cleanPart = extractCleanPhone(part);
           const cleanAlt = extractCleanPhone(alt);
 
-          const matches = phoneSigs.has(cleanRj) || phoneSigs.has(cleanPart) || phoneSigs.has(cleanAlt) ||
-            uniqueCandidates.includes(rj) || uniqueCandidates.includes(part);
+          const matchesJid = uniqueCandidates.some(c => c.toLowerCase() === rj || c.toLowerCase() === part);
+          const matchesPhone = (cleanRj.length >= 8 && phoneSigs.has(cleanRj)) ||
+                               (cleanPart.length >= 8 && phoneSigs.has(cleanPart)) ||
+                               (cleanAlt.length >= 8 && phoneSigs.has(cleanAlt));
 
-          if (matches) {
+          if (matchesJid || matchesPhone) {
             const mId = msg.key?.id || msg.id;
             if (mId && !seenMsgIds.has(mId)) {
               seenMsgIds.add(mId);
@@ -2298,88 +2385,38 @@ export function extractCleanReadableText(m) {
   return '';
 }
 
-// Busca rápida das últimas mensagens trocadas com o contato (última enviada por Mim e última enviada pelo Credor)
+// Busca rápida e precisa das últimas mensagens trocadas com o contato (última enviada por Mim e última enviada pelo Credor)
 export async function fetchLastChatExchange(contactOrJid, chats = []) {
   const { instanceName } = getEvolutionConfig();
-  let candidateJids = [];
-  let contactName = 'Credor';
+  const resolved = await resolveTargetContactChat(contactOrJid);
+  const candidateJids = resolved.candidateJids;
+  const phoneSigs = new Set(resolved.phoneSigs.filter(s => s && s.length >= 8));
 
-  if (contactOrJid && typeof contactOrJid === 'object') {
-    contactName = contactOrJid.name || 'Credor';
-    if (contactOrJid.jid) candidateJids.push(contactOrJid.jid);
-    if (contactOrJid.rawJid) candidateJids.push(contactOrJid.rawJid);
-    if (contactOrJid.lid) candidateJids.push(contactOrJid.lid);
-    if (contactOrJid.phone) {
-      const clean = contactOrJid.phone.replace(/\D/g, '');
-      candidateJids.push(`${clean}@s.whatsapp.net`);
-      if (clean.startsWith('55')) candidateJids.push(`${clean.substring(2)}@s.whatsapp.net`);
-      else candidateJids.push(`55${clean}@s.whatsapp.net`);
-    }
-    if (Array.isArray(contactOrJid.candidateJids)) {
-      candidateJids.push(...contactOrJid.candidateJids);
-    }
-  } else if (typeof contactOrJid === 'string' && contactOrJid.trim()) {
-    candidateJids.push(contactOrJid.trim());
-    const clean = extractCleanPhone(contactOrJid);
-    if (clean) candidateJids.push(`${clean}@s.whatsapp.net`);
-  }
-
-  // Se o contato for Estela, garante todas as variações de números padrão
-  if (contactName.toLowerCase().includes('estela')) {
-    candidateJids.push('5561993209444@s.whatsapp.net');
-    candidateJids.push('556193209444@s.whatsapp.net');
-    candidateJids.push('61993209444@s.whatsapp.net');
-    candidateJids.push('6193209444@s.whatsapp.net');
-  }
-
-  // Agrega dados dos chats em memória se disponíveis
   let lastFromCredor = null;
   let lastFromMe = null;
 
-  if (Array.isArray(chats) && chats.length > 0) {
-    const isEstelaSearch = contactName.toLowerCase().includes('estela');
-    const matchedChats = chats.filter(c => {
-      const cJid = c.rawJid || c.remoteJid || '';
-      const cLid = c.lid || '';
-      const cName = (c.displayName || c.name || '').toLowerCase();
-      const cPhone = (c.realPhone || '').replace(/\D/g, '');
-      if (isEstelaSearch && (cName.includes('estela') || cPhone.includes('93209444') || cPhone.includes('993209444'))) {
-        return true;
-      }
-      return candidateJids.includes(cJid) || candidateJids.includes(cLid) || (cPhone && candidateJids.some(u => u.includes(cPhone)));
-    });
-
-    matchedChats.forEach(mc => {
-      if (mc.rawJid && mc.rawJid.includes('@')) candidateJids.push(mc.rawJid);
-      if (mc.lid && mc.lid.includes('@')) candidateJids.push(mc.lid);
-      if (Array.isArray(mc.candidateJids)) {
-        mc.candidateJids.forEach(j => {
-          if (j && j.includes('@')) candidateJids.push(j);
-        });
-      }
-      if (mc.lastMessage) {
-        const text = extractCleanReadableText(mc.lastMessage);
-        if (text) {
-          const isFromMe = mc.lastMessage.key?.fromMe ?? false;
-          const ts = mc.lastMessage.messageTimestamp || mc.lastActivity || 0;
-          const tsSec = typeof ts === 'number' ? (ts > 100000000000 ? Math.floor(ts / 1000) : ts) : Math.floor(new Date(ts).getTime() / 1000);
-          const dateStr = !isNaN(tsSec) && tsSec > 0 ? new Date(tsSec * 1000).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
-          if (isFromMe && !lastFromMe) {
-            lastFromMe = { text, dateTime: dateStr, timestamp: tsSec };
-          } else if (!isFromMe && !lastFromCredor) {
-            lastFromCredor = { text, dateTime: dateStr, timestamp: tsSec };
-          }
+  // 1. Se o chat resolvido já veio com lastMessage no findChats, avalia
+  if (resolved.matchedChat && resolved.matchedChat.lastMessage) {
+    const lm = resolved.matchedChat.lastMessage;
+    const rj = (lm.key?.remoteJid || resolved.matchedChat.remoteJid || '').toLowerCase();
+    if (!rj.includes('@broadcast') && !rj.includes('@newsletter') && !rj.includes('@g.us')) {
+      const text = extractCleanReadableText(lm);
+      if (text) {
+        const isFromMe = lm.key?.fromMe ?? false;
+        const ts = lm.messageTimestamp || resolved.matchedChat.lastActivity || 0;
+        const tsSec = typeof ts === 'number' ? (ts > 100000000000 ? Math.floor(ts / 1000) : ts) : Math.floor(new Date(ts).getTime() / 1000);
+        const dateStr = !isNaN(tsSec) && tsSec > 0 ? new Date(tsSec * 1000).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+        if (isFromMe) {
+          lastFromMe = { text, dateTime: dateStr, timestamp: tsSec };
+        } else {
+          lastFromCredor = { text, dateTime: dateStr, timestamp: tsSec };
         }
       }
-    });
+    }
   }
 
-  // Remove IDs que sejam apenas CUID de banco de dados (que não contenham '@')
-  const withAt = candidateJids.filter(j => j && j.includes('@'));
-  const uniqueCandidates = Array.from(new Set(withAt.length > 0 ? withAt : candidateJids.filter(Boolean)));
-
-  // 1. Tenta buscar mensagens diretamente via endpoint /chat/findMessages por remoteJid
-  for (const cJid of uniqueCandidates) {
+  // 2. Busca mensagens diretamente no endpoint /chat/findMessages para cada remoteJid candidato
+  for (const cJid of candidateJids) {
     if (!cJid || !cJid.includes('@')) continue;
     try {
       const data = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
@@ -2391,7 +2428,7 @@ export async function fetchLastChatExchange(contactOrJid, chats = []) {
             }
           },
           page: 1,
-          limit: 40
+          limit: 30
         })
       }).catch(() => null);
 
@@ -2405,17 +2442,22 @@ export async function fetchLastChatExchange(contactOrJid, chats = []) {
               remoteJid: cJid
             },
             page: 1,
-            limit: 40
+            limit: 30
           })
         }).catch(() => null);
         records = dataAlt?.messages?.records || (Array.isArray(dataAlt) ? dataAlt : (dataAlt?.records || []));
       }
 
       if (Array.isArray(records) && records.length > 0) {
-        // Ordena por timestamp decrescente (mais recente primeiro)
         records.sort((a, b) => Number(b.messageTimestamp || 0) - Number(a.messageTimestamp || 0));
 
         for (const msg of records) {
+          const rj = (msg.key?.remoteJid || msg.remoteJid || '').toLowerCase();
+          // BLOQUEIA notícias, transmissões, canais e grupos
+          if (rj.includes('@broadcast') || rj.includes('@newsletter') || rj.includes('@g.us')) {
+            continue;
+          }
+
           const text = extractCleanReadableText(msg);
           if (!text) continue;
 
@@ -2437,19 +2479,33 @@ export async function fetchLastChatExchange(contactOrJid, chats = []) {
     if (lastFromMe && lastFromCredor) break;
   }
 
-  // 2. Fallback: se não encontrou ambos, busca nas mensagens recentes globais
+  // 3. Fallback estritamente restrito às mensagens recentes do WhatsApp
   if (!lastFromMe || !lastFromCredor) {
     try {
-      const recent = await fetchRecentMessagesSummary(250);
-      const candSet = new Set(uniqueCandidates);
-      const sigSet = new Set(uniqueCandidates.map(j => extractCleanPhone(j)).filter(Boolean));
+      const data = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+        method: 'POST',
+        body: JSON.stringify({ limit: 100, page: 1 })
+      }).catch(() => null);
+      const recent = data?.messages?.records || (Array.isArray(data) ? data : (data?.records || []));
 
-      const matchedRecs = recent.filter(m => {
-        const rj = m.key?.remoteJid || m.remoteJid || '';
-        const part = m.key?.participant || m.participant || '';
+      const matchedRecs = (recent || []).filter(m => {
+        const rj = (m.key?.remoteJid || m.remoteJid || '').toLowerCase();
+        // NUNCA aceita notícias, transmissões, canais ou grupos
+        if (rj.includes('@broadcast') || rj.includes('@newsletter') || rj.includes('@g.us') || rj.includes('status')) {
+          return false;
+        }
+        const part = (m.key?.participant || m.participant || '').toLowerCase();
+        const alt = (m.key?.remoteJidAlt || m.remoteJidAlt || '').toLowerCase();
         const clR = extractCleanPhone(rj);
         const clP = extractCleanPhone(part);
-        return candSet.has(rj) || candSet.has(part) || (clR && sigSet.has(clR)) || (clP && sigSet.has(clP));
+        const clA = extractCleanPhone(alt);
+
+        const matchesJid = candidateJids.some(c => c.toLowerCase() === rj || c.toLowerCase() === part);
+        const matchesPhone = (clR.length >= 8 && phoneSigs.has(clR)) ||
+                             (clP.length >= 8 && phoneSigs.has(clP)) ||
+                             (clA.length >= 8 && phoneSigs.has(clA));
+
+        return matchesJid || matchesPhone;
       });
 
       matchedRecs.sort((a, b) => Number(b.messageTimestamp || 0) - Number(a.messageTimestamp || 0));
