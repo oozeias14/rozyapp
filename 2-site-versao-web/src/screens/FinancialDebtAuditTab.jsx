@@ -42,7 +42,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   const [contactSearch, setContactSearch] = useState('');
 
   // ── PASSO 2: MODO MANUAL VS MODO AUTOMÁTICO ──
-  const [step2Mode, setStep2Mode] = useState('manual'); // 'manual' | 'auto'
+  const [step2Mode, setStep2Mode] = useState('auto'); // 'auto' (padrão com IA no final) | 'manual'
 
   // MODO MANUAL: Débitos cadastrados pelo usuário
   const [debtConditions, setDebtConditions] = useState(() => {
@@ -3916,9 +3916,9 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       }}>
         {[
           { step: 1, icon: '👤', title: 'Etapa 1', subtitle: 'Selecionar Credor' },
-          { step: 2, icon: '⚙️', title: 'Etapa 2', subtitle: 'Empréstimos & Taxas' },
-          { step: 3, icon: '🧾', title: 'Etapa 3', subtitle: 'Comprovantes & Mídia' },
-          { step: 4, icon: '🚀', title: 'Etapa 4', subtitle: 'Executar & Laudo' }
+          { step: 2, icon: '💵', title: 'Etapa 2', subtitle: 'Empréstimos (Manual ou IA)' },
+          { step: 3, icon: '🧾', title: 'Etapa 3', subtitle: 'Comprovantes & Pagos' },
+          { step: 4, icon: '🚀', title: 'Etapa 4', subtitle: 'Análise com IA & Laudo' }
         ].map(s => {
           const isActive = wizardStep === s.step;
           const isCompleted = (s.step === 1 && (selectedContact || uploadedChatFile)) ||
@@ -4017,8 +4017,28 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           flexDirection: 'column',
           gap: 14
         }}>
-          <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>👤</span> Passo 1: Selecionar Número do Credor
+          <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>👤</span> Etapa 1: Selecionar Número do Credor
+          </div>
+
+          {/* GUIA PASSO A PASSO ETAPA 1 */}
+          <div style={{
+            padding: '12px 16px',
+            borderRadius: 12,
+            background: 'rgba(0, 229, 155, 0.08)',
+            border: '1px solid rgba(0, 229, 155, 0.3)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>📌</span> Passo a Passo desta Etapa 1:
+            </div>
+            <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.6 }}>
+              <strong>1. Conectar WhatsApp:</strong> Verifique no topo se está como <em>"WhatsApp Web Conectado"</em> (se não estiver, clique em <em>"Conectar Agora"</em>).<br />
+              <strong>2. Selecionar o Contato:</strong> Escolha na lista abaixo a conversa da pessoa/credor que você quer periciar (ou digite o telefone dela no campo com DDD).<br />
+              <strong>3. Avançar:</strong> Após selecionar o contato, clique no botão <strong>"Avançar para Etapa 2 ➔"</strong> no final desta página.
+            </div>
           </div>
 
           <div style={{ fontSize: 12.5, color: 'var(--ink2)' }}>
@@ -4256,7 +4276,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               <span>⚙️</span> Etapa 2: Condições de Empréstimo & Juros
             </div>
 
-            {/* SELETOR DE MODO: MANUAL VS AUTOMÁTICO */}
+            {/* SELETOR DE MODO: AUTOMÁTICO VS MANUAL */}
             <div style={{
               display: 'flex',
               alignItems: 'center',
@@ -4267,29 +4287,9 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             }}>
               <button
                 type="button"
-                onClick={() => setStep2Mode('manual')}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 8,
-                  border: 'none',
-                  background: step2Mode === 'manual' ? 'var(--teal)' : 'transparent',
-                  color: step2Mode === 'manual' ? '#081018' : 'var(--ink2)',
-                  fontWeight: 900,
-                  fontSize: 12,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 5
-                }}
-              >
-                <span>📝</span> Manual
-              </button>
-
-              <button
-                type="button"
                 onClick={() => setStep2Mode('auto')}
                 style={{
-                  padding: '6px 14px',
+                  padding: '7px 16px',
                   borderRadius: 8,
                   border: 'none',
                   background: step2Mode === 'auto' ? '#38BDF8' : 'transparent',
@@ -4302,8 +4302,48 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   gap: 5
                 }}
               >
-                <span>🤖</span> Automático (IA)
+                <span>🤖</span> Automático (IA no Final)
               </button>
+
+              <button
+                type="button"
+                onClick={() => setStep2Mode('manual')}
+                style={{
+                  padding: '7px 16px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: step2Mode === 'manual' ? 'var(--teal)' : 'transparent',
+                  color: step2Mode === 'manual' ? '#081018' : 'var(--ink2)',
+                  fontWeight: 900,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5
+                }}
+              >
+                <span>📝</span> Manual (Opcional)
+              </button>
+            </div>
+          </div>
+
+          {/* GUIA PASSO A PASSO ETAPA 2 */}
+          <div style={{
+            padding: '12px 16px',
+            borderRadius: 12,
+            background: 'rgba(56, 189, 248, 0.1)',
+            border: '1px solid rgba(56, 189, 248, 0.3)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 900, color: '#38BDF8', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>📌</span> Passo a Passo desta Etapa 2:
+            </div>
+            <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.6 }}>
+              <strong>Como você deseja definir os empréstimos tomados?</strong><br />
+              • <strong>Recomendado (Automático com IA):</strong> Se você quer que a Inteligência Artificial leia a conversa inteira e descubra tudo sozinha, mantenha selecionado <strong>"🤖 Automático (IA no Final)"</strong> e clique no botão verde <strong>"Avançar para Etapa 3 ➔"</strong>. Nenhuma ação manual é necessária agora!<br />
+              • <strong>Opcional (Manual):</strong> Se você já souber de cabeça os valores e datas que pegou emprestado e quiser cadastrar para conferir se os números batem com a IA, selecione a aba <strong>"📝 Manual"</strong>.
             </div>
           </div>
 
@@ -4556,136 +4596,47 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </div>
           )}
 
-          {/* ────────────────── ABA AUTOMÁTICA (IA & ROBÔ) ────────────────── */}
+          {/* ────────────────── ABA AUTOMÁTICA (IA NO FINAL) ────────────────── */}
           {step2Mode === 'auto' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{
-                padding: 12,
-                borderRadius: 10,
-                background: 'rgba(56, 189, 248, 0.1)',
-                border: '1px solid rgba(56, 189, 248, 0.3)',
-                fontSize: 12,
-                color: '#fff',
-                lineHeight: 1.5
-              }}>
-                🤖 <strong>Detecção 100% Automática por Inteligência Artificial:</strong><br />
-                O robô examina todo o histórico de conversas, transcreve os áudios e inspeciona os comprovantes para descobrir automaticamente
-                cada empréstimo tomado e a taxa pactuada entre as partes!
+            <div style={{
+              padding: 24,
+              borderRadius: 14,
+              background: 'rgba(56, 189, 248, 0.08)',
+              border: '1px solid rgba(56, 189, 248, 0.3)',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 12
+            }}>
+              <span style={{ fontSize: 40 }}>🤖✨</span>
+              <div style={{ fontSize: 16, fontWeight: 900, color: '#fff' }}>
+                Modo 100% Automático com IA Ativado!
               </div>
-
-              {/* Botão de Varredura Automática Prévia */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                <span style={{ fontSize: 11.5, color: 'var(--ink2)' }}>
-                  {autoDetectedDebts.length > 0 ? `${autoDetectedDebts.length} débitos identificados pela IA:` : 'Clique para escanear antecipadamente:'}
-                </span>
-
-                <button
-                  type="button"
-                  onClick={handleAutoScanDebts}
-                  disabled={isScanningAuto}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '7px 14px',
-                    borderRadius: 8,
-                    background: isScanningAuto ? 'rgba(255,255,255,0.2)' : 'linear-gradient(135deg, #38BDF8, #0284C7)',
-                    color: '#081018',
-                    fontWeight: 900,
-                    fontSize: 12,
-                    border: 'none',
-                    cursor: isScanningAuto ? 'not-allowed' : 'pointer'
-                  }}
-                >
-                  {isScanningAuto ? '⏳ Escaneando com IA...' : '⚡ Escanear Débitos com IA'}
-                </button>
+              <div style={{ fontSize: 12.5, color: 'var(--ink2)', maxWidth: 540, lineHeight: 1.6 }}>
+                Você <strong>não precisa escanear nada nesta etapa</strong>! A Inteligência Artificial fará a varredura minuciosa de todas as mensagens, áudios, imagens, empréstimos e taxas cobradas na <strong>Etapa 4 (Execução Final)</strong>.
               </div>
-
-              {/* TOTAIS IDENTIFICADOS AUTOMATICAMENTE */}
-              {autoDetectedDebts.length > 0 && (
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-                  gap: 8,
-                  padding: 10,
+              <button
+                type="button"
+                onClick={() => setWizardStep(3)}
+                style={{
+                  marginTop: 6,
+                  padding: '12px 28px',
                   borderRadius: 10,
-                  background: 'rgba(0,0,0,0.3)',
-                  border: '1px solid rgba(56, 189, 248, 0.3)'
-                }}>
-                  <div>
-                    <div style={{ fontSize: 10, color: 'var(--ink2)', fontWeight: 700 }}>💵 EMPRÉSTIMOS DETECTADOS:</div>
-                    <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--teal)' }}>
-                      R$ {autoDetectedDebts.reduce((sum, c) => sum + c.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div style={{ fontSize: 10, color: 'var(--ink2)', fontWeight: 700 }}>📋 QUANTIDADE:</div>
-                    <div style={{ fontSize: 13, fontWeight: 900, color: '#fff' }}>
-                      {autoDetectedDebts.length} {autoDetectedDebts.length === 1 ? 'registro' : 'registros'}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* LISTA AUTOMÁTICA DE ITENS IDENTIFICADOS */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 200, overflowY: 'auto' }}>
-                {autoDetectedDebts.length === 0 ? (
-                  <div style={{ padding: 14, textAlign: 'center', borderRadius: 10, background: 'rgba(0,0,0,0.2)', border: '1px dashed var(--line)' }}>
-                    <div style={{ fontSize: 12, color: 'var(--ink2)' }}>
-                      Nenhum débito escaneado ainda. Clique no botão acima para escanear ou clique diretamente em "Iniciar Perícia" que o robô fará tudo na hora.
-                    </div>
-                  </div>
-                ) : (
-                  autoDetectedDebts.map((cond, idx) => {
-                    return (
-                      <div
-                        key={cond.id || idx}
-                        style={{
-                          padding: '8px 12px',
-                          borderRadius: 10,
-                          background: 'rgba(0, 229, 155, 0.08)',
-                          border: '1px solid rgba(0, 229, 155, 0.3)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 10
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 16 }}>💵</span>
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ fontSize: 9.5, fontWeight: 900, padding: '2px 5px', borderRadius: 4, background: 'var(--teal)', color: '#081018' }}>
-                                EMPRÉSTIMO
-                              </span>
-                              <span style={{ fontSize: 12.5, fontWeight: 900, color: '#fff' }}>
-                                R$ {cond.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                              </span>
-                            </div>
-                            <div style={{ fontSize: 10.5, color: 'var(--ink2)', marginTop: 2 }}>
-                              📅 {cond.date} | ⚡ <strong>{cond.monthlyRate}% a.m.</strong> | {cond.description}
-                            </div>
-                            {cond.evidence && (
-                              <div style={{ fontSize: 10, color: '#38BDF8', fontStyle: 'italic', marginTop: 1 }}>
-                                Evidência: "{cond.evidence}"
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveAutoDebt(cond.id)}
-                          style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 13 }}
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+                  background: 'var(--teal)',
+                  color: '#081018',
+                  fontSize: 13,
+                  fontWeight: 900,
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 15px rgba(0, 229, 155, 0.35)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8
+                }}
+              >
+                Avançar para Etapa 3: Comprovantes de Pagamento ➔
+              </button>
             </div>
           )}
 
@@ -4757,6 +4708,27 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           flexDirection: 'column',
           gap: 16
         }}>
+          {/* GUIA PASSO A PASSO ETAPA 3 */}
+          <div style={{
+            padding: '12px 16px',
+            borderRadius: 12,
+            background: 'rgba(0, 229, 155, 0.08)',
+            border: '1px solid rgba(0, 229, 155, 0.3)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>📌</span> Passo a Passo desta Etapa 3:
+            </div>
+            <div style={{ fontSize: 12, color: '#fff', lineHeight: 1.6 }}>
+              Informe os pagamentos que você já realizou para abater da dívida:<br />
+              • <strong>Opção 1 (Digitar Valor Total Já Pago):</strong> Se você já sabe o valor total que pagou (ex: R$ 15.000,00), digite no campo <em>"Valores Pagos Consolidados"</em> abaixo e clique em <em>"Salvar Total Pago"</em>.<br />
+              • <strong>Opção 2 (Anexar Prints / Comprovantes de PIX):</strong> Clique no botão verde <em>"Selecionar Comprovantes"</em> para enviar as fotos ou PDFs dos recibos.<br />
+              • <strong>Opção 3 (Conversa já tem tudo):</strong> Se os comprovantes e negociações de pagamentos já constam na própria conversa do WhatsApp, você não precisa anexar nada! Basta clicar direto em <strong>"Avançar para Etapa 4 (Executar Perícia com IA) ➔"</strong>.
+            </div>
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
             <div>
               <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -5166,43 +5138,23 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             <button
               type="button"
-              onClick={runFullDebtForensicAudit}
-              disabled={isAuditing || (!selectedContact && !uploadedChatFile)}
+              onClick={() => setWizardStep(4)}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 8,
                 padding: '12px 24px',
                 borderRadius: 10,
-                background: isAuditing ? 'rgba(255,255,255,0.2)' : 'linear-gradient(135deg, #00E59B, #00B377)',
+                background: 'var(--teal)',
                 color: '#081018',
                 fontSize: 13.5,
                 fontWeight: 900,
                 border: 'none',
-                cursor: isAuditing ? 'not-allowed' : 'pointer',
+                cursor: 'pointer',
                 boxShadow: '0 4px 15px rgba(0, 229, 155, 0.35)'
               }}
             >
-              {isAuditing ? '⏳ Executando Perícia...' : '🚀 Executar Perícia Financeira Completa'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setWizardStep(4)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '12px 18px',
-                borderRadius: 10,
-                background: 'rgba(255,255,255,0.08)',
-                border: '1px solid var(--line)',
-                color: '#fff',
-                fontSize: 12.5,
-                fontWeight: 800,
-                cursor: 'pointer'
-              }}
-            >
-              Avançar para Etapa 4 ➔
+              Avançar para Etapa 4: Análise & Laudo ➔
             </button>
           </div>
         </div>
@@ -5212,6 +5164,28 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       {/* ────────────────── ETAPA 4: EXECUTAR PERÍCIA & RESULTADOS DO LAUDO ────────────────── */}
       {wizardStep === 4 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+          {/* GUIA PASSO A PASSO ETAPA 4 */}
+          <div style={{
+            padding: '14px 18px',
+            borderRadius: 12,
+            background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.15), rgba(56, 189, 248, 0.1))',
+            border: '1px solid var(--teal)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>🎯</span> Etapa 4 (Final): Executar Perícia Financeira Completa com IA
+            </div>
+            <div style={{ fontSize: 12.5, color: '#fff', lineHeight: 1.6 }}>
+              Esta é a etapa final onde a Inteligência Artificial fará a leitura e os cálculos matemáticos completos:<br />
+              1. <strong>Confira o resumo</strong> das configurações nos cartões abaixo (Credor Selecionado, Modo Automático e Pagamentos).<br />
+              2. <strong>Escolha o período</strong> (por padrão, da primeira até a última mensagem da conversa com tempo ilimitado de leitura).<br />
+              3. Clique no botão verde <strong>"⚡ EXECUTAR PERÍCIA FINANCEIRA COMPLETA (IA)"</strong>.<br />
+              4. Acompanhe na tela o contador de mensagens, textos, áudios e imagens lidos. Ao finalizar, baixe seu <strong>Laudo Pericial Oficial em Word (.docx), PDF e Excel (.xlsx)</strong>!
+            </div>
+          </div>
 
           {/* RESUMO DAS ETAPAS ANTERIORES E AÇÕES DE RETORNO */}
           <div style={{
