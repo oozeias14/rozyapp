@@ -37,10 +37,25 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   const [disconnecting, setDisconnecting] = useState(false);
   const [connStatus, setConnStatus] = useState(status || { connected: false });
 
+  // Contato padrão da Etapa 1: Estela 22 (61) 99320-9444
+  const DEFAULT_AUDIT_CONTACT = {
+    jid: '5561993209444@s.whatsapp.net',
+    phone: '5561993209444',
+    displayPhone: '(61) 99320-9444',
+    name: 'Estela 22',
+    lid: null,
+    candidateJids: [
+      '5561993209444@s.whatsapp.net',
+      '556193209444@s.whatsapp.net',
+      '61993209444@s.whatsapp.net',
+      '6193209444@s.whatsapp.net'
+    ]
+  };
+
   // ── SELEÇÃO DE CONTATO / CREDOR ──
   const [chats, setChats] = useState([]);
   const [loadingChats, setLoadingChats] = useState(false);
-  const [selectedContact, setSelectedContact] = useState(null); // { jid, name, phone }
+  const [selectedContact, setSelectedContact] = useState(() => ({ ...DEFAULT_AUDIT_CONTACT })); // { jid, name, phone }
   const [manualPhone, setManualPhone] = useState('');
   const [contactSearch, setContactSearch] = useState('');
   const [linkingChat, setLinkingChat] = useState(null); // Chat com ID privado sendo vinculado manualmente
@@ -697,11 +712,17 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       }
 
       // Ordenação: 
+      // 0. Contato padrão "Estela 22" / 61 99320-9444 em PRIMEIRO LUGAR
       // 1. Quem tem telefone real verificado no topo
       // 2. Quem tem nome salvo na agenda no topo
       // 3. Quem teve mensagem/interação mais recente
       // 4. Ordem alfabética
       finalChats.sort((a, b) => {
+        const isEstelaA = (a.displayName || '').toLowerCase().includes('estela 22') || (a.realPhone || '').includes('61993209444') || (a.realPhone || '').includes('6193209444');
+        const isEstelaB = (b.displayName || '').toLowerCase().includes('estela 22') || (b.realPhone || '').includes('61993209444') || (b.realPhone || '').includes('6193209444');
+        if (isEstelaA && !isEstelaB) return -1;
+        if (!isEstelaA && isEstelaB) return 1;
+
         if (a.hasRealPhone && !b.hasRealPhone) return -1;
         if (!a.hasRealPhone && b.hasRealPhone) return 1;
         if (a.hasCustomName && !b.hasCustomName) return -1;
@@ -713,6 +734,32 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       });
 
       setChats(finalChats);
+
+      // Se o contato padrão Estela 22 estiver ativo, sincroniza com o chat real identificado no aparelho
+      const foundEstela = finalChats.find(c => 
+        (c.displayName || '').toLowerCase().includes('estela 22') ||
+        (c.realPhone || '').includes('61993209444') ||
+        (c.realPhone || '').includes('6193209444')
+      );
+      if (foundEstela) {
+        setSelectedContact(prev => {
+          if (!prev || prev.phone === '5561993209444' || (prev.name && prev.name.toLowerCase().includes('estela'))) {
+            return {
+              jid: foundEstela.rawJid || '5561993209444@s.whatsapp.net',
+              phone: foundEstela.realPhone || '5561993209444',
+              displayPhone: foundEstela.displayPhone || '(61) 99320-9444',
+              name: foundEstela.displayName || 'Estela 22',
+              lid: foundEstela.lid || null,
+              candidateJids: Array.from(new Set([
+                ...(foundEstela.candidateJids || []),
+                '5561993209444@s.whatsapp.net',
+                '556193209444@s.whatsapp.net'
+              ].filter(Boolean)))
+            };
+          }
+          return prev;
+        });
+      }
     } catch (err) {
       console.warn('Erro ao carregar conversas e contatos:', err);
     } finally {
@@ -803,10 +850,19 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     setLinkingPhoneInput('');
   }
 
-  // Selecionar por clique na lista
+  // Selecionar por clique na lista (permite alternar ou desmarcar ao clicar novamente)
   function handleSelectChat(c) {
     const rawJid = c.rawJid || c.id || c.remoteJid || '';
     const phone = c.realPhone || (isRealBrazilianPhone(extractCleanPhone(rawJid)) ? extractCleanPhone(rawJid) : '');
+    
+    // Se clicar no contato que já está selecionado, desmarca!
+    const isCurrent = (rawJid && selectedContact?.jid === rawJid) || 
+      (phone && selectedContact?.phone && selectedContact.phone.replace(/\D/g, '') === phone.replace(/\D/g, ''));
+    if (isCurrent) {
+      setSelectedContact(null);
+      return;
+    }
+
     const displayPhone = c.displayPhone || (phone ? formatPhoneBR(phone) : '');
     const contactName = c.displayName || c.name || c.pushName || c.subject || (displayPhone ? `Contato ${displayPhone}` : 'Credor');
     setSelectedContact({
@@ -4468,7 +4524,9 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     const hasRealPhone = Boolean(c.hasRealPhone || (c.realPhone && isRealBrazilianPhone(c.realPhone)));
                     const dispPhone = hasRealPhone ? (c.displayPhone || formatPhoneBR(c.realPhone)) : '';
                     const dispName = c.displayName || c.name || c.pushName || (dispPhone ? `Contato ${dispPhone}` : 'Conversa WhatsApp');
-                    const isSel = selectedContact?.jid === rawJid || (hasRealPhone && selectedContact?.phone && selectedContact.phone === c.realPhone);
+                    const isSel = (rawJid && selectedContact?.jid === rawJid) || 
+                      (hasRealPhone && selectedContact?.phone && selectedContact.phone.replace(/\D/g, '') === c.realPhone.replace(/\D/g, '')) ||
+                      (selectedContact?.name && dispName.toLowerCase().includes(selectedContact.name.toLowerCase()));
                     return (
                       <div
                         key={rawJid || c.realPhone}
@@ -4562,16 +4620,26 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                           {isSel ? (
-                            <span style={{ 
-                              padding: '4px 10px', 
-                              borderRadius: 6, 
-                              background: 'var(--teal)', 
-                              color: '#081018', 
-                              fontSize: 11, 
-                              fontWeight: 900 
-                            }}>
-                              Selecionado ✓
-                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedContact(null);
+                              }}
+                              style={{ 
+                                padding: '4px 10px', 
+                                borderRadius: 6, 
+                                background: 'rgba(239, 68, 68, 0.2)', 
+                                border: '1px solid rgba(239, 68, 68, 0.5)',
+                                color: '#ff6b6b', 
+                                fontSize: 11, 
+                                fontWeight: 900,
+                                cursor: 'pointer'
+                              }}
+                              title="Clique para desmarcar este contato"
+                            >
+                              ✕ Desmarcar
+                            </button>
                           ) : (
                             <span style={{ 
                               padding: '4px 10px', 
@@ -4595,21 +4663,22 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           {/* Contato Selecionado */}
           {selectedContact && (
             <div style={{
-              padding: '12px 16px',
+              padding: '14px 18px',
               borderRadius: 12,
-              background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.15), rgba(56, 189, 248, 0.08))',
+              background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.16), rgba(56, 189, 248, 0.10))',
               border: '1.5px solid var(--teal)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              gap: 12
+              gap: 12,
+              boxShadow: '0 4px 14px rgba(0, 229, 155, 0.12)'
             }}>
               <div>
                 <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                   ✓ CREDOR / CONTATO SELECIONADO:
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
-                  <div style={{ fontSize: 14.5, fontWeight: 900, color: '#fff' }}>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: '#fff' }}>
                     {selectedContact.name}
                   </div>
                   <div style={{ 
@@ -4617,7 +4686,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     fontWeight: 800, 
                     color: '#00e59b',
                     background: 'rgba(0, 229, 155, 0.2)',
-                    padding: '2px 10px',
+                    padding: '3px 10px',
                     borderRadius: 8,
                     border: '1px solid rgba(0, 229, 155, 0.4)',
                     fontFamily: 'monospace'
@@ -4629,7 +4698,66 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   Identificador WhatsApp: {selectedContact.jid || selectedContact.phone}
                 </div>
               </div>
-              <span style={{ fontSize: 24 }}>✅</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedContact(null);
+                    setManualPhone('');
+                  }}
+                  style={{
+                    padding: '8px 14px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(239, 68, 68, 0.5)',
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    color: '#ff6b6b',
+                    fontSize: 12,
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                  title="Clique para desmarcar este contato e escolher outro da lista ou digitar outro número"
+                >
+                  ✕ Desmarcar / Escolher Outro
+                </button>
+                <span style={{ fontSize: 24 }}>✅</span>
+              </div>
+            </div>
+          )}
+
+          {!selectedContact && (
+            <div style={{
+              padding: '12px 16px',
+              borderRadius: 12,
+              background: 'rgba(255, 255, 255, 0.04)',
+              border: '1px dashed rgba(255, 255, 255, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12
+            }}>
+              <div style={{ fontSize: 13, color: 'var(--ink2)' }}>
+                ℹ️ <strong>Nenhum contato selecionado.</strong> Clique em qualquer contato da lista abaixo para selecionar ou digite um número acima.
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedContact({ ...DEFAULT_AUDIT_CONTACT })}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 8,
+                  background: 'rgba(0, 229, 155, 0.15)',
+                  border: '1px solid var(--teal)',
+                  color: 'var(--teal)',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Restaurar Estela 22
+              </button>
             </div>
           )}
           {/* Navegação da Etapa 1 */}
