@@ -197,8 +197,9 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   const [uploadedReceipts, setUploadedReceipts] = useState([]);
   const [uploadingReceipts, setUploadingReceipts] = useState(false);
 
-  // ── BACKUP / CONVERSA EXPORTADA (ARQUIVO .TXT OU .ZIP) ──
+  // ── BACKUP / CONVERSA EXPORTADA (ARQUIVO .TXT OU .ZIP COM MÍDIA) ──
   const [uploadedChatFile, setUploadedChatFile] = useState(null);
+  const [isUnzippingChatFile, setIsUnzippingChatFile] = useState(false);
 
   // ── ESTADOS DE EXECUÇÃO DA PERÍCIA ──
   const [isAuditing, setIsAuditing] = useState(false);
@@ -788,7 +789,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       let fileMsgs = [];
       if (uploadedChatFile) {
         addLog(`📄 Lendo mensagens do arquivo de backup "${uploadedChatFile.name}"...`, 'info');
-        fileMsgs = parseWhatsAppExportedText(uploadedChatFile.content);
+        fileMsgs = uploadedChatFile.parsedMessages || parseWhatsAppExportedText(uploadedChatFile.content, uploadedChatFile.mediaMap);
         addLog(`📥 ${fileMsgs.length} mensagens históricas carregadas do arquivo!`, 'success');
       }
 
@@ -847,16 +848,33 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           }
         }
 
-        const isAudio = Boolean(msg.message?.audioMessage || msg.messageType === 'audioMessage');
+        const isAudio = Boolean(msg.message?.audioMessage || msg.messageType === 'audioMessage' || msg.isAudio);
         const isImage = Boolean(
           msg.message?.imageMessage || 
           msg.messageType === 'imageMessage' ||
+          msg.isImage ||
           (msg.message?.documentMessage?.mimetype && msg.message?.documentMessage?.mimetype.startsWith('image/'))
         );
 
         if (isAudio) {
           try {
-            const base64Audio = await fetchMediaBase64FromMessage(msg);
+            let base64Audio = null;
+            let audioMime = 'audio/ogg';
+            if (msg.zipEntry) {
+              try {
+                base64Audio = await msg.zipEntry.async('base64');
+                const ext = (msg.attachedFileName || '').split('.').pop().toLowerCase();
+                if (ext === 'mp3') audioMime = 'audio/mp3';
+                else if (ext === 'm4a') audioMime = 'audio/m4a';
+                else if (ext === 'wav') audioMime = 'audio/wav';
+                else audioMime = 'audio/ogg';
+              } catch (zipErr) {
+                console.warn('Erro ao extrair áudio do ZIP:', zipErr);
+              }
+            }
+            if (!base64Audio) {
+              base64Audio = await fetchMediaBase64FromMessage(msg);
+            }
             if (base64Audio) {
               let audData = null;
               for (let att = 1; att <= 3; att++) {
@@ -867,7 +885,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     body: JSON.stringify({
                       action: 'transcribe_audio',
                       base64Data: base64Audio,
-                      mimeType: 'audio/ogg'
+                      mimeType: audioMime
                     })
                   });
                   if (resp.ok) {
@@ -896,7 +914,22 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
         if (isImage) {
           try {
-            const base64Img = await fetchMediaBase64FromMessage(msg);
+            let base64Img = null;
+            let imgMime = msg.message?.imageMessage?.mimetype || 'image/jpeg';
+            if (msg.zipEntry) {
+              try {
+                base64Img = await msg.zipEntry.async('base64');
+                const ext = (msg.attachedFileName || '').split('.').pop().toLowerCase();
+                if (ext === 'png') imgMime = 'image/png';
+                else if (ext === 'webp') imgMime = 'image/webp';
+                else imgMime = 'image/jpeg';
+              } catch (zipErr) {
+                console.warn('Erro ao extrair imagem do ZIP:', zipErr);
+              }
+            }
+            if (!base64Img) {
+              base64Img = await fetchMediaBase64FromMessage(msg);
+            }
             if (base64Img) {
               const resp = await fetch('/api/gemini-financial-audit', {
                 method: 'POST',
@@ -904,7 +937,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 body: JSON.stringify({
                   action: 'ocr_receipt',
                   base64Data: base64Img,
-                  mimeType: msg.message?.imageMessage?.mimetype || 'image/jpeg'
+                  mimeType: imgMime
                 })
               });
               if (resp.ok) {
@@ -1035,8 +1068,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     setUploadingReceipts(false);
   }
 
-  // ── PARSER DE CONVERSA EXPORTADA DO WHATSAPP (.TXT / ANDROID & IPHONE) ──
-  function parseWhatsAppExportedText(content) {
+  // ── PARSER DE CONVERSA EXPORTADA DO WHATSAPP (.TXT / .ZIP / ANDROID & IPHONE) ──
+  function parseWhatsAppExportedText(content, mediaFilesMap = null) {
     if (!content || typeof content !== 'string') return [];
     const lines = content.split(/\r?\n/);
     const messages = [];
@@ -1065,19 +1098,50 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
         const senderClean = sender.trim();
         const isFromMe = /^(você|you)$/i.test(senderClean) || senderClean.toLowerCase().includes('você');
-        const isAudio = text.includes('áudio oculto') || text.includes('audio attached') || /PTT-\d+.*\.opus/i.test(text);
-        const isImage = text.includes('imagem ocultada') || text.includes('image attached') || /IMG-\d+.*\.jpg/i.test(text);
+        const trimmedText = text.trim();
+
+        // Extração de anexo de mídia (áudios, imagens, PDFs)
+        let attachedFileName = null;
+        const matchAttach = trimmedText.match(/<\s*(?:anexado|attached):\s*([^>]+)>/i) ||
+                            trimmedText.match(/^([^\s\<\>\(\)]+\.(?:opus|ogg|mp3|m4a|wav|aac|jpg|jpeg|png|webp|pdf|mp4))\s*[\(\<](?:arquivo anexado|attached)[\)\>]/i) ||
+                            trimmedText.match(/(?:^|\s)(PTT-\d+[^.\s]*\.(?:opus|ogg|mp3)|AUD-\d+[^.\s]*\.(?:opus|ogg|mp3|m4a)|\d+-(?:AUDIO|PHOTO)[^.\s]*\.(?:opus|jpg)|IMG-\d+[^.\s]*\.(?:jpg|jpeg|png))/i);
+        if (matchAttach) {
+          attachedFileName = (matchAttach[1] || matchAttach[2] || '').trim();
+        }
+
+        const lowerText = trimmedText.toLowerCase();
+        const isAudio = Boolean(attachedFileName && /\.(opus|ogg|mp3|m4a|wav|aac)$/i.test(attachedFileName)) ||
+                        lowerText.includes('áudio oculto') ||
+                        lowerText.includes('audio attached') ||
+                        lowerText.includes('mensagem de voz') ||
+                        /PTT-\d+.*\.opus/i.test(trimmedText);
+
+        const isImage = Boolean(attachedFileName && /\.(jpg|jpeg|png|webp)$/i.test(attachedFileName)) ||
+                        lowerText.includes('imagem ocultada') ||
+                        lowerText.includes('image attached') ||
+                        /IMG-\d+.*\.jpg/i.test(trimmedText);
+
+        let zipEntry = null;
+        if (mediaFilesMap && attachedFileName) {
+          const baseName = attachedFileName.split('/').pop().split('\\').pop();
+          zipEntry = mediaFilesMap.get(baseName) ||
+                     mediaFilesMap.get(baseName.toLowerCase()) ||
+                     mediaFilesMap.get(attachedFileName) ||
+                     mediaFilesMap.get(attachedFileName.toLowerCase());
+        }
 
         currentMsg = {
           key: { id: `txt-${messages.length}`, fromMe: isFromMe },
           messageTimestamp: Math.floor(new Date(`${isoDate}T${timePart}:00`).getTime() / 1000) || 0,
           senderName: senderClean,
-          text: text.trim(),
+          text: trimmedText,
           isoDate,
           rawTime: timePart,
           messageType: isAudio ? 'audioMessage' : (isImage ? 'imageMessage' : 'conversation'),
           isAudio,
           isImage,
+          attachedFileName,
+          zipEntry,
           fromFile: true
         };
       } else if (currentMsg) {
@@ -1089,19 +1153,103 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     return messages;
   }
 
-  // Upload de Conversa Exportada do WhatsApp (.txt)
-  function handleChatFileUpload(e) {
+  // Upload de Conversa Exportada do WhatsApp (.zip com mídia ou .txt sem mídia)
+  async function handleChatFileUpload(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target.result;
-      const parsed = parseWhatsAppExportedText(content);
-      setUploadedChatFile({ name: file.name, content, count: parsed.length });
-      addLog(`📁 Arquivo de conversa "${file.name}" carregado com sucesso: ${parsed.length} mensagens históricas identificadas!`, 'success');
-      alert(`Histórico carregado com sucesso!\n\nArquivo: ${file.name}\nTotal de mensagens identificadas: ${parsed.length}\n\nO sistema agora analisará 100% de todas as mensagens desde 2020!`);
-    };
-    reader.readAsText(file);
+
+    const lowerName = file.name.toLowerCase();
+
+    if (lowerName.endsWith('.zip')) {
+      setIsUnzippingChatFile(true);
+      addLog(`📦 Processando arquivo ZIP do WhatsApp "${file.name}" (${(file.size / (1024 * 1024)).toFixed(1)} MB)...`, 'info');
+      try {
+        const JSZip = (await import('jszip')).default;
+        const zip = await JSZip.loadAsync(file);
+        let chatTxtEntry = null;
+        const mediaFilesMap = new Map();
+        let totalAudiosInZip = 0;
+        let totalImagesInZip = 0;
+
+        zip.forEach((relativePath, zipEntry) => {
+          if (zipEntry.dir) return;
+          const lowerPath = relativePath.toLowerCase();
+          const baseName = relativePath.split('/').pop().split('\\').pop();
+          const lowerBase = baseName.toLowerCase();
+
+          if (lowerBase.endsWith('.txt')) {
+            if (!chatTxtEntry || lowerBase.includes('_chat') || lowerBase.includes('conversa')) {
+              chatTxtEntry = zipEntry;
+            }
+          } else {
+            mediaFilesMap.set(baseName, zipEntry);
+            mediaFilesMap.set(lowerBase, zipEntry);
+            mediaFilesMap.set(relativePath, zipEntry);
+            mediaFilesMap.set(lowerPath, zipEntry);
+
+            if (/\.(opus|ogg|mp3|m4a|wav|aac)$/i.test(lowerBase)) {
+              totalAudiosInZip++;
+            } else if (/\.(jpg|jpeg|png|webp)$/i.test(lowerBase)) {
+              totalImagesInZip++;
+            }
+          }
+        });
+
+        if (!chatTxtEntry) {
+          throw new Error('Não foi encontrado nenhum arquivo de conversa (.txt) dentro do arquivo .zip.');
+        }
+
+        addLog(`📄 Lendo arquivo de texto "${chatTxtEntry.name}" contido no ZIP...`, 'info');
+        const txtContent = await chatTxtEntry.async('string');
+        const parsed = parseWhatsAppExportedText(txtContent, mediaFilesMap);
+
+        let linkedAudios = 0;
+        let linkedImages = 0;
+        parsed.forEach(m => {
+          if (m.isAudio && m.zipEntry) linkedAudios++;
+          if (m.isImage && m.zipEntry) linkedImages++;
+        });
+
+        setUploadedChatFile({
+          name: file.name,
+          content: txtContent,
+          count: parsed.length,
+          isZip: true,
+          zipInstance: zip,
+          mediaMap: mediaFilesMap,
+          totalAudios: totalAudiosInZip,
+          totalImages: totalImagesInZip,
+          linkedAudios,
+          linkedImages,
+          parsedMessages: parsed
+        });
+
+        addLog(`✅ Arquivo ZIP "${file.name}" carregado com sucesso: ${parsed.length} mensagens, ${linkedAudios} áudios vinculados e ${linkedImages} imagens/comprovantes prontos para perícia!`, 'success');
+        alert(`Histórico e Mídias carregados com sucesso!\n\nArquivo: ${file.name}\n• Total de Mensagens: ${parsed.length}\n• Áudios vinculados para IA: ${linkedAudios} de ${totalAudiosInZip}\n• Imagens/Prints: ${linkedImages} de ${totalImagesInZip}\n\nO sistema agora analisará as mensagens e ouvirá os áudios reais direto do arquivo, com 100% de precisão e sem depender do WhatsApp Web!`);
+      } catch (err) {
+        addLog(`❌ Erro ao abrir arquivo ZIP "${file.name}": ${err.message}`, 'error');
+        alert(`Erro ao abrir arquivo .zip:\n${err.message}`);
+      } finally {
+        setIsUnzippingChatFile(false);
+      }
+    } else {
+      // Arquivo .txt simples (Sem Mídia)
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target.result;
+        const parsed = parseWhatsAppExportedText(content);
+        setUploadedChatFile({
+          name: file.name,
+          content,
+          count: parsed.length,
+          isZip: false,
+          parsedMessages: parsed
+        });
+        addLog(`📁 Arquivo de texto "${file.name}" carregado: ${parsed.length} mensagens históricas identificadas!`, 'success');
+        alert(`Histórico de texto carregado com sucesso!\n\nArquivo: ${file.name}\nTotal de mensagens identificadas: ${parsed.length}\n\nO sistema agora analisará 100% de todas as mensagens desde 2020!`);
+      };
+      reader.readAsText(file);
+    }
   }
 
   // ── UTILITÁRIO DE CÁLCULO DE DIAS CORRIDOS (SEM DRIFT DE FUSO HORÁRIO) ──
@@ -1319,7 +1467,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       let fileMsgs = [];
       if (uploadedChatFile) {
         addLog(`📄 Lendo histórico do arquivo de backup "${uploadedChatFile.name}"...`, 'info');
-        fileMsgs = parseWhatsAppExportedText(uploadedChatFile.content);
+        fileMsgs = uploadedChatFile.parsedMessages || parseWhatsAppExportedText(uploadedChatFile.content, uploadedChatFile.mediaMap);
         addLog(`📥 ${fileMsgs.length} mensagens históricas carregadas do arquivo de 2020 a 2026!`, 'success');
       }
 
@@ -1424,18 +1572,14 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           msg.message?.imageMessage?.caption ||
           '';
 
-        const isAudio = Boolean(msg.message?.audioMessage || msg.messageType === 'audioMessage');
+        const isAudio = Boolean(msg.message?.audioMessage || msg.messageType === 'audioMessage' || msg.isAudio);
         const isImage = Boolean(
           msg.message?.imageMessage || 
           msg.messageType === 'imageMessage' ||
+          msg.isImage ||
           (msg.message?.documentMessage?.mimetype && msg.message?.documentMessage?.mimetype.startsWith('image/'))
         );
 
-        if (isAudio) {
-          audioCount++;
-        } else if (isImage) {
-          imageCount++;
-        }
         if (textContent.trim()) {
           textCount++;
         }
@@ -1511,11 +1655,30 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
           addLog(`🎙️ Áudio #${audioCount} de ${senderNameOnly} em ${dateTimeDisplay}. Transcrevendo com Inteligência Artificial...`, 'info');
           try {
-            const base64Audio = await fetchMediaBase64FromMessage(msg);
+            let base64Audio = null;
+            let audioMime = 'audio/ogg';
+
+            if (msg.zipEntry) {
+              try {
+                base64Audio = await msg.zipEntry.async('base64');
+                const ext = (msg.attachedFileName || '').split('.').pop().toLowerCase();
+                if (ext === 'mp3') audioMime = 'audio/mp3';
+                else if (ext === 'm4a') audioMime = 'audio/m4a';
+                else if (ext === 'wav') audioMime = 'audio/wav';
+                else audioMime = 'audio/ogg';
+              } catch (zipErr) {
+                console.warn('Erro ao extrair áudio do ZIP:', zipErr);
+              }
+            }
+
+            if (!base64Audio) {
+              base64Audio = await fetchMediaBase64FromMessage(msg);
+            }
+
             if (base64Audio) {
               let audData = null;
               let lastApiError = null;
-              // Até 3 tentativas com pausas espaçadas de 2.5s, 5s e 7.5s para total estabilidade sem limite 429
+              // Até 3 tentativas com pausas espaçadas de 5s, 10s e 15s para total estabilidade sem limite 429
               for (let att = 1; att <= 3; att++) {
                 try {
                   const resp = await fetch('/api/gemini-financial-audit', {
@@ -1524,7 +1687,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     body: JSON.stringify({
                       action: 'transcribe_audio',
                       base64Data: base64Audio,
-                      mimeType: 'audio/ogg'
+                      mimeType: audioMime
                     })
                   });
                   if (resp.ok) {
@@ -1660,9 +1823,26 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
           addLog(`🖼️ Print #${imageCount} de ${senderNameOnly} em ${dateTimeDisplay}. Analisando com OCR da IA...`, 'info');
           try {
-            const base64Img = await fetchMediaBase64FromMessage(msg);
+            let base64Img = null;
+            let mime = msg.message?.imageMessage?.mimetype || 'image/jpeg';
+
+            if (msg.zipEntry) {
+              try {
+                base64Img = await msg.zipEntry.async('base64');
+                const ext = (msg.attachedFileName || '').split('.').pop().toLowerCase();
+                if (ext === 'png') mime = 'image/png';
+                else if (ext === 'webp') mime = 'image/webp';
+                else mime = 'image/jpeg';
+              } catch (zipErr) {
+                console.warn('Erro ao extrair imagem do ZIP:', zipErr);
+              }
+            }
+
+            if (!base64Img) {
+              base64Img = await fetchMediaBase64FromMessage(msg);
+            }
+
             if (base64Img) {
-              const mime = msg.message?.imageMessage?.mimetype || 'image/jpeg';
               const resp = await fetch('/api/gemini-financial-audit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -4502,32 +4682,38 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 </div>
               </div>
 
-              {/* 📁 HISTÓRICO COMPLETO DO WHATSAPP DESDE 2020 (ARQUIVO .TXT) */}
+              {/* 📁 HISTÓRICO COMPLETO DO WHATSAPP DESDE 2020 (ARQUIVO .ZIP COM MÍDIA OU .TXT) */}
               <div style={{
                 background: 'rgba(0, 0, 0, 0.45)',
                 border: uploadedChatFile ? '1.5px solid var(--teal)' : '1px dashed rgba(56, 189, 248, 0.45)',
                 borderRadius: 12,
-                padding: '14px 18px',
+                padding: '16px 20px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 10,
+                gap: 12,
                 boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 24 }}>📁</span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontSize: 28 }}>{uploadedChatFile?.isZip ? '📦' : '📁'}</span>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 900, color: uploadedChatFile ? 'var(--teal)' : '#38bdf8' }}>
-                        {uploadedChatFile ? `✓ Histórico Exportado Carregado (${uploadedChatFile.count || 0} mensagens identificadas)` : 'Importar Histórico Completo do WhatsApp (.txt) — Desde 2020 (5.000+ mensagens)'}
-                      </div>
-                      <div style={{ fontSize: 11.5, color: 'var(--ink2)', lineHeight: 1.4 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 900, color: uploadedChatFile ? 'var(--teal)' : '#38bdf8' }}>
                         {uploadedChatFile
-                          ? `Arquivo "${uploadedChatFile.name}" carregado. O sistema cruzará 100% das mensagens do arquivo com o WhatsApp online!`
-                          : 'Como você conversa com Estela 22 desde 2020 com mais de 5.000 mensagens, anexe o arquivo .txt exportado do WhatsApp no celular para auditar todas as mensagens sem limites do WhatsApp Web.'}
+                          ? (uploadedChatFile.isZip
+                              ? `✓ Backup ZIP com Mídias Carregado (${uploadedChatFile.count} mensagens | ${uploadedChatFile.linkedAudios || 0} áudios vinculados | ${uploadedChatFile.linkedImages || 0} prints)`
+                              : `✓ Histórico de Texto Carregado (${uploadedChatFile.count} mensagens identificadas)`)
+                          : 'Importar Conversa Completa do WhatsApp (.zip com mídia ou .txt) — Desde 2020'}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--ink2)', lineHeight: 1.4, marginTop: 2 }}>
+                        {uploadedChatFile
+                          ? (uploadedChatFile.isZip
+                              ? `Arquivo ZIP "${uploadedChatFile.name}" pronto! A IA ouvirá os áudios e periciará os comprovantes diretamente dos arquivos locais, sem depender do WhatsApp Web e sem risco de links expirados.`
+                              : `Arquivo "${uploadedChatFile.name}" carregado. O sistema analisará 100% dos textos e cruzará com a conexão online!`)
+                          : 'Como você conversa com Estela 22 desde 2020 com mais de 5.000 mensagens e dezenas de áudios, anexe o arquivo .zip exportado com mídia (ou .txt) para auditar tudo com garantia total!'}
                       </div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     {uploadedChatFile && (
                       <button
                         type="button"
@@ -4537,7 +4723,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                           border: '1px solid rgba(255, 68, 68, 0.4)',
                           color: '#ff6b6b',
                           borderRadius: 8,
-                          padding: '6px 12px',
+                          padding: '7px 12px',
                           fontSize: 11,
                           fontWeight: 800,
                           cursor: 'pointer'
@@ -4554,19 +4740,67 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                       padding: '8px 16px',
                       fontSize: 12,
                       fontWeight: 800,
-                      cursor: 'pointer',
+                      cursor: isUnzippingChatFile ? 'wait' : 'pointer',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 6
+                      gap: 6,
+                      opacity: isUnzippingChatFile ? 0.7 : 1
                     }}>
-                      📂 {uploadedChatFile ? 'Trocar Arquivo .txt' : 'Anexar Conversa Exportada (.txt)'}
-                      <input type="file" accept=".txt" style={{ display: 'none' }} onChange={handleChatFileUpload} />
+                      {isUnzippingChatFile
+                        ? '⏳ Processando ZIP e Mídias...'
+                        : (uploadedChatFile ? '📂 Trocar Arquivo (.zip / .txt)' : '📂 Anexar Conversa (.zip ou .txt)')}
+                      <input
+                        type="file"
+                        accept=".zip,.txt"
+                        disabled={isUnzippingChatFile}
+                        style={{ display: 'none' }}
+                        onChange={handleChatFileUpload}
+                      />
                     </label>
                   </div>
                 </div>
+
                 {!uploadedChatFile && (
-                  <div style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.7)', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: 8, lineHeight: 1.4 }}>
-                    💡 <strong>Como exportar no celular:</strong> No WhatsApp, abra a conversa com <strong>Estela 22</strong> &gt; Toque nos 3 pontinhos no canto superior &gt; <em>Mais</em> &gt; <em>Exportar conversa</em> &gt; Selecione <em>Sem mídia</em> &gt; Salve ou envie o arquivo .txt gerado para o computador e anexe aqui. Todas as mensagens de 2020 a 2026 serão lidas com precisão cirúrgica!
+                  <div style={{
+                    fontSize: 11.5,
+                    color: 'rgba(255, 255, 255, 0.85)',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    padding: '12px 14px',
+                    borderRadius: 8,
+                    lineHeight: 1.5,
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8
+                  }}>
+                    <div>
+                      💡 <strong>Como exportar a conversa no celular para ter 100% de precisão:</strong>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 10 }}>
+                      <div style={{
+                        background: 'rgba(0, 229, 155, 0.07)',
+                        border: '1px solid rgba(0, 229, 155, 0.25)',
+                        borderRadius: 8,
+                        padding: '8px 12px'
+                      }}>
+                        <strong style={{ color: 'var(--teal)' }}>📦 OPÇÃO 1 (RECOMENDADA): COM MÍDIA (.ZIP)</strong>
+                        <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 4 }}>
+                          No WhatsApp &gt; Conversa com <strong>Estela 22</strong> &gt; 3 pontinhos &gt; <em>Mais</em> &gt; <em>Exportar conversa</em> &gt; Escolha <strong>INCLUIR MÍDIA</strong>.
+                          Gera um arquivo <code>.zip</code> com todos os áudios e comprovantes reais. A IA ouvirá tudo direto do arquivo com máxima fidelidade!
+                        </div>
+                      </div>
+                      <div style={{
+                        background: 'rgba(56, 189, 248, 0.07)',
+                        border: '1px solid rgba(56, 189, 248, 0.25)',
+                        borderRadius: 8,
+                        padding: '8px 12px'
+                      }}>
+                        <strong style={{ color: '#38bdf8' }}>📄 OPÇÃO 2: SEM MÍDIA (.TXT)</strong>
+                        <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 4 }}>
+                          Selecione <strong>SEM MÍDIA</strong> para gerar apenas o arquivo de texto <code>.txt</code>. Ele é leve e rápido para periciar todos os acordos, prazos e valores escritos de 2020 a 2026.
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -5314,7 +5548,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           </div>
         )}
 
-        {/* OPÇÃO ADICIONAL: CONVERSA EXPORTADA (.TXT DO WHATSAPP) */}
+        {/* OPÇÃO ADICIONAL: CONVERSA EXPORTADA (.ZIP COM MÍDIA OU .TXT DO WHATSAPP) */}
         <div style={{
           padding: 12,
           borderRadius: 10,
@@ -5328,10 +5562,12 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         }}>
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 800, color: '#fff' }}>
-              📁 Opcional: Anexar backup de conversa exportada do WhatsApp (.txt)
+              📁 Backup de conversa exportada do WhatsApp (.zip com mídia ou .txt)
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--ink2)' }}>
-              Útil se você tiver exportado a conversa direto pelo WhatsApp no celular com anos de mensagens.
+              {uploadedChatFile
+                ? `✓ Arquivo carregado: ${uploadedChatFile.name} (${uploadedChatFile.count} mensagens)`
+                : 'Anexe o .zip (com áudios/prints) ou .txt exportado do WhatsApp para periciar anos de mensagens sem limites.'}
             </div>
           </div>
           <label style={{
@@ -5339,13 +5575,21 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             fontWeight: 800,
             padding: '7px 14px',
             borderRadius: 8,
-            background: 'rgba(255, 255, 255, 0.08)',
-            border: '1px solid var(--line)',
-            color: '#fff',
-            cursor: 'pointer'
+            background: uploadedChatFile ? 'rgba(0, 229, 155, 0.15)' : 'rgba(255, 255, 255, 0.08)',
+            border: '1px solid ' + (uploadedChatFile ? 'var(--teal)' : 'var(--line)'),
+            color: uploadedChatFile ? 'var(--teal)' : '#fff',
+            cursor: isUnzippingChatFile ? 'wait' : 'pointer'
           }}>
-            {uploadedChatFile ? `✓ ${uploadedChatFile.name}` : 'Selecionar arquivo .txt'}
-            <input type="file" accept=".txt" style={{ display: 'none' }} onChange={handleChatFileUpload} />
+            {isUnzippingChatFile
+              ? '⏳ Lendo ZIP...'
+              : (uploadedChatFile ? `✓ ${uploadedChatFile.name}` : 'Selecionar arquivo .zip ou .txt')}
+            <input
+              type="file"
+              accept=".zip,.txt"
+              disabled={isUnzippingChatFile}
+              style={{ display: 'none' }}
+              onChange={handleChatFileUpload}
+            />
           </label>
         </div>
 
