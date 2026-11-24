@@ -1830,47 +1830,162 @@ export async function scanSentMessagesLast24h() {
 
 // ── EXTRAÇÃO COMPLETA DE CONVERSA HISTÓRICA E MÍDIAS ──────────────────
 
-export async function fetchFullChatHistory(remoteJid, onProgress) {
+export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
   const { instanceName } = getEvolutionConfig();
   const allMessages = [];
-  let page = 1;
   const limit = 100;
-  let consecutiveEmpty = 0;
+  const seenMsgIds = new Set();
 
-  let cleanJid = (remoteJid || '').trim();
-  if (!cleanJid.includes('@')) {
-    cleanJid = cleanJid.replace(/\D/g, '') + '@s.whatsapp.net';
+  // Extrai todas as formas de identificação do contato (telefone real, LID, JIDs)
+  let targetJid = '';
+  let targetPhone = '';
+  let targetLid = '';
+  const candidateJids = [];
+
+  if (remoteJidOrContact && typeof remoteJidOrContact === 'object') {
+    targetJid = (remoteJidOrContact.jid || remoteJidOrContact.rawJid || '').trim();
+    targetPhone = (remoteJidOrContact.phone || remoteJidOrContact.realPhone || extractCleanPhone(targetJid) || '').trim();
+    targetLid = (remoteJidOrContact.lid || (targetJid.includes('@lid') ? targetJid : '')).trim();
+    if (Array.isArray(remoteJidOrContact.candidateJids)) {
+      candidateJids.push(...remoteJidOrContact.candidateJids);
+    }
+  } else {
+    targetJid = String(remoteJidOrContact || '').trim();
+    targetPhone = extractCleanPhone(targetJid);
+    if (targetJid.includes('@lid')) targetLid = targetJid;
   }
 
-  while (page <= 50) { // Até 5000 mensagens históricas por chat
-    try {
-      const data = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
-        method: 'POST',
-        body: JSON.stringify({
-          where: {
-            key: {
-              remoteJid: cleanJid
-            }
-          },
-          page,
-          limit,
-        }),
-      });
+  if (targetJid) candidateJids.push(targetJid);
+  if (targetLid) candidateJids.push(targetLid);
 
-      const records = data?.messages?.records || (Array.isArray(data) ? data : []);
-      if (!records || records.length === 0) {
-        consecutiveEmpty++;
-        if (consecutiveEmpty >= 2) break;
-      } else {
-        consecutiveEmpty = 0;
-        allMessages.push(...records);
-        if (onProgress) onProgress(allMessages.length);
-        if (records.length < limit) break;
+  if (targetPhone && targetPhone.length >= 8) {
+    let cleanP = targetPhone.replace(/\D/g, '');
+    candidateJids.push(`${cleanP}@s.whatsapp.net`);
+    if (!cleanP.startsWith('55') && (cleanP.length === 10 || cleanP.length === 11)) {
+      candidateJids.push(`55${cleanP}@s.whatsapp.net`);
+    } else if (cleanP.startsWith('55') && cleanP.length >= 12) {
+      candidateJids.push(`${cleanP.substring(2)}@s.whatsapp.net`);
+      const sem55 = cleanP.substring(2);
+      if (sem55.length === 11) {
+        // Variação sem o 9º dígito
+        const ddd = sem55.substring(0, 2);
+        const rest8 = sem55.substring(3);
+        candidateJids.push(`55${ddd}${rest8}@s.whatsapp.net`);
+        candidateJids.push(`${ddd}${rest8}@s.whatsapp.net`);
+      } else if (sem55.length === 10) {
+        // Variação com o 9º dígito
+        const ddd = sem55.substring(0, 2);
+        const rest8 = sem55.substring(2);
+        candidateJids.push(`55${ddd}9${rest8}@s.whatsapp.net`);
+        candidateJids.push(`${ddd}9${rest8}@s.whatsapp.net`);
       }
-      page++;
-    } catch (e) {
-      console.warn('Erro ao paginar mensagens do chat:', e);
-      break;
+    }
+  }
+
+  const uniqueCandidates = Array.from(new Set(candidateJids.filter(Boolean)));
+
+  // Fase 1: Busca direta paginada por cada JID candidato
+  for (const cJid of uniqueCandidates) {
+    let page = 1;
+    let consecutiveEmpty = 0;
+
+    while (page <= 50) { // Até 5000 mensagens
+      try {
+        let data = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+          method: 'POST',
+          body: JSON.stringify({
+            where: {
+              key: {
+                remoteJid: cJid
+              }
+            },
+            page,
+            limit
+          })
+        }).catch(() => null);
+
+        let records = data?.messages?.records || (Array.isArray(data) ? data : []);
+
+        // Se vazio na pág 1, tenta sintaxe plana { where: { remoteJid } }
+        if ((!records || records.length === 0) && page === 1) {
+          const dataAlt = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+            method: 'POST',
+            body: JSON.stringify({
+              where: {
+                remoteJid: cJid
+              },
+              page: 1,
+              limit
+            })
+          }).catch(() => null);
+          const altRecs = dataAlt?.messages?.records || (Array.isArray(dataAlt) ? dataAlt : []);
+          if (Array.isArray(altRecs) && altRecs.length > 0) {
+            records = altRecs;
+          }
+        }
+
+        if (!records || records.length === 0) {
+          consecutiveEmpty++;
+          if (consecutiveEmpty >= 2) break;
+        } else {
+          consecutiveEmpty = 0;
+          for (const msg of records) {
+            const mId = msg.key?.id || msg.id;
+            if (mId && !seenMsgIds.has(mId)) {
+              seenMsgIds.add(mId);
+              allMessages.push(msg);
+            }
+          }
+          if (onProgress) onProgress(allMessages.length);
+          if (records.length < limit) break;
+        }
+        page++;
+      } catch (e) {
+        break;
+      }
+    }
+
+    if (allMessages.length > 0) break;
+  }
+
+  // Fase 2: Fallback resiliente — se a busca por JID falhar, busca nas mensagens recentes e filtra em memória
+  if (allMessages.length === 0 && (targetPhone || uniqueCandidates.length > 0)) {
+    const phoneSigs = new Set(targetPhone ? getPhoneSignatures(targetPhone) : []);
+    if (targetLid) phoneSigs.add(extractCleanPhone(targetLid));
+
+    for (let p = 1; p <= 15; p++) {
+      try {
+        const genData = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+          method: 'POST',
+          body: JSON.stringify({ limit: 100, page: p })
+        }).catch(() => null);
+
+        const recs = genData?.messages?.records || (Array.isArray(genData) ? genData : []);
+        if (!Array.isArray(recs) || recs.length === 0) break;
+
+        for (const msg of recs) {
+          const rj = msg.key?.remoteJid || msg.remoteJid || '';
+          const part = msg.key?.participant || msg.participant || '';
+          const alt = msg.key?.remoteJidAlt || msg.remoteJidAlt || '';
+          const cleanRj = extractCleanPhone(rj);
+          const cleanPart = extractCleanPhone(part);
+          const cleanAlt = extractCleanPhone(alt);
+
+          const matches = phoneSigs.has(cleanRj) || phoneSigs.has(cleanPart) || phoneSigs.has(cleanAlt) ||
+            uniqueCandidates.includes(rj) || uniqueCandidates.includes(part);
+
+          if (matches) {
+            const mId = msg.key?.id || msg.id;
+            if (mId && !seenMsgIds.has(mId)) {
+              seenMsgIds.add(mId);
+              allMessages.push(msg);
+            }
+          }
+        }
+        if (allMessages.length > 0 && onProgress) onProgress(allMessages.length);
+      } catch (err) {
+        break;
+      }
     }
   }
 
