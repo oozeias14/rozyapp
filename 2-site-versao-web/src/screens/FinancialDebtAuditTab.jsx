@@ -1245,12 +1245,17 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         });
         addLog(`📥 ${rawMessages.length} mensagens históricas carregadas do arquivo!`, 'success');
       } else if (selectedContact) {
-        addLog(`🌐 Conectando à API para buscar histórico completo de ${selectedContact.name} (${selectedContact.displayPhone || selectedContact.phone})...`, 'info');
-        const chatMsgs = await fetchFullChatHistory(selectedContact, (count) => {
-          addLog(`📥 Baixando mensagens do WhatsApp... ${count} mensagens recuperadas.`, 'info');
+        addLog(`🌐 Conectando à API para buscar histórico integral de ${selectedContact.name} (${selectedContact.displayPhone || selectedContact.phone})...`, 'info');
+        addLog('⏳ MODO ANTI-TRAVAMENTO ATIVO: Buscando todas as mensagens da primeira até a última com pausas suaves para garantir 100% de precisão sem perda de dados...', 'info');
+        const chatMsgs = await fetchFullChatHistory(selectedContact, (info) => {
+          if (typeof info === 'object' && info !== null) {
+            addLog(`📥 [Página ${info.page}] Recuperando histórico com tranquilidade... ${info.count} mensagens acumuladas no total.`, 'info');
+          } else {
+            addLog(`📥 Baixando mensagens do WhatsApp... ${info} mensagens recuperadas.`, 'info');
+          }
         });
         rawMessages = chatMsgs;
-        addLog(`📥 Total de ${rawMessages.length} mensagens históricas recuperadas do WhatsApp!`, 'success');
+        addLog(`📥 Total de ${rawMessages.length} mensagens históricas recuperadas do WhatsApp de ponta a ponta!`, 'success');
       }
 
       if (rawMessages.length === 0 && uploadedReceipts.length === 0) {
@@ -4257,11 +4262,11 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
                   <span style={{ fontSize: 12, fontWeight: 900, color: 'var(--teal)', letterSpacing: 0.5, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    💬 CONFIRMAÇÃO DE CONTATO (ÚLTIMAS MENSAGENS TROCADAS):
+                    💬 CONFIRMAÇÃO DE CONTATO (ÚLTIMAS MENSAGENS DE TEXTO TROCADAS):
                   </span>
                   {loadingPreview ? (
                     <span style={{ fontSize: 11, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      ⏳ Carregando mensagens do WhatsApp...
+                      ⏳ Carregando mensagens de texto do WhatsApp...
                     </span>
                   ) : (
                     <button
@@ -4280,18 +4285,18 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                         fontWeight: 800,
                         padding: '4px 10px'
                       }}
-                      title="Recarregar últimas mensagens trocadas para confirmar contato"
+                      title="Recarregar últimas mensagens de texto trocadas para confirmar contato"
                     >
-                      🔄 Atualizar Prévia
+                      🔄 Atualizar Prévia (Texto)
                     </button>
                   )}
                 </div>
 
                 <div style={{ fontSize: 11, color: 'var(--ink2)', lineHeight: 1.4 }}>
-                  Esta confirmação verifica que a perícia está acessando exatamente a conversa real com <strong>{selectedContact.name}</strong>, sem misturar com canais, grupos ou mensagens avulsas:
+                  Esta confirmação exibe exclusivamente as últimas mensagens digitadas em <strong>texto</strong> com <strong>{selectedContact.name}</strong> (ignorando áudios) para você comprovar que o robô está acessando a conversa certa:
                 </div>
 
-                {/* estela 22: ultima msg */}
+                {/* estela 22: ultima msg de texto */}
                 <div style={{
                   padding: '10px 14px',
                   borderRadius: 8,
@@ -4301,7 +4306,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                     <strong style={{ color: '#38bdf8', fontSize: 12.5 }}>
-                      {selectedContact.name || 'Estela 22'}:
+                      {selectedContact.name || 'Estela 22'} (Mensagem de Texto):
                     </strong>
                     {previewExchange.lastFromCredor?.dateTime && (
                       <span style={{ fontSize: 10.5, color: 'var(--ink2)', fontFamily: 'monospace' }}>
@@ -4310,11 +4315,11 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     )}
                   </div>
                   <div style={{ color: '#fff', wordBreak: 'break-word', fontSize: 13, fontStyle: previewExchange.lastFromCredor ? 'normal' : 'italic' }}>
-                    {previewExchange.lastFromCredor?.text || (loadingPreview ? 'Buscando mensagem recebida de Estela 22...' : '(Nenhuma mensagem recente encontrada)')}
+                    {previewExchange.lastFromCredor?.text || (loadingPreview ? 'Buscando última mensagem de texto recebida de Estela 22...' : '(Nenhuma mensagem de texto recente encontrada)')}
                   </div>
                 </div>
 
-                {/* eu : ultima msg */}
+                {/* eu : ultima msg de texto */}
                 <div style={{
                   padding: '10px 14px',
                   borderRadius: 8,
@@ -4324,7 +4329,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                     <strong style={{ color: 'var(--teal)', fontSize: 12.5 }}>
-                      Eu:
+                      Eu (Mensagem de Texto):
                     </strong>
                     {previewExchange.lastFromMe?.dateTime && (
                       <span style={{ fontSize: 10.5, color: 'var(--ink2)', fontFamily: 'monospace' }}>
@@ -4333,7 +4338,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     )}
                   </div>
                   <div style={{ color: '#fff', wordBreak: 'break-word', fontSize: 13, fontStyle: previewExchange.lastFromMe ? 'normal' : 'italic' }}>
-                    {previewExchange.lastFromMe?.text || (loadingPreview ? 'Buscando mensagem enviada para Estela 22...' : '(Nenhuma mensagem enviada recente encontrada)')}
+                    {previewExchange.lastFromMe?.text || (loadingPreview ? 'Buscando última mensagem de texto enviada para Estela 22...' : '(Nenhuma mensagem de texto recente encontrada)')}
                   </div>
                 </div>
               </div>

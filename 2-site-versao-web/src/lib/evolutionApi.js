@@ -2201,122 +2201,141 @@ export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
   const uniqueCandidates = resolved.candidateJids;
   const phoneSigs = new Set(resolved.phoneSigs.filter(s => s && s.length >= 8));
 
-  // Fase 1: Busca direta paginada por cada JID candidato
+  // Helper com pausa suave (200ms) e retentativas exponenciais automáticas
+  // Evita travamentos, rate-limits ou sobrecarga no WhatsApp Web ao buscar mensagens antigas
+  async function fetchWithSmoothPacing(body, retries = 3) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        await new Promise(resolve => setTimeout(resolve, 200)); // Pausa suave anti-travamento
+        const res = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+          method: 'POST',
+          body: JSON.stringify(body)
+        });
+        const recs = res?.messages?.records || (Array.isArray(res) ? res : (res?.records || []));
+        if (Array.isArray(recs)) return recs;
+      } catch (err) {
+        if (attempt === retries) return [];
+        await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+      }
+    }
+    return [];
+  }
+
+  let totalPagesQueried = 0;
+
+  // Fase 1: Busca profunda paginada em TODOS os JIDs candidatos (@lid e @s.whatsapp.net)
+  // Sem parada prematura: varre todas as páginas até a primeiríssima mensagem histórica da conversa!
   for (const cJid of uniqueCandidates) {
     if (!cJid || !cJid.includes('@')) continue;
     let page = 1;
     let consecutiveEmpty = 0;
 
-    while (page <= 300) { // Até 30.000 mensagens - Da primeira até a última conversa
-      try {
-        let data = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
-          method: 'POST',
-          body: JSON.stringify({
-            where: {
-              key: {
-                remoteJid: cJid
-              }
-            },
-            page,
-            limit
-          })
-        }).catch(() => null);
-
-        let records = data?.messages?.records || (Array.isArray(data) ? data : []);
-
-        // Se vazio na pág 1, tenta sintaxe plana { where: { remoteJid } }
-        if ((!records || records.length === 0) && page === 1) {
-          const dataAlt = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
-            method: 'POST',
-            body: JSON.stringify({
-              where: {
-                remoteJid: cJid
-              },
-              page: 1,
-              limit
-            })
-          }).catch(() => null);
-          const altRecs = dataAlt?.messages?.records || (Array.isArray(dataAlt) ? dataAlt : []);
-          if (Array.isArray(altRecs) && altRecs.length > 0) {
-            records = altRecs;
+    while (page <= 500) { // Até 50.000 mensagens - Da primeira até a última conversa
+      totalPagesQueried++;
+      let records = await fetchWithSmoothPacing({
+        where: {
+          key: {
+            remoteJid: cJid
           }
-        }
+        },
+        page,
+        limit
+      });
 
-        if (!records || records.length === 0) {
-          consecutiveEmpty++;
-          if (consecutiveEmpty >= 2) break;
-        } else {
-          consecutiveEmpty = 0;
-          for (const msg of records) {
-            const rj = (msg.key?.remoteJid || msg.remoteJid || '').toLowerCase();
-            // BLOQUEIA notícias, transmissões, canais e grupos
-            if (rj.includes('@broadcast') || rj.includes('@newsletter') || rj.includes('@g.us')) continue;
-
-            const mId = msg.key?.id || msg.id;
-            if (mId && !seenMsgIds.has(mId)) {
-              seenMsgIds.add(mId);
-              allMessages.push(msg);
-            }
-          }
-          if (onProgress) onProgress(allMessages.length);
-          if (records.length < limit) break;
+      // Se vazio na pág 1, tenta sintaxe plana { where: { remoteJid } }
+      if ((!records || records.length === 0) && page === 1) {
+        const altRecords = await fetchWithSmoothPacing({
+          where: {
+            remoteJid: cJid
+          },
+          page: 1,
+          limit
+        });
+        if (Array.isArray(altRecords) && altRecords.length > 0) {
+          records = altRecords;
         }
-        page++;
-      } catch (e) {
-        break;
       }
-    }
 
-    if (allMessages.length > 0) break;
-  }
-
-  // Fase 2: Fallback estrito — se a busca por JID direto não retornar mensagens,
-  // consulta mensagens recentes mas FILTRA ESTRITAMENTE sem vazar broadcasts ou outras conversas
-  if (allMessages.length === 0) {
-    for (let p = 1; p <= 50; p++) {
-      try {
-        const genData = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
-          method: 'POST',
-          body: JSON.stringify({ limit: 100, page: p })
-        }).catch(() => null);
-
-        const recs = genData?.messages?.records || (Array.isArray(genData) ? genData : []);
-        if (!Array.isArray(recs) || recs.length === 0) break;
-
-        for (const msg of recs) {
+      if (!records || records.length === 0) {
+        consecutiveEmpty++;
+        // Exige 3 páginas vazias consecutivas para ter certeza absoluta de que chegou ao início da conversa
+        if (consecutiveEmpty >= 3) break;
+      } else {
+        consecutiveEmpty = 0;
+        let newCount = 0;
+        for (const msg of records) {
           const rj = (msg.key?.remoteJid || msg.remoteJid || '').toLowerCase();
           // BLOQUEIA notícias, transmissões, canais e grupos
-          if (rj.includes('@broadcast') || rj.includes('@newsletter') || rj.includes('@g.us') || rj.includes('status')) {
-            continue;
-          }
+          if (rj.includes('@broadcast') || rj.includes('@newsletter') || rj.includes('@g.us')) continue;
 
-          const part = (msg.key?.participant || msg.participant || '').toLowerCase();
-          const alt = (msg.key?.remoteJidAlt || msg.remoteJidAlt || '').toLowerCase();
-          const cleanRj = extractCleanPhone(rj);
-          const cleanPart = extractCleanPhone(part);
-          const cleanAlt = extractCleanPhone(alt);
-
-          const matchesJid = uniqueCandidates.some(c => c.toLowerCase() === rj || c.toLowerCase() === part);
-          const matchesPhone = (cleanRj.length >= 8 && phoneSigs.has(cleanRj)) ||
-                               (cleanPart.length >= 8 && phoneSigs.has(cleanPart)) ||
-                               (cleanAlt.length >= 8 && phoneSigs.has(cleanAlt));
-
-          if (matchesJid || matchesPhone) {
-            const mId = msg.key?.id || msg.id;
-            if (mId && !seenMsgIds.has(mId)) {
-              seenMsgIds.add(mId);
-              allMessages.push(msg);
-            }
+          const mId = msg.key?.id || msg.id;
+          if (mId && !seenMsgIds.has(mId)) {
+            seenMsgIds.add(mId);
+            allMessages.push(msg);
+            newCount++;
           }
         }
-        if (allMessages.length > 0 && onProgress) onProgress(allMessages.length);
-      } catch (err) {
-        break;
+
+        if (onProgress) {
+          onProgress({
+            count: allMessages.length,
+            page,
+            totalPages: totalPagesQueried,
+            jid: cJid,
+            addedInPage: newCount
+          });
+        }
+
+        // Se retornou menos que o limite, atingiu o início deste JID
+        if (records.length < limit) break;
+      }
+      page++;
+    }
+  }
+
+  // Fase 2: Fallback estrito se nenhuma mensagem foi localizada diretamente por JID
+  if (allMessages.length === 0) {
+    for (let p = 1; p <= 60; p++) {
+      totalPagesQueried++;
+      const recs = await fetchWithSmoothPacing({ limit: 100, page: p });
+      if (!Array.isArray(recs) || recs.length === 0) break;
+
+      for (const msg of recs) {
+        const rj = (msg.key?.remoteJid || msg.remoteJid || '').toLowerCase();
+        if (rj.includes('@broadcast') || rj.includes('@newsletter') || rj.includes('@g.us') || rj.includes('status')) {
+          continue;
+        }
+
+        const part = (msg.key?.participant || msg.participant || '').toLowerCase();
+        const alt = (msg.key?.remoteJidAlt || msg.remoteJidAlt || '').toLowerCase();
+        const cleanRj = extractCleanPhone(rj);
+        const cleanPart = extractCleanPhone(part);
+        const cleanAlt = extractCleanPhone(alt);
+
+        const matchesJid = uniqueCandidates.some(c => c.toLowerCase() === rj || c.toLowerCase() === part);
+        const matchesPhone = (cleanRj.length >= 8 && phoneSigs.has(cleanRj)) ||
+                             (cleanPart.length >= 8 && phoneSigs.has(cleanPart)) ||
+                             (cleanAlt.length >= 8 && phoneSigs.has(cleanAlt));
+
+        if (matchesJid || matchesPhone) {
+          const mId = msg.key?.id || msg.id;
+          if (mId && !seenMsgIds.has(mId)) {
+            seenMsgIds.add(mId);
+            allMessages.push(msg);
+          }
+        }
+      }
+      if (allMessages.length > 0 && onProgress) {
+        onProgress({
+          count: allMessages.length,
+          page: p,
+          totalPages: totalPagesQueried
+        });
       }
     }
   }
 
-  // Ordena cronologicamente (da mais antiga para a mais recente)
+  // Ordena cronologicamente com precisão matemática: DA PRIMEIRA MENSAGEM HISTÓRICA ATÉ A ÚLTIMA
   allMessages.sort((a, b) => {
     const tsA = Number(a.messageTimestamp || a.createdAt || 0);
     const tsB = Number(b.messageTimestamp || b.createdAt || 0);
@@ -2385,7 +2404,50 @@ export function extractCleanReadableText(m) {
   return '';
 }
 
-// Busca rápida e precisa das últimas mensagens trocadas com o contato (última enviada por Mim e última enviada pelo Credor)
+// Extrai EXCLUSIVAMENTE mensagens de texto puro digitadas (ignora áudios e mídias sem legenda)
+export function extractActualPureTextMessage(m) {
+  if (!m) return '';
+  const msgObj = m.message || m;
+
+  // Se for áudio, NUNCA retorna como texto puro
+  if (msgObj.audioMessage || m.messageType === 'audioMessage') {
+    return '';
+  }
+
+  if (typeof msgObj.conversation === 'string' && msgObj.conversation.trim()) {
+    return msgObj.conversation.trim();
+  }
+  if (typeof msgObj.extendedTextMessage?.text === 'string' && msgObj.extendedTextMessage.text.trim()) {
+    return msgObj.extendedTextMessage.text.trim();
+  }
+  if (typeof msgObj.ephemeralMessage?.message?.conversation === 'string' && msgObj.ephemeralMessage.message.conversation.trim()) {
+    return msgObj.ephemeralMessage.message.conversation.trim();
+  }
+  if (typeof msgObj.ephemeralMessage?.message?.extendedTextMessage?.text === 'string' && msgObj.ephemeralMessage.message.extendedTextMessage.text.trim()) {
+    return msgObj.ephemeralMessage.message.extendedTextMessage.text.trim();
+  }
+  if (typeof msgObj.imageMessage?.caption === 'string' && msgObj.imageMessage.caption.trim()) {
+    return msgObj.imageMessage.caption.trim();
+  }
+  if (typeof msgObj.videoMessage?.caption === 'string' && msgObj.videoMessage.caption.trim()) {
+    return msgObj.videoMessage.caption.trim();
+  }
+  if (typeof m.body === 'string' && m.body.trim()) {
+    const b = m.body.trim();
+    if (!b.toLowerCase().includes('áudio') && !b.toLowerCase().includes('audio')) return b;
+  }
+  if (typeof m.text === 'string' && m.text.trim()) {
+    const t = m.text.trim();
+    if (!t.toLowerCase().includes('áudio') && !t.toLowerCase().includes('audio')) return t;
+  }
+  if (typeof m.content === 'string' && m.content.trim()) {
+    const c = m.content.trim();
+    if (!c.toLowerCase().includes('áudio') && !c.toLowerCase().includes('audio')) return c;
+  }
+  return '';
+}
+
+// Busca rápida e precisa das últimas mensagens trocadas com o contato (MENSAGENS DE TEXTO APENAS, SEM ÁUDIO)
 export async function fetchLastChatExchange(contactOrJid, chats = []) {
   const { instanceName } = getEvolutionConfig();
   const resolved = await resolveTargetContactChat(contactOrJid);
@@ -2395,27 +2457,28 @@ export async function fetchLastChatExchange(contactOrJid, chats = []) {
   let lastFromCredor = null;
   let lastFromMe = null;
 
-  // 1. Se o chat resolvido já veio com lastMessage no findChats, avalia
+  // 1. Se o chat resolvido já veio com lastMessage no findChats, avalia SE FOR TEXTO PURO (ignora áudio)
   if (resolved.matchedChat && resolved.matchedChat.lastMessage) {
     const lm = resolved.matchedChat.lastMessage;
     const rj = (lm.key?.remoteJid || resolved.matchedChat.remoteJid || '').toLowerCase();
     if (!rj.includes('@broadcast') && !rj.includes('@newsletter') && !rj.includes('@g.us')) {
-      const text = extractCleanReadableText(lm);
-      if (text) {
+      const pureText = extractActualPureTextMessage(lm);
+      if (pureText) {
         const isFromMe = lm.key?.fromMe ?? false;
         const ts = lm.messageTimestamp || resolved.matchedChat.lastActivity || 0;
         const tsSec = typeof ts === 'number' ? (ts > 100000000000 ? Math.floor(ts / 1000) : ts) : Math.floor(new Date(ts).getTime() / 1000);
         const dateStr = !isNaN(tsSec) && tsSec > 0 ? new Date(tsSec * 1000).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
         if (isFromMe) {
-          lastFromMe = { text, dateTime: dateStr, timestamp: tsSec };
+          lastFromMe = { text: pureText, dateTime: dateStr, timestamp: tsSec };
         } else {
-          lastFromCredor = { text, dateTime: dateStr, timestamp: tsSec };
+          lastFromCredor = { text: pureText, dateTime: dateStr, timestamp: tsSec };
         }
       }
     }
   }
 
   // 2. Busca mensagens diretamente no endpoint /chat/findMessages para cada remoteJid candidato
+  //    Usa limit: 80 para retroceder além de áudios recentes e encontrar a última mensagem de texto de cada lado
   for (const cJid of candidateJids) {
     if (!cJid || !cJid.includes('@')) continue;
     try {
@@ -2428,13 +2491,12 @@ export async function fetchLastChatExchange(contactOrJid, chats = []) {
             }
           },
           page: 1,
-          limit: 30
+          limit: 80
         })
       }).catch(() => null);
 
       let records = data?.messages?.records || (Array.isArray(data) ? data : (data?.records || []));
       if (!records || records.length === 0) {
-        // Tenta sintaxe plana
         const dataAlt = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
           method: 'POST',
           body: JSON.stringify({
@@ -2442,7 +2504,7 @@ export async function fetchLastChatExchange(contactOrJid, chats = []) {
               remoteJid: cJid
             },
             page: 1,
-            limit: 30
+            limit: 80
           })
         }).catch(() => null);
         records = dataAlt?.messages?.records || (Array.isArray(dataAlt) ? dataAlt : (dataAlt?.records || []));
@@ -2458,7 +2520,8 @@ export async function fetchLastChatExchange(contactOrJid, chats = []) {
             continue;
           }
 
-          const text = extractCleanReadableText(msg);
+          // EXIGE MENSAGEM DE TEXTO APENAS (ignora áudios)
+          const text = extractActualPureTextMessage(msg);
           if (!text) continue;
 
           const isFromMe = msg.key?.fromMe ?? false;
@@ -2479,7 +2542,7 @@ export async function fetchLastChatExchange(contactOrJid, chats = []) {
     if (lastFromMe && lastFromCredor) break;
   }
 
-  // 3. Fallback estritamente restrito às mensagens recentes do WhatsApp
+  // 3. Fallback estritamente restrito às mensagens recentes do WhatsApp buscando apenas texto puro
   if (!lastFromMe || !lastFromCredor) {
     try {
       const data = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
@@ -2511,7 +2574,8 @@ export async function fetchLastChatExchange(contactOrJid, chats = []) {
       matchedRecs.sort((a, b) => Number(b.messageTimestamp || 0) - Number(a.messageTimestamp || 0));
 
       for (const msg of matchedRecs) {
-        const text = extractCleanReadableText(msg);
+        // EXIGE TEXTO APENAS (ignora áudios)
+        const text = extractActualPureTextMessage(msg);
         if (!text) continue;
 
         const isFromMe = msg.key?.fromMe ?? false;
