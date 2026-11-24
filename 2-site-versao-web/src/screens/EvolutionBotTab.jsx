@@ -4043,8 +4043,15 @@ export function EvolutionBotTab({ users, reload, subMode, onSubModeChange }) {
                                         {u.name || 'Sem nome'}
                                       </span>
                                     </div>
-                                    <span style={{ fontSize: 11, color: 'var(--ink3)' }}>
-                                      {u.whatsapp || u.phone}
+                                    <span style={{ fontSize: 11, color: isSelected ? 'var(--teal)' : 'var(--ink3)', fontFamily: 'monospace', fontWeight: 600 }}>
+                                      📞 {(() => {
+                                        const raw = String(u.whatsapp || u.phone || '').replace(/\D/g, '');
+                                        let c = raw.startsWith('55') && raw.length >= 12 ? raw.substring(2) : raw;
+                                        if (c.startsWith('0') && c.length >= 11) c = c.substring(1);
+                                        if (c.length === 11) return `(${c.slice(0, 2)}) ${c.slice(2, 7)}-${c.slice(7)}`;
+                                        if (c.length === 10) return `(${c.slice(0, 2)}) ${c.slice(2, 6)}-${c.slice(6)}`;
+                                        return u.whatsapp || u.phone || '';
+                                      })()}
                                     </span>
                                   </div>
                                 );

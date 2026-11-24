@@ -420,12 +420,20 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     let clean = String(raw).replace(/\D/g, '');
     if (clean.startsWith('55') && clean.length >= 12) {
       clean = clean.substring(2);
+    } else if (clean.startsWith('0') && clean.length >= 11) {
+      clean = clean.substring(1);
     }
     if (clean.length === 11) {
       return `(${clean.slice(0, 2)}) ${clean.slice(2, 7)}-${clean.slice(7)}`;
     }
     if (clean.length === 10) {
       return `(${clean.slice(0, 2)}) ${clean.slice(2, 6)}-${clean.slice(6)}`;
+    }
+    if (clean.length === 9) {
+      return `${clean.slice(0, 5)}-${clean.slice(5)}`;
+    }
+    if (clean.length === 8) {
+      return `${clean.slice(0, 4)}-${clean.slice(4)}`;
     }
     return clean;
   }
@@ -680,11 +688,21 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     const fullPhone = clean.startsWith('55') ? clean : '55' + clean;
     const jid = fullPhone + '@s.whatsapp.net';
     const displayPhone = formatPhoneBR(fullPhone);
+
+    // Tenta encontrar se o contato já existe na agenda ou conversas para herdar o nome correto
+    const foundChat = chats.find(c => {
+      const cDigits = (c.realPhone || c.displayPhone || c.rawJid || '').replace(/\D/g, '');
+      return cDigits.includes(clean) || clean.includes(cDigits);
+    });
+
+    const contactName = foundChat?.displayName || foundChat?.name || `Credor (${displayPhone})`;
+
     setSelectedContact({
       jid,
       phone: fullPhone,
       displayPhone,
-      name: `Credor (${displayPhone})`,
+      name: contactName,
+      lid: foundChat?.lid || null,
       candidateJids: [jid, `${clean}@s.whatsapp.net`]
     });
   }
@@ -4105,25 +4123,26 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
             <input
               type="text"
-              placeholder="Buscar por nome ou telefone..."
+              placeholder="🔍 Digite o nome ou número com DDD (ex: Estela, 61 99999-8888)..."
               value={contactSearch}
               onChange={(e) => setContactSearch(e.target.value)}
               style={{
                 width: '100%',
-                padding: '8px 12px',
-                borderRadius: 8,
-                border: '1px solid var(--line)',
-                background: 'rgba(0,0,0,0.3)',
+                padding: '10px 14px',
+                borderRadius: 10,
+                border: '1px solid rgba(0, 229, 155, 0.4)',
+                background: 'rgba(0,0,0,0.4)',
                 color: '#fff',
-                fontSize: 12,
-                marginBottom: 8
+                fontSize: 12.5,
+                marginBottom: 10,
+                outline: 'none'
               }}
             />
 
             <div style={{
               maxHeight: 320,
               overflowY: 'auto',
-              borderRadius: 8,
+              borderRadius: 10,
               border: '1px solid var(--line)',
               background: 'rgba(0,0,0,0.2)'
             }}>
@@ -4134,68 +4153,118 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               ) : (
                 chats
                   .filter(c => {
-                    const q = contactSearch.toLowerCase();
+                    if (!contactSearch || !contactSearch.trim()) return true;
+                    const q = contactSearch.toLowerCase().trim();
+                    const qDigits = q.replace(/\D/g, '');
+
                     const name = (c.displayName || c.name || c.pushName || c.subject || '').toLowerCase();
-                    const phone = (c.displayPhone || c.realPhone || c.id || c.remoteJid || '').toLowerCase();
-                    return !q || name.includes(q) || phone.includes(q);
+                    const dispPhone = (c.displayPhone || '').toLowerCase();
+                    const realPhone = (c.realPhone || '').toLowerCase();
+                    const rawJid = (c.id || c.remoteJid || '').toLowerCase();
+                    const phoneDigits = (c.realPhone || c.displayPhone || rawJid || '').replace(/\D/g, '');
+
+                    // 1. Match textual direto
+                    if (name.includes(q) || dispPhone.includes(q) || realPhone.includes(q) || rawJid.includes(q)) {
+                      return true;
+                    }
+
+                    // 2. Match por dígitos numéricos (com ou sem DDD)
+                    if (qDigits.length >= 2 && phoneDigits.includes(qDigits)) {
+                      return true;
+                    }
+
+                    // 3. Match multi-palavras (ex: "Estela 61")
+                    const tokens = q.split(/\s+/).filter(Boolean);
+                    if (tokens.length > 1) {
+                      const allTokensMatch = tokens.every(tok => {
+                        const tokDigits = tok.replace(/\D/g, '');
+                        const matchName = name.includes(tok);
+                        const matchPhone = dispPhone.includes(tok) || realPhone.includes(tok);
+                        const matchDigits = tokDigits.length >= 2 && phoneDigits.includes(tokDigits);
+                        return matchName || matchPhone || matchDigits;
+                      });
+                      if (allTokensMatch) return true;
+                    }
+
+                    return false;
                   })
                   .map(c => {
                     const rawJid = c.id || c.remoteJid || '';
-                    const dispPhone = c.displayPhone || (extractCleanPhone(rawJid) ? formatPhoneBR(extractCleanPhone(rawJid)) : rawJid);
-                    const dispName = c.displayName || c.name || c.pushName || dispPhone || 'Contato';
+                    const dispPhone = c.displayPhone || (extractCleanPhone(rawJid) ? formatPhoneBR(extractCleanPhone(rawJid)) : '');
+                    const dispName = c.displayName || c.name || c.pushName || (dispPhone ? `Contato ${dispPhone}` : 'Contato');
                     const isSel = selectedContact?.jid === rawJid || (selectedContact?.phone && c.realPhone && selectedContact.phone === c.realPhone);
                     return (
                       <div
                         key={rawJid || c.realPhone}
                         onClick={() => handleSelectChat(c)}
                         style={{
-                          padding: '10px 12px',
-                          borderBottom: '1px solid rgba(255,255,255,0.05)',
+                          padding: '10px 14px',
+                          borderBottom: '1px solid rgba(255,255,255,0.06)',
                           cursor: 'pointer',
-                          background: isSel ? 'rgba(0, 229, 155, 0.2)' : 'transparent',
+                          background: isSel ? 'rgba(0, 229, 155, 0.18)' : 'transparent',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          gap: 10,
+                          gap: 12,
                           transition: 'background 0.2s ease'
                         }}
                       >
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
-                          <span style={{ 
-                            fontWeight: isSel ? 900 : 700, 
-                            color: isSel ? 'var(--teal)' : '#fff',
-                            fontSize: 13,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap'
-                          }}>
-                            {dispName}
-                          </span>
-                          {dispPhone && dispPhone !== dispName && (
-                            <span style={{ fontSize: 11, color: 'var(--ink2)', fontFamily: 'monospace' }}>
-                              📱 {dispPhone}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ 
+                              fontWeight: isSel ? 900 : 700, 
+                              color: isSel ? 'var(--teal)' : '#fff',
+                              fontSize: 13.5,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {dispName}
+                            </span>
+                            {dispPhone && (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                fontSize: 11.5,
+                                fontWeight: 800,
+                                padding: '2px 8px',
+                                borderRadius: 6,
+                                background: isSel ? 'rgba(0, 229, 155, 0.25)' : 'rgba(56, 189, 248, 0.12)',
+                                color: isSel ? '#00e59b' : '#38bdf8',
+                                border: isSel ? '1px solid var(--teal)' : '1px solid rgba(56, 189, 248, 0.3)',
+                                fontFamily: 'monospace'
+                              }}>
+                                📞 {dispPhone}
+                              </span>
+                            )}
+                          </div>
+                          {c.realPhone && dispPhone && (
+                            <span style={{ fontSize: 10.5, color: 'var(--ink2)', fontFamily: 'monospace' }}>
+                              Número puro: +{c.realPhone}
                             </span>
                           )}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                           {isSel ? (
                             <span style={{ 
-                              padding: '2px 8px', 
+                              padding: '4px 10px', 
                               borderRadius: 6, 
                               background: 'var(--teal)', 
                               color: '#081018', 
-                              fontSize: 10.5, 
+                              fontSize: 11, 
                               fontWeight: 900 
                             }}>
                               Selecionado ✓
                             </span>
                           ) : (
                             <span style={{ 
-                              padding: '2px 8px', 
+                              padding: '4px 10px', 
                               borderRadius: 6, 
-                              background: 'rgba(255,255,255,0.05)', 
+                              background: 'rgba(255,255,255,0.06)', 
                               color: 'var(--ink2)', 
-                              fontSize: 10.5 
+                              fontSize: 11,
+                              fontWeight: 700
                             }}>
                               Selecionar
                             </span>
@@ -4211,20 +4280,41 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           {/* Contato Selecionado */}
           {selectedContact && (
             <div style={{
-              padding: '10px 14px',
-              borderRadius: 10,
-              background: 'rgba(0, 229, 155, 0.1)',
-              border: '1px solid var(--teal)',
+              padding: '12px 16px',
+              borderRadius: 12,
+              background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.15), rgba(56, 189, 248, 0.08))',
+              border: '1.5px solid var(--teal)',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between'
+              justifyContent: 'space-between',
+              gap: 12
             }}>
               <div>
-                <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 800 }}>CONTATO SELECIONADO:</div>
-                <div style={{ fontSize: 13.5, fontWeight: 900, color: '#fff' }}>{selectedContact.name}</div>
-                <div style={{ fontSize: 12, color: 'var(--ink2)' }}>{selectedContact.phone}</div>
+                <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  ✓ CREDOR / CONTATO SELECIONADO:
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+                  <div style={{ fontSize: 14.5, fontWeight: 900, color: '#fff' }}>
+                    {selectedContact.name}
+                  </div>
+                  <div style={{ 
+                    fontSize: 13, 
+                    fontWeight: 800, 
+                    color: '#00e59b',
+                    background: 'rgba(0, 229, 155, 0.2)',
+                    padding: '2px 10px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(0, 229, 155, 0.4)',
+                    fontFamily: 'monospace'
+                  }}>
+                    📞 {selectedContact.displayPhone || formatPhoneBR(selectedContact.phone) || selectedContact.phone}
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 2 }}>
+                  Identificador WhatsApp: {selectedContact.jid || selectedContact.phone}
+                </div>
               </div>
-              <span style={{ fontSize: 20 }}>✅</span>
+              <span style={{ fontSize: 24 }}>✅</span>
             </div>
           )}
           {/* Navegação da Etapa 1 */}
@@ -5233,11 +5323,11 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             }}>
               <div>
                 <div style={{ fontSize: 11, color: 'var(--ink2)', fontWeight: 700 }}>👤 CREDOR / ALVO:</div>
-                <div style={{ fontSize: 13, fontWeight: 900, color: '#fff', marginTop: 2 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 900, color: '#fff', marginTop: 2 }}>
                   {selectedContact?.name || 'Credor'}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--teal)' }}>
-                  {selectedContact?.phone || manualPhone || (uploadedChatFile ? uploadedChatFile.name : 'Não selecionado')}
+                <div style={{ fontSize: 12, color: 'var(--teal)', fontWeight: 800, fontFamily: 'monospace', marginTop: 2 }}>
+                  📞 {selectedContact?.displayPhone || (selectedContact?.phone ? formatPhoneBR(selectedContact.phone) : '') || manualPhone || (uploadedChatFile ? uploadedChatFile.name : 'Não selecionado')}
                 </div>
               </div>
 
