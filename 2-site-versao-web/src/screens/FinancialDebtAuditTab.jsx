@@ -772,9 +772,16 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     txt += `ALVO AUDITADO: ${targetInfo}\r\n`;
     txt += `DATA DA EMISSÃO: ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}\r\n`;
     txt += `MODO DE EXECUÇÃO: ${auditResult.executionMode === 'auto' ? 'Automático (Identificado e Transcrito por IA)' : 'Manual'}\r\n`;
-    txt += `TOTAL DE MENSAGENS E ÁUDIOS PROCESSADOS: ${auditResult.fullDialog.length}\r\n`;
-    txt += `TOTAL DE ÁUDIOS TRANSCREVความADOS POR IA: ${auditResult.audioTranscripts?.length || 0}\r\n`;
     txt += `CRITÉRIO DE AMORTIZAÇÃO: Código Civil Brasileiro art. 354 (Amortização Linear dos Juros Primeiro)\r\n\r\n`;
+    txt += '================================================================================\r\n';
+    txt += 'ESTATÍSTICAS DA CONVERSA ANALISADA (100% DA 1ª À ÚLTIMA MENSAGEM):\r\n';
+    txt += `• Total Geral de Mensagens Examinadas: ${auditResult.metrics?.totalMensagens || auditResult.fullDialog?.length || 0}\r\n`;
+    txt += `• Mensagens de Texto Lidas: ${auditResult.metrics?.totalTextos || auditResult.textRecords?.length || 0}\r\n`;
+    txt += `• Áudios de Voz Escutados e Transcritos: ${auditResult.metrics?.totalAudios || auditResult.audioTranscripts?.length || 0}\r\n`;
+    txt += `• Imagens e Prints Periciados via OCR: ${auditResult.metrics?.totalImagens || 0}\r\n`;
+    txt += `• Comprovantes Bancários Identificados: ${auditResult.receipts?.length || 0}\r\n`;
+    txt += `• Período Histórico Abrangido: de ${auditResult.metrics?.periodoInicio || '-'} até ${auditResult.metrics?.periodoFim || '-'}\r\n`;
+    txt += '================================================================================\r\n\r\n';
     txt += '--------------------------------------------------------------------------------\r\n';
     txt += 'VEREDITO OFICIAL DA PERÍCIA (QUEM DEVE A QUEM):\r\n';
     if (auditResult.status === 'QUITADO_PAGO_A_MAIS') {
@@ -990,6 +997,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       const audioTranscripts = [];
       const whatsappImageReceipts = [];
       const fullConversationDialog = [];
+      let textCount = 0;
       let audioCount = 0;
       let imageCount = 0;
 
@@ -1016,6 +1024,15 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           msg.messageType === 'imageMessage' ||
           (msg.message?.documentMessage?.mimetype && msg.message?.documentMessage?.mimetype.startsWith('image/'))
         );
+
+        if (isAudio) {
+          audioCount++;
+        } else if (isImage) {
+          imageCount++;
+        }
+        if (textContent.trim()) {
+          textCount++;
+        }
 
         const senderNameOnly = isFromMe ? myUserName : targetContactName;
 
@@ -1705,6 +1722,15 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         negotiations: finalNegotiations,
         unmadeAmortizations: finalUnmadeAmortizations,
         installmentsCharged: finalInstallments,
+        metrics: {
+          totalMensagens: rawMessages.length,
+          totalTextos: textCount,
+          totalAudios: audioCount,
+          totalImagens: imageCount,
+          totalComprovantes: allPayments.length,
+          periodoInicio: rawMessages.length > 0 ? (rawMessages[0].isoDate || (rawMessages[0].messageTimestamp ? new Date(rawMessages[0].messageTimestamp * 1000).toLocaleDateString('pt-BR') : 'Início')) : '-',
+          periodoFim: rawMessages.length > 0 ? (rawMessages[rawMessages.length - 1].isoDate || (rawMessages[rawMessages.length - 1].messageTimestamp ? new Date(rawMessages[rawMessages.length - 1].messageTimestamp * 1000).toLocaleDateString('pt-BR') : 'Hoje')) : '-'
+        },
         aiReport: aiAuditResponse || {
           diagnostico_pericial: `Após reconstituição contábil com base em dias corridos e no Código Civil art. 354 sobre ${activeDebts.length} operações de empréstimos (Total: R$ ${totalContracted.toFixed(2)}), apurou-se que foram pagos R$ ${totalPaid.toFixed(2)}. ${finalDebtBalance <= 0 ? `Dívida TOTALMENTE QUITADA, restando saldo credor a favor do devedor de R$ ${finalOverpaid.toFixed(2)} pago a mais a ser devolvido pelo número ${targetContactDisplay}!` : `Saldo devedor restante justo a pagar ao número ${targetContactDisplay}: R$ ${finalDebtBalance.toFixed(2)}.`}`,
           irregularidades_detectadas: [
@@ -1767,6 +1793,14 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         ['Saldo Devedor Real Restante:', auditResult.saldoFinalReal],
         ['Valor Pago a Mais a Restituir (Indébito):', auditResult.totalPagoAMais],
         ['Situação Final da Dívida:', auditResult.status === 'QUITADO_PAGO_A_MAIS' ? 'TOTALMENTE QUITADA - PAGOU A MAIS' : 'SALDO RESTANTE RECALCULADO'],
+        [''],
+        ['ESTATÍSTICAS DA CONVERSA ANALISADA (WHATSAPP):'],
+        ['Total Geral de Mensagens Analisadas (1ª à última):', auditResult.metrics?.totalMensagens || auditResult.fullDialog?.length || 0],
+        ['Mensagens de Texto Lidas:', auditResult.metrics?.totalTextos || auditResult.textRecords?.length || 0],
+        ['Áudios de Voz Escutados e Transcritos:', auditResult.metrics?.totalAudios || auditResult.audioTranscripts?.length || 0],
+        ['Imagens e Prints Periciados (OCR):', auditResult.metrics?.totalImagens || 0],
+        ['Comprovantes Bancários Validados:', auditResult.receipts?.length || 0],
+        ['Período Histórico Auditado:', `${auditResult.metrics?.periodoInicio || '-'} até ${auditResult.metrics?.periodoFim || '-'}`],
         [''],
         ['PARECER TÉCNICO PERICIAL:'],
         [auditResult.aiReport?.diagnostico_pericial || ''],
@@ -2001,7 +2035,17 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             <tr><td><strong>Regime de Juros:</strong></td><td>Pro-Rata Die (cálculo diário em dias corridos sobre o capital principal pendente)</td></tr>
           </table>
 
-          <h2>2. Resumo Geral dos Valores Apurados</h2>
+          <h2>2. Escopo Pericial & Estatísticas da Conversa (WhatsApp)</h2>
+          <table>
+            <tr><td width="35%"><strong>Total Geral de Mensagens Analisadas:</strong></td><td><strong>${auditResult.metrics?.totalMensagens || auditResult.fullDialog?.length || 0}</strong> (examinadas da 1ª à última mensagem)</td></tr>
+            <tr><td><strong>Mensagens de Texto Lidas:</strong></td><td>${auditResult.metrics?.totalTextos || auditResult.textRecords?.length || 0} textos examinados</td></tr>
+            <tr><td><strong>Áudios de Voz Escutados e Transcritos:</strong></td><td><strong>${auditResult.metrics?.totalAudios || auditResult.audioTranscripts?.length || 0} áudios</strong> (transcrição pericial com IA)</td></tr>
+            <tr><td><strong>Imagens e Prints Periciados (OCR):</strong></td><td><strong>${auditResult.metrics?.totalImagens || 0} imagens/prints</strong> (leitura ótica de comprovantes e extratos)</td></tr>
+            <tr><td><strong>Comprovantes Bancários Validados:</strong></td><td>${auditResult.receipts?.length || 0} pagamentos comprovados</td></tr>
+            <tr><td><strong>Período Histórico Auditado:</strong></td><td>De <strong>${auditResult.metrics?.periodoInicio || '-'}</strong> até <strong>${auditResult.metrics?.periodoFim || '-'}</strong></td></tr>
+          </table>
+
+          <h2>3. Resumo Geral dos Valores Apurados</h2>
           <table>
             <thead>
               <tr>
@@ -2326,7 +2370,17 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             <tr><td><strong>Regime de Juros:</strong></td><td>Pro-Rata Die (cálculo diário em dias corridos)</td></tr>
           </table>
 
-          <h2>2. Resumo Geral dos Valores Apurados</h2>
+          <h2>2. Escopo Pericial & Estatísticas da Conversa (WhatsApp)</h2>
+          <table>
+            <tr><td width="35%"><strong>Total Geral de Mensagens Analisadas:</strong></td><td><strong>${auditResult.metrics?.totalMensagens || auditResult.fullDialog?.length || 0}</strong> (examinadas da 1ª à última)</td></tr>
+            <tr><td><strong>Mensagens de Texto Lidas:</strong></td><td>${auditResult.metrics?.totalTextos || auditResult.textRecords?.length || 0} textos examinados</td></tr>
+            <tr><td><strong>Áudios de Voz Escutados e Transcritos:</strong></td><td><strong>${auditResult.metrics?.totalAudios || auditResult.audioTranscripts?.length || 0} áudios</strong> (transcrição pericial com IA)</td></tr>
+            <tr><td><strong>Imagens e Prints Periciados (OCR):</strong></td><td><strong>${auditResult.metrics?.totalImagens || 0} imagens/prints</strong> (leitura de comprovantes e extratos)</td></tr>
+            <tr><td><strong>Comprovantes Bancários Validados:</strong></td><td>${auditResult.receipts?.length || 0} pagamentos comprovados</td></tr>
+            <tr><td><strong>Período Histórico Auditado:</strong></td><td>De <strong>${auditResult.metrics?.periodoInicio || '-'}</strong> até <strong>${auditResult.metrics?.periodoFim || '-'}</strong></td></tr>
+          </table>
+
+          <h2>3. Resumo Geral dos Valores Apurados</h2>
           <table>
             <thead>
               <tr><th>Descrição do Item</th><th>Valor Apurado (R$)</th><th>Observações</th></tr>
@@ -4903,6 +4957,115 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 )}
               </div>
             )}
+          </div>
+
+          {/* ══════════════════════════════════════════════════════════════════ */}
+          {/* 📊 PAINEL DE ESTATÍSTICAS FORENSES: MENSAGENS, ÁUDIOS, TEXTOS E IMAGENS */}
+          {/* ══════════════════════════════════════════════════════════════════ */}
+          <div style={{
+            padding: '16px 20px',
+            borderRadius: 14,
+            background: 'rgba(15, 23, 42, 0.95)',
+            border: '1px solid rgba(56, 189, 248, 0.35)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 900, color: '#38BDF8', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 18 }}>📊</span>
+                MÉTRICAS DA PERÍCIA FORENSE (DADOS EXTRAÍDOS DO WHATSAPP)
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink2)', fontWeight: 700 }}>
+                📅 Período Auditado: <strong style={{ color: '#fff' }}>{auditResult.metrics?.periodoInicio || '-'}</strong> até <strong style={{ color: '#fff' }}>{auditResult.metrics?.periodoFim || '-'}</strong>
+              </div>
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+              gap: 10
+            }}>
+              {/* Total Geral de Mensagens */}
+              <div style={{
+                padding: '12px 14px',
+                borderRadius: 10,
+                background: 'rgba(0,0,0,0.4)',
+                border: '1px solid rgba(255,255,255,0.06)'
+              }}>
+                <div style={{ fontSize: 11, color: 'var(--ink2)', fontWeight: 800 }}>💬 TOTAL MENSAGENS:</div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: '#fff', marginTop: 2 }}>
+                  {auditResult.metrics?.totalMensagens || auditResult.fullDialog?.length || 0}
+                </div>
+                <div style={{ fontSize: 10.5, color: 'var(--teal)', marginTop: 2 }}>
+                  100% da 1ª à última
+                </div>
+              </div>
+
+              {/* Mensagens de Texto */}
+              <div style={{
+                padding: '12px 14px',
+                borderRadius: 10,
+                background: 'rgba(0,0,0,0.4)',
+                border: '1px solid rgba(255,255,255,0.06)'
+              }}>
+                <div style={{ fontSize: 11, color: 'var(--ink2)', fontWeight: 800 }}>📝 TEXTOS LIDOS:</div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: '#38BDF8', marginTop: 2 }}>
+                  {auditResult.metrics?.totalTextos || auditResult.textRecords?.length || 0}
+                </div>
+                <div style={{ fontSize: 10.5, color: 'var(--ink2)', marginTop: 2 }}>
+                  Diálogos examinados
+                </div>
+              </div>
+
+              {/* Áudios Escutados & Transcritos */}
+              <div style={{
+                padding: '12px 14px',
+                borderRadius: 10,
+                background: 'rgba(0,0,0,0.4)',
+                border: '1px solid rgba(245, 158, 11, 0.3)'
+              }}>
+                <div style={{ fontSize: 11, color: '#F59E0B', fontWeight: 800 }}>🎙️ ÁUDIOS OUVIDOS:</div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: '#F59E0B', marginTop: 2 }}>
+                  {auditResult.metrics?.totalAudios || auditResult.audioTranscripts?.length || 0}
+                </div>
+                <div style={{ fontSize: 10.5, color: 'var(--ink2)', marginTop: 2 }}>
+                  Transcritos com IA
+                </div>
+              </div>
+
+              {/* Imagens & Prints Periciados */}
+              <div style={{
+                padding: '12px 14px',
+                borderRadius: 10,
+                background: 'rgba(0,0,0,0.4)',
+                border: '1px solid rgba(0, 229, 155, 0.3)'
+              }}>
+                <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 800 }}>🖼️ PRINTS / IMAGENS:</div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--teal)', marginTop: 2 }}>
+                  {auditResult.metrics?.totalImagens || 0}
+                </div>
+                <div style={{ fontSize: 10.5, color: 'var(--ink2)', marginTop: 2 }}>
+                  Periciados via OCR
+                </div>
+              </div>
+
+              {/* Comprovantes Válidos */}
+              <div style={{
+                padding: '12px 14px',
+                borderRadius: 10,
+                background: 'rgba(0,0,0,0.4)',
+                border: '1px solid rgba(16, 185, 129, 0.3)'
+              }}>
+                <div style={{ fontSize: 11, color: '#10B981', fontWeight: 800 }}>🧾 PAGAMENTOS IDENTIFICADOS:</div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: '#10B981', marginTop: 2 }}>
+                  {auditResult.receipts?.length || 0}
+                </div>
+                <div style={{ fontSize: 10.5, color: 'var(--ink2)', marginTop: 2 }}>
+                  Cruzados no cálculo
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* ══════════════════════════════════════════════════════════════════ */}
