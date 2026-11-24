@@ -179,8 +179,9 @@ Você recebeu o histórico completo cronológico de uma negociação no WhatsApp
 - Valor inicial aproximado do empréstimo: ${valorEmprestimoInformado ? `R$ ${valorEmprestimoInformado}` : 'Deduzir das primeiras mensagens'}
 
 DADOS DA NEGOCIAÇÃO:
+IMPORTANTE: Analise minuciosamente TODAS as mensagens trocadas, tanto as enviadas pelo DEVEDOR (${nomeDevedor || 'Devedor'}) quanto as enviadas pelo CREDOR (${nomeCredor || 'Credor'}).
 MENSAGENS E ÁUDIOS RELEVANTES:
-${JSON.stringify([...mensagensTexto, ...audiosTranscritos].slice(-150), null, 2)}
+${JSON.stringify([...mensagensTexto, ...audiosTranscritos], null, 2)}
 
 COMPROVANTES DE PAGAMENTO IDENTIFICADOS:
 ${JSON.stringify(comprovantesPagamento, null, 2)}
@@ -319,7 +320,8 @@ Identifique AUTOMATICAMENTE cada evento em que:
    - evidencia: trecho da mensagem ou áudio que comprova este débito.
 
 DADOS DA CONVERSA E ÁUDIOS:
-${JSON.stringify([...mensagensTexto, ...audiosTranscritos].slice(-150), null, 2)}
+IMPORTANTE: Analise minuciosamente TODAS as mensagens de ambos os lados (enviadas pelo Devedor e pelo Credor).
+${JSON.stringify([...mensagensTexto, ...audiosTranscritos], null, 2)}
 
 Retorne EXCLUSIVAMENTE um JSON com esta estrutura:
 {

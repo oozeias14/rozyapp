@@ -12,38 +12,9 @@ export default function TopBar({ totalUsers }) {
   }, [theme]);
 
   useEffect(() => {
-    const updateTime = () => {
-      const startTime = localStorage.getItem('session_start_time');
-      if (!startTime) {
-        setSessionTimeStr('');
-        return;
-      }
-      const elapsedSeconds = Math.floor((Date.now() - parseInt(startTime, 10)) / 1000);
-      const limitSeconds = parseInt(localStorage.getItem('session_limit_seconds') || (localStorage.getItem('is_staff_user') === 'true' ? '1800' : '600'), 10);
-      const remainingSeconds = limitSeconds - elapsedSeconds;
-
-      if (remainingSeconds <= 0) {
-        setSessionTimeStr('00:00');
-        // Desloga o usuário automaticamente ao zerar o tempo da sessão
-        localStorage.removeItem('session_start_time');
-        localStorage.removeItem('active_tab');
-        localStorage.removeItem('app_mode');
-        localStorage.removeItem('admin_active_tab');
-        supabase.auth.signOut().then(() => {
-          window.location.reload();
-        });
-        return;
-      }
-      
-      const hours = Math.floor(remainingSeconds / 3600);
-      const m = Math.floor((remainingSeconds % 3600) / 60).toString().padStart(2, '0');
-      const s = (remainingSeconds % 60).toString().padStart(2, '0');
-      setSessionTimeStr(hours > 0 ? `${hours}:${m}:${s}` : `${m}:${s}`);
-    };
-
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
+    // SESSÃO ILIMITADA: Tempo permanente sem expiração para não interromper a perícia financeira
+    localStorage.setItem('session_limit_seconds', '999999999');
+    setSessionTimeStr('Ilimitada (Ativa)');
   }, []);
 
   function toggleTheme() {

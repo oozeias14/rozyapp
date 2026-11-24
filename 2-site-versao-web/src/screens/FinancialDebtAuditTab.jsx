@@ -774,8 +774,11 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     txt += `MODO DE EXECUÇÃO: ${auditResult.executionMode === 'auto' ? 'Automático (Identificado e Transcrito por IA)' : 'Manual'}\r\n`;
     txt += `CRITÉRIO DE AMORTIZAÇÃO: Código Civil Brasileiro art. 354 (Amortização Linear dos Juros Primeiro)\r\n\r\n`;
     txt += '================================================================================\r\n';
-    txt += 'ESTATÍSTICAS DA CONVERSA ANALISADA (100% DA 1ª À ÚLTIMA MENSAGEM):\r\n';
+    txt += 'ESTATÍSTICAS DA CONVERSA ANALISADA (100% DA 1ª À ÚLTIMA MENSAGEM - AMBOS OS LADOS):\r\n';
     txt += `• Total Geral de Mensagens Examinadas: ${auditResult.metrics?.totalMensagens || auditResult.fullDialog?.length || 0}\r\n`;
+    txt += `• Data da 1ª Mensagem da Conversa: ${auditResult.firstMessage?.dateTime || auditResult.firstMessage?.date || '-'} (${auditResult.firstMessage?.sender || '-'})\r\n`;
+    txt += `• Data da Última Mensagem da Conversa: ${auditResult.lastMessage?.dateTime || auditResult.lastMessage?.date || '-'}\r\n`;
+    txt += `• Ocorrências de Palavras-Chave (Áudios/Textos): ${auditResult.keywordEvents?.length || 0}\r\n`;
     txt += `• Mensagens de Texto Lidas: ${auditResult.metrics?.totalTextos || auditResult.textRecords?.length || 0}\r\n`;
     txt += `• Áudios de Voz Escutados e Transcritos: ${auditResult.metrics?.totalAudios || auditResult.audioTranscripts?.length || 0}\r\n`;
     txt += `• Imagens e Prints Periciados via OCR: ${auditResult.metrics?.totalImagens || 0}\r\n`;
@@ -855,6 +858,18 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           });
         }
         txt += '\r\n';
+      });
+    }
+
+    txt += '================================================================================\r\n';
+    txt += 'CRONOLOGIA DE TODAS AS MENSAGENS E ÁUDIOS COM PALAVRAS-CHAVE IDENTIFICADAS:\r\n';
+    txt += '================================================================================\r\n';
+    if ((auditResult.keywordEvents || []).length === 0) {
+      txt += 'Nenhuma menção de palavra-chave encontrada.\r\n\r\n';
+    } else {
+      auditResult.keywordEvents.forEach((ev, idx) => {
+        txt += `[${idx + 1}] Data/Hora: ${ev.dateTime || `${ev.date} ${ev.time || ''}`} | Tipo: ${ev.mediaTypeLabel || ev.type} | Remetente: ${ev.sender}\r\n`;
+        txt += `    ↳ "${ev.content}"\r\n\r\n`;
       });
     }
 
@@ -1273,8 +1288,45 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         return new Date(a.date) - new Date(b.date);
       });
 
+      // Identificar primeira e última mensagem da conversa de ambos os lados
+      const firstMessage = fullConversationDialog.length > 0 ? {
+        date: fullConversationDialog[0].date,
+        time: fullConversationDialog[0].time || '',
+        dateTime: fullConversationDialog[0].dateTime || fullConversationDialog[0].date,
+        sender: fullConversationDialog[0].sender,
+        content: fullConversationDialog[0].content
+      } : null;
+
+      const lastMessage = fullConversationDialog.length > 0 ? {
+        date: fullConversationDialog[fullConversationDialog.length - 1].date,
+        time: fullConversationDialog[fullConversationDialog.length - 1].time || '',
+        dateTime: fullConversationDialog[fullConversationDialog.length - 1].dateTime || fullConversationDialog[fullConversationDialog.length - 1].date,
+        sender: fullConversationDialog[fullConversationDialog.length - 1].sender,
+        content: fullConversationDialog[fullConversationDialog.length - 1].content
+      } : null;
+
+      // Extrair todas as ocorrências de conversas e áudios com palavras-chave relevantes
+      const KEYWORD_REGEX = /(empr[ée]stim\w*|renegoci\w*|amortiz\w*|parcel\w*|pag\w*|juros|taxa|saldo|d[íi]vida|abat\w*|quitar\w*|quitad\w*)/i;
+      const keywordEvents = fullConversationDialog.filter(item => {
+        return KEYWORD_REGEX.test(item.content || '') || KEYWORD_REGEX.test(item.resumoFinanceiro || '');
+      }).map(item => ({
+        id: item.id,
+        date: item.date,
+        time: item.time,
+        dateTime: item.dateTime,
+        sender: item.sender,
+        isFromMe: item.isFromMe,
+        type: item.type === 'AUDIO' ? 'audio' : item.type === 'IMAGE' ? 'image' : 'text',
+        mediaTypeLabel: item.mediaTypeLabel,
+        content: item.content
+      }));
+
       addLog(`🎙️ Processamento concluído: ${audioTranscripts.length} áudio(s) transcritos e ${imageCount} print(s) periciados via OCR.`, 'info');
       addLog(`📜 Diálogo completo consolidado com ${fullConversationDialog.length} registros no total!`, 'success');
+      if (firstMessage) {
+        addLog(`📅 Data da 1ª mensagem da conversa: ${firstMessage.dateTime} (${firstMessage.sender})`, 'info');
+      }
+      addLog(`⭐ Encontradas ${keywordEvents.length} ocorrências de áudios/mensagens com palavras-chave financeiras.`, 'info');
 
       // ── FASE 3: CONSOLIDAÇÃO DE COMPROVANTES E PAGAMENTOS ─────────────
       setAuditProgress({ current: 65, total: 100, stepLabel: 'Fase 3/4: Cruzando comprovantes, prints e pagamentos efetuados...' });
@@ -1722,6 +1774,9 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         negotiations: finalNegotiations,
         unmadeAmortizations: finalUnmadeAmortizations,
         installmentsCharged: finalInstallments,
+        firstMessage,
+        lastMessage,
+        keywordEvents,
         metrics: {
           totalMensagens: rawMessages.length,
           totalTextos: textCount,
@@ -1750,6 +1805,19 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     } finally {
       setIsAuditing(false);
     }
+  }
+
+  // Função auxiliar para destacar palavras-chave em HTML para Word e PDF
+  function highlightKeywordsHtml(text) {
+    if (!text) return '';
+    const escaped = String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    return escaped.replace(
+      /(empr[ée]stim\w*|renegoci\w*|amortiz\w*|parcel\w*|pag\w*|juros|taxa|saldo|d[íi]vida|abat\w*|quitar\w*|quitad\w*)/gi,
+      '<mark style="background-color: #fef08a; color: #854d0e; font-weight: bold; padding: 1px 4px; border-radius: 3px;">$1</mark>'
+    );
   }
 
   // ── GERADOR DE PLANILHA EXCEL (.XLSX) COM DIÁLOGO TRANSCRITO E AMORTIZAÇÕES ──
@@ -1794,8 +1862,12 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         ['Valor Pago a Mais a Restituir (Indébito):', auditResult.totalPagoAMais],
         ['Situação Final da Dívida:', auditResult.status === 'QUITADO_PAGO_A_MAIS' ? 'TOTALMENTE QUITADA - PAGOU A MAIS' : 'SALDO RESTANTE RECALCULADO'],
         [''],
-        ['ESTATÍSTICAS DA CONVERSA ANALISADA (WHATSAPP):'],
+        ['ESTATÍSTICAS DA CONVERSA ANALISADA (WHATSAPP - AMBOS OS LADOS):'],
         ['Total Geral de Mensagens Analisadas (1ª à última):', auditResult.metrics?.totalMensagens || auditResult.fullDialog?.length || 0],
+        ['Data da 1ª Mensagem da Conversa:', auditResult.firstMessage?.dateTime || auditResult.firstMessage?.date || '-'],
+        ['Remetente da 1ª Mensagem:', auditResult.firstMessage?.sender || '-'],
+        ['Data da Última Mensagem da Conversa:', auditResult.lastMessage?.dateTime || auditResult.lastMessage?.date || '-'],
+        ['Total de Ocorrências com Palavras-Chave (Áudios/Textos):', auditResult.keywordEvents?.length || 0],
         ['Mensagens de Texto Lidas:', auditResult.metrics?.totalTextos || auditResult.textRecords?.length || 0],
         ['Áudios de Voz Escutados e Transcritos:', auditResult.metrics?.totalAudios || auditResult.audioTranscripts?.length || 0],
         ['Imagens e Prints Periciados (OCR):', auditResult.metrics?.totalImagens || 0],
@@ -1960,6 +2032,21 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       const wsCharged = XLSX.utils.aoa_to_sheet([chargedHeaders, ...chargedRows]);
       XLSX.utils.book_append_sheet(wb, wsCharged, 'Parcelas Cobradas');
 
+      // ABA 9: TODAS AS MENSAGENS E ÁUDIOS COM PALAVRAS-CHAVE E DATAS
+      const kwHeaders = ['Ordem', 'Data e Hora', 'Data', 'Hora', 'Remetente', 'Tipo de Mídia', 'Origem', 'Conteúdo da Mensagem / Áudio'];
+      const kwRows = (auditResult.keywordEvents || []).map((ev, i) => [
+        i + 1,
+        ev.dateTime || `${ev.date} ${ev.time || ''}`,
+        ev.date || '',
+        ev.time || '',
+        ev.sender || (ev.isFromMe ? 'Eu (Devedor)' : 'Credor'),
+        ev.mediaTypeLabel || (ev.type === 'audio' ? 'Áudio de Voz' : ev.type === 'image' ? 'Imagem / Print' : 'Texto'),
+        ev.isFromMe ? 'Devedor' : 'Credor',
+        ev.content || ''
+      ]);
+      const wsKw = XLSX.utils.aoa_to_sheet([kwHeaders, ...kwRows]);
+      XLSX.utils.book_append_sheet(wb, wsKw, 'Palavras-Chave e Datas');
+
       const safePhone = (selectedContact?.phone || manualPhone || 'credor').replace(/\D/g, '');
       const filename = `pericia_financeira_${auditResult.executionMode}_${safePhone}_${new Date().toISOString().slice(0, 10)}.xlsx`;
       XLSX.writeFile(wb, filename);
@@ -2037,7 +2124,10 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
           <h2>2. Escopo Pericial & Estatísticas da Conversa (WhatsApp)</h2>
           <table>
-            <tr><td width="35%"><strong>Total Geral de Mensagens Analisadas:</strong></td><td><strong>${auditResult.metrics?.totalMensagens || auditResult.fullDialog?.length || 0}</strong> (examinadas da 1ª à última mensagem)</td></tr>
+            <tr><td width="35%"><strong>Total Geral de Mensagens Analisadas:</strong></td><td><strong>${auditResult.metrics?.totalMensagens || auditResult.fullDialog?.length || 0}</strong> (examinadas da 1ª à última mensagem de ambos os lados)</td></tr>
+            <tr><td><strong>Data da 1ª Mensagem da Conversa:</strong></td><td><strong>${auditResult.firstMessage?.dateTime || auditResult.firstMessage?.date || '-'}</strong> (${auditResult.firstMessage?.sender || '-'})</td></tr>
+            <tr><td><strong>Data da Última Mensagem Analisada:</strong></td><td>${auditResult.lastMessage?.dateTime || auditResult.lastMessage?.date || '-'}</td></tr>
+            <tr><td><strong>Ocorrências de Palavras-Chave:</strong></td><td><strong style="color: #b45309; background: #fef3c7; padding: 2px 6px; border-radius: 4px;">${auditResult.keywordEvents?.length || 0} mensagens e áudios com termos-chave encontrados</strong></td></tr>
             <tr><td><strong>Mensagens de Texto Lidas:</strong></td><td>${auditResult.metrics?.totalTextos || auditResult.textRecords?.length || 0} textos examinados</td></tr>
             <tr><td><strong>Áudios de Voz Escutados e Transcritos:</strong></td><td><strong>${auditResult.metrics?.totalAudios || auditResult.audioTranscripts?.length || 0} áudios</strong> (transcrição pericial com IA)</td></tr>
             <tr><td><strong>Imagens e Prints Periciados (OCR):</strong></td><td><strong>${auditResult.metrics?.totalImagens || 0} imagens/prints</strong> (leitura ótica de comprovantes e extratos)</td></tr>
@@ -2090,21 +2180,46 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </tbody>
           </table>
 
+          <h2>4. Cronologia de Mensagens e Áudios com Palavras-Chave Identificadas (Empréstimo, Renegociação, Amortização, Parcelas)</h2>
+          <p style="font-size: 9.5pt; color: #475569;">
+            Foram identificadas <strong>${(auditResult.keywordEvents || []).length}</strong> mensagens e gravações de áudio contendo termos financeiros relevantes com suas respectivas datas e horários em ordem cronológica:
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th width="15%">Data e Hora</th>
+                <th width="12%">Tipo</th>
+                <th width="18%">Remetente</th>
+                <th>Conteúdo da Conversa / Áudio Transcrito (Termos em Destaque)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(auditResult.keywordEvents || []).map(ev => `
+                <tr>
+                  <td><strong>${ev.dateTime || `${ev.date} ${ev.time || ''}`}</strong></td>
+                  <td><span class="${ev.type === 'audio' ? 'badge-amber' : 'badge-teal'}">${ev.mediaTypeLabel || ev.type}</span></td>
+                  <td><strong>${ev.sender}</strong></td>
+                  <td style="font-size: 8.5pt;">${highlightKeywordsHtml(ev.content)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
           ${auditResult.aiReport?.diagnostico_pericial ? `
-            <h2>3. Parecer Técnico & Diagnóstico Pericial</h2>
+            <h2>5. Parecer Técnico & Diagnóstico Pericial</h2>
             <div style="background-color: #f8fafc; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 10pt;">
               ${auditResult.aiReport.diagnostico_pericial}
             </div>
           ` : ''}
 
           ${(auditResult.aiReport?.irregularidades_detectadas?.length || 0) > 0 ? `
-            <h2>4. Irregularidades e Cobranças Abusivas Detectadas</h2>
+            <h2>6. Irregularidades e Cobranças Abusivas Detectadas</h2>
             <ul>
               ${auditResult.aiReport.irregularidades_detectadas.map(i => `<li style="margin-bottom: 6px;">${i}</li>`).join('')}
             </ul>
           ` : ''}
 
-          <h2>5. Negociações & Renegociações com Datas, Parcelas e Valores Totais</h2>
+          <h2>7. Negociações & Renegociações com Datas, Parcelas e Valores Totais</h2>
           <table>
             <thead>
               <tr>
@@ -2134,7 +2249,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </tbody>
           </table>
 
-          <h2>6. Amortizações que o Devedor Tinha Direito e o Credor NÃO Concedeu (Art. 354 CC)</h2>
+          <h2>8. Amortizações que o Devedor Tinha Direito e o Credor NÃO Concedeu (Art. 354 CC)</h2>
           <table>
             <thead>
               <tr>
@@ -2162,7 +2277,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </tbody>
           </table>
 
-          <h2>7. Quantidade de Parcelas Cobradas por Empréstimo com Datas</h2>
+          <h2>9. Quantidade de Parcelas Cobradas por Empréstimo com Datas</h2>
           <table>
             <thead>
               <tr>
@@ -2186,7 +2301,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </tbody>
           </table>
 
-          <h2>8. Relação de Empréstimos Concedidos</h2>
+          <h2>10. Relação de Empréstimos Concedidos</h2>
           <table>
             <thead>
               <tr>
@@ -2210,7 +2325,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </tbody>
           </table>
 
-          <h2>9. Relação de Pagamentos e Comprovantes Identificados</h2>
+          <h2>11. Relação de Pagamentos e Comprovantes Identificados</h2>
           <table>
             <thead>
               <tr>
@@ -2234,7 +2349,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </tbody>
           </table>
 
-          <h2>10. Extrato Cronológico de Amortizações (Código Civil Art. 354)</h2>
+          <h2>12. Extrato Cronológico de Amortizações (Código Civil Art. 354)</h2>
           <table>
             <thead>
               <tr>
@@ -2372,7 +2487,10 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
           <h2>2. Escopo Pericial & Estatísticas da Conversa (WhatsApp)</h2>
           <table>
-            <tr><td width="35%"><strong>Total Geral de Mensagens Analisadas:</strong></td><td><strong>${auditResult.metrics?.totalMensagens || auditResult.fullDialog?.length || 0}</strong> (examinadas da 1ª à última)</td></tr>
+            <tr><td width="35%"><strong>Total Geral de Mensagens Analisadas:</strong></td><td><strong>${auditResult.metrics?.totalMensagens || auditResult.fullDialog?.length || 0}</strong> (examinadas da 1ª à última mensagem de ambos os lados)</td></tr>
+            <tr><td><strong>Data da 1ª Mensagem da Conversa:</strong></td><td><strong>${auditResult.firstMessage?.dateTime || auditResult.firstMessage?.date || '-'}</strong> (${auditResult.firstMessage?.sender || '-'})</td></tr>
+            <tr><td><strong>Data da Última Mensagem Analisada:</strong></td><td>${auditResult.lastMessage?.dateTime || auditResult.lastMessage?.date || '-'}</td></tr>
+            <tr><td><strong>Ocorrências de Palavras-Chave:</strong></td><td><strong style="color: #b45309;">${auditResult.keywordEvents?.length || 0} mensagens e áudios com termos-chave encontrados</strong></td></tr>
             <tr><td><strong>Mensagens de Texto Lidas:</strong></td><td>${auditResult.metrics?.totalTextos || auditResult.textRecords?.length || 0} textos examinados</td></tr>
             <tr><td><strong>Áudios de Voz Escutados e Transcritos:</strong></td><td><strong>${auditResult.metrics?.totalAudios || auditResult.audioTranscripts?.length || 0} áudios</strong> (transcrição pericial com IA)</td></tr>
             <tr><td><strong>Imagens e Prints Periciados (OCR):</strong></td><td><strong>${auditResult.metrics?.totalImagens || 0} imagens/prints</strong> (leitura de comprovantes e extratos)</td></tr>
@@ -2398,14 +2516,36 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </tbody>
           </table>
 
+          <h2>4. Cronologia de Mensagens e Áudios com Palavras-Chave Identificadas (Empréstimo, Renegociação, Amortizações)</h2>
+          <table>
+            <thead>
+              <tr>
+                <th width="15%">Data e Hora</th>
+                <th width="12%">Tipo</th>
+                <th width="18%">Remetente</th>
+                <th>Conteúdo com Palavras-Chave Destacadas</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(auditResult.keywordEvents || []).map(ev => `
+                <tr>
+                  <td><strong>${ev.dateTime || `${ev.date} ${ev.time || ''}`}</strong></td>
+                  <td>${ev.mediaTypeLabel || ev.type}</td>
+                  <td><strong>${ev.sender}</strong></td>
+                  <td style="font-size: 8pt;">${highlightKeywordsHtml(ev.content)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
           ${auditResult.aiReport?.diagnostico_pericial ? `
-            <h2>3. Parecer Técnico & Diagnóstico Pericial</h2>
+            <h2>5. Parecer Técnico & Diagnóstico Pericial</h2>
             <div style="background-color: #f8fafc; padding: 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 9pt;">
               ${auditResult.aiReport.diagnostico_pericial}
             </div>
           ` : ''}
 
-          <h2>4. Negociações & Renegociações com Datas, Parcelas e Valores Totais</h2>
+          <h2>6. Negociações & Renegociações com Datas, Parcelas e Valores Totais</h2>
           <table>
             <thead>
               <tr>
@@ -2433,7 +2573,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </tbody>
           </table>
 
-          <h2>5. Amortizações que o Devedor Tinha Direito e o Credor NÃO Concedeu (Art. 354 CC)</h2>
+          <h2>7. Amortizações que o Devedor Tinha Direito e o Credor NÃO Concedeu (Art. 354 CC)</h2>
           <table>
             <thead>
               <tr>
@@ -2461,7 +2601,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </tbody>
           </table>
 
-          <h2>6. Quantidade de Parcelas Cobradas por Empréstimo com Datas</h2>
+          <h2>8. Quantidade de Parcelas Cobradas por Empréstimo com Datas</h2>
           <table>
             <thead>
               <tr>
@@ -2485,7 +2625,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </tbody>
           </table>
 
-          <h2>7. Empréstimos Contratados</h2>
+          <h2>9. Empréstimos Contratados</h2>
           <table>
             <thead>
               <tr><th>Data</th><th>Valor (R$)</th><th>Taxa (% a.m.)</th><th>Descrição</th><th>Evidência</th></tr>
@@ -2503,7 +2643,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </tbody>
           </table>
 
-          <h2>8. Extrato Cronológico de Amortizações (Código Civil Art. 354)</h2>
+          <h2>10. Extrato Cronológico de Amortizações (Código Civil Art. 354)</h2>
           <table>
             <thead>
               <tr>
@@ -5210,6 +5350,38 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 {auditResult.status === 'QUITADO_PAGO_A_MAIS' ? 'A restituir pelo credor' : 'Valor justo recalculado'}
               </div>
             </div>
+
+            {/* Card 5: Data da 1ª Mensagem */}
+            <div style={{
+              padding: 18,
+              borderRadius: 14,
+              background: 'rgba(15, 23, 42, 0.9)',
+              border: '1px solid var(--line)'
+            }}>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: '#38BDF8' }}>DATA DA 1ª MENSAGEM:</div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: '#fff', marginTop: 4 }}>
+                {auditResult.firstMessage?.date || 'Identificada'}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--teal)', marginTop: 4 }}>
+                {auditResult.firstMessage?.sender ? `Remetente: ${auditResult.firstMessage.sender}` : 'Início do diálogo completo'}
+              </div>
+            </div>
+
+            {/* Card 6: Palavras-Chave Encontradas */}
+            <div style={{
+              padding: 18,
+              borderRadius: 14,
+              background: 'rgba(15, 23, 42, 0.9)',
+              border: '1px solid rgba(245, 158, 11, 0.4)'
+            }}>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: '#F59E0B' }}>PALAVRAS-CHAVE ENCONTRADAS:</div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: '#F59E0B', marginTop: 4 }}>
+                {auditResult.keywordEvents?.length || 0} ocorrência(s)
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 4 }}>
+                Empréstimos, renegociações e parcelas
+              </div>
+            </div>
           </div>
 
           {/* BARRA DE AÇÃO: BOTÕES DE DOWNLOAD EXCEL E TEXTO */}
@@ -5418,6 +5590,24 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 }}
               >
                 🎯 Negociações & Amortizações Omitidas ({auditResult.unmadeAmortizations?.length || 0})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('keywords_timeline')}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: activeTab === 'keywords_timeline' ? 'linear-gradient(135deg, #F59E0B, #D97706)' : 'rgba(255,255,255,0.05)',
+                  color: activeTab === 'keywords_timeline' ? '#081018' : '#fff',
+                  fontWeight: 900,
+                  fontSize: 12.5,
+                  cursor: 'pointer',
+                  boxShadow: activeTab === 'keywords_timeline' ? '0 4px 15px rgba(245, 158, 11, 0.35)' : 'none'
+                }}
+              >
+                ⭐ Palavras-Chave & Datas ({auditResult.keywordEvents?.length || 0})
               </button>
 
               <button
@@ -6108,6 +6298,87 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     </div>
                   ))
                 )}
+              </div>
+            )}
+
+            {/* ABA 5: TODAS AS MENSAGENS E ÁUDIOS COM PALAVRAS-CHAVE E DATAS */}
+            {activeTab === 'keywords_timeline' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{
+                  background: 'rgba(245, 158, 11, 0.1)',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  borderRadius: 12,
+                  padding: 14,
+                  fontSize: 13,
+                  color: '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 10
+                }}>
+                  <div>
+                    <strong style={{ color: '#F59E0B' }}>⭐ Cronologia de Termos Financeiros Relevantes:</strong> Listagem cronológica de todas as mensagens e áudios que mencionam empréstimos, renegociações, amortizações e parcelas com suas respectivas datas e remetentes.
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--ink2)' }}>
+                    Data da 1ª mensagem do diálogo: <strong style={{ color: '#fff' }}>{auditResult.firstMessage?.dateTime || auditResult.firstMessage?.date || '-'}</strong> ({auditResult.firstMessage?.sender || '-'})
+                  </div>
+                </div>
+
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: 'rgba(255,255,255,0.05)', textAlign: 'left', color: 'var(--ink2)' }}>
+                        <th style={{ padding: '10px 10px', width: 160 }}>Data e Hora</th>
+                        <th style={{ padding: '10px 10px', width: 120 }}>Tipo</th>
+                        <th style={{ padding: '10px 10px', width: 160 }}>Remetente</th>
+                        <th style={{ padding: '10px 10px' }}>Conteúdo / Transcrição com Palavras-Chave em Destaque</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(auditResult.keywordEvents || []).length === 0 ? (
+                        <tr>
+                          <td colSpan={4} style={{ padding: 20, textAlign: 'center', color: 'var(--ink2)' }}>
+                            Nenhuma palavra-chave financeira específica foi encontrada no conteúdo das mensagens.
+                          </td>
+                        </tr>
+                      ) : (
+                        (auditResult.keywordEvents || []).map((ev, idx) => (
+                          <tr
+                            key={idx}
+                            style={{
+                              borderBottom: '1px solid rgba(255,255,255,0.05)',
+                              background: ev.isFromMe ? 'rgba(0, 229, 155, 0.04)' : 'rgba(245, 158, 11, 0.04)'
+                            }}
+                          >
+                            <td style={{ padding: '10px 10px', whiteSpace: 'nowrap', fontWeight: 700, color: '#fff' }}>
+                              📅 {ev.dateTime || `${ev.date} ${ev.time || ''}`}
+                            </td>
+                            <td style={{ padding: '10px 10px' }}>
+                              <span style={{
+                                display: 'inline-block',
+                                padding: '3px 8px',
+                                borderRadius: 6,
+                                fontSize: 11,
+                                fontWeight: 800,
+                                background: ev.type === 'audio' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(56, 189, 248, 0.2)',
+                                color: ev.type === 'audio' ? '#F59E0B' : '#38BDF8'
+                              }}>
+                                {ev.mediaTypeLabel || (ev.type === 'audio' ? '🎙️ Áudio' : '💬 Texto')}
+                              </span>
+                            </td>
+                            <td style={{ padding: '10px 10px', fontWeight: 800, color: ev.isFromMe ? 'var(--teal)' : '#F59E0B' }}>
+                              {ev.sender}
+                            </td>
+                            <td style={{ padding: '10px 10px', color: '#E2E8F0', lineHeight: 1.5 }}>
+                              <div dangerouslySetInnerHTML={{ __html: highlightKeywordsHtml(ev.content) }} />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
