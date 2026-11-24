@@ -21,7 +21,8 @@ import {
   fetchRecentMessagesSummary,
   isValidBrazilianDdd,
   isRealBrazilianPhone,
-  normalizeBrazilianPhoneWith9
+  normalizeBrazilianPhoneWith9,
+  fetchLastChatExchange
 } from '../lib/evolutionApi';
 
 export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
@@ -60,6 +61,32 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   const [contactSearch, setContactSearch] = useState('');
   const [linkingChat, setLinkingChat] = useState(null); // Chat com ID privado sendo vinculado manualmente
   const [linkingPhoneInput, setLinkingPhoneInput] = useState('');
+
+  // ── PRÉVIA DAS ÚLTIMAS MENSAGENS DO CONTATO SELECIONADO ──
+  const [previewExchange, setPreviewExchange] = useState({ lastFromCredor: null, lastFromMe: null });
+  const [loadingPreview, setLoadingPreview] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!selectedContact) {
+      setPreviewExchange({ lastFromCredor: null, lastFromMe: null });
+      return;
+    }
+
+    setLoadingPreview(true);
+    fetchLastChatExchange(selectedContact)
+      .then(res => {
+        if (isMounted && res) {
+          setPreviewExchange(res);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (isMounted) setLoadingPreview(false);
+      });
+
+    return () => { isMounted = false; };
+  }, [selectedContact?.jid, selectedContact?.phone, selectedContact?.lid, chats.length]);
 
   // ── PASSO 2: MODO MANUAL VS MODO AUTOMÁTICO ──
   const [step2Mode, setStep2Mode] = useState('auto'); // 'auto' (padrão com IA no final) | 'manual'
@@ -531,13 +558,16 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
       // 1. Processa conversas ativas do WhatsApp
       (chatList || []).forEach(c => {
-        const rawJid = c.id || c.remoteJid || c.jid || '';
+        const actualJid = (c.remoteJid && c.remoteJid.includes('@')) ? c.remoteJid :
+          (c.jid && c.jid.includes('@')) ? c.jid :
+          (c.id && c.id.includes('@')) ? c.id : (c.remoteJid || c.jid || c.id || '');
+        const rawJid = actualJid;
         const lowerJid = rawJid.toLowerCase();
         if (!rawJid || lowerJid.includes('@g.us') || lowerJid.includes('@broadcast') || lowerJid.includes('status@broadcast')) return;
 
-        let cleanDigits = extractCleanPhone(rawJid);
-        let isLid = lowerJid.includes('@lid');
-        let lid = isLid ? rawJid : (c.lid || null);
+        let cleanDigits = extractCleanPhone(c.remoteJid || rawJid);
+        let isLid = lowerJid.includes('@lid') || (c.remoteJid && c.remoteJid.includes('@lid'));
+        let lid = isLid ? (c.remoteJid && c.remoteJid.includes('@lid') ? c.remoteJid : rawJid) : (c.lid || null);
 
         const ct = contactsMap.get(lowerJid) || {};
         const bestName = ct.name || c.name || ct.verifiedName || c.pushName || ct.pushName || c.lastMessage?.pushName || '';
@@ -763,8 +793,13 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
         setSelectedContact(prev => {
           if (!prev || prev.phone === '5561993209444' || (prev.name && prev.name.toLowerCase().includes('estela'))) {
+            const bestJid = (primaryEstela.rawJid && primaryEstela.rawJid.includes('@')) 
+              ? primaryEstela.rawJid 
+              : (primaryEstela.lid && primaryEstela.lid.includes('@')) 
+                ? primaryEstela.lid 
+                : '5561993209444@s.whatsapp.net';
             return {
-              jid: primaryEstela.rawJid || '5561993209444@s.whatsapp.net',
+              jid: bestJid,
               phone: primaryEstela.realPhone || '5561993209444',
               displayPhone: primaryEstela.displayPhone || '(61) 99320-9444',
               name: primaryEstela.displayName || 'Estela 22',
@@ -4694,67 +4729,165 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
           {/* Contato Selecionado */}
           {selectedContact && (
-            <div style={{
-              padding: '14px 18px',
-              borderRadius: 12,
-              background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.16), rgba(56, 189, 248, 0.10))',
-              border: '1.5px solid var(--teal)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 12,
-              boxShadow: '0 4px 14px rgba(0, 229, 155, 0.12)'
-            }}>
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  ✓ CREDOR / CONTATO SELECIONADO:
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
-                  <div style={{ fontSize: 15, fontWeight: 900, color: '#fff' }}>
-                    {selectedContact.name}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{
+                padding: '14px 18px',
+                borderRadius: 12,
+                background: 'linear-gradient(135deg, rgba(0, 229, 155, 0.16), rgba(56, 189, 248, 0.10))',
+                border: '1.5px solid var(--teal)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                boxShadow: '0 4px 14px rgba(0, 229, 155, 0.12)'
+              }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    ✓ CREDOR / CONTATO SELECIONADO:
                   </div>
-                  <div style={{ 
-                    fontSize: 13, 
-                    fontWeight: 800, 
-                    color: '#00e59b',
-                    background: 'rgba(0, 229, 155, 0.2)',
-                    padding: '3px 10px',
-                    borderRadius: 8,
-                    border: '1px solid rgba(0, 229, 155, 0.4)',
-                    fontFamily: 'monospace'
-                  }}>
-                    📞 {selectedContact.displayPhone || formatPhoneBR(selectedContact.phone) || selectedContact.phone}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+                    <div style={{ fontSize: 15, fontWeight: 900, color: '#fff' }}>
+                      {selectedContact.name}
+                    </div>
+                    <div style={{ 
+                      fontSize: 13, 
+                      fontWeight: 800, 
+                      color: '#00e59b',
+                      background: 'rgba(0, 229, 155, 0.2)',
+                      padding: '3px 10px',
+                      borderRadius: 8,
+                      border: '1px solid rgba(0, 229, 155, 0.4)',
+                      fontFamily: 'monospace'
+                    }}>
+                      📞 {selectedContact.displayPhone || formatPhoneBR(selectedContact.phone) || selectedContact.phone}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 2 }}>
+                    Identificador WhatsApp: {
+                      (selectedContact.jid && selectedContact.jid.includes('@')) 
+                        ? selectedContact.jid 
+                        : (selectedContact.lid && selectedContact.lid.includes('@')) 
+                          ? selectedContact.lid 
+                          : `${selectedContact.phone || '5561993209444'}@s.whatsapp.net`
+                    }
                   </div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 2 }}>
-                  Identificador WhatsApp: {selectedContact.jid || selectedContact.phone}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedContact(null);
+                      setManualPhone('');
+                    }}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: 8,
+                      border: '1px solid rgba(239, 68, 68, 0.5)',
+                      background: 'rgba(239, 68, 68, 0.2)',
+                      color: '#ff6b6b',
+                      fontSize: 12,
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}
+                    title="Clique para desmarcar este contato e escolher outro da lista ou digitar outro número"
+                  >
+                    ✕ Desmarcar / Escolher Outro
+                  </button>
+                  <span style={{ fontSize: 24 }}>✅</span>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedContact(null);
-                    setManualPhone('');
-                  }}
-                  style={{
-                    padding: '8px 14px',
-                    borderRadius: 8,
-                    border: '1px solid rgba(239, 68, 68, 0.5)',
-                    background: 'rgba(239, 68, 68, 0.2)',
-                    color: '#ff6b6b',
-                    fontSize: 12,
-                    fontWeight: 900,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6
-                  }}
-                  title="Clique para desmarcar este contato e escolher outro da lista ou digitar outro número"
-                >
-                  ✕ Desmarcar / Escolher Outro
-                </button>
-                <span style={{ fontSize: 24 }}>✅</span>
+
+              {/* PAINEL DE CONFIRMAÇÃO DAS ÚLTIMAS MENSAGENS TROCADAS */}
+              <div style={{
+                padding: '12px 16px',
+                borderRadius: 12,
+                background: 'rgba(0, 0, 0, 0.55)',
+                border: '1px solid rgba(0, 229, 155, 0.35)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 900, color: 'var(--teal)', letterSpacing: 0.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    💬 CONFIRMAÇÃO DE CONTATO (ÚLTIMAS MENSAGENS TROCADAS):
+                  </span>
+                  {loadingPreview ? (
+                    <span style={{ fontSize: 11, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      ⏳ Carregando mensagens do WhatsApp...
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLoadingPreview(true);
+                        fetchLastChatExchange(selectedContact).then(setPreviewExchange).finally(() => setLoadingPreview(false));
+                      }}
+                      style={{
+                        background: 'rgba(56, 189, 248, 0.15)',
+                        border: '1px solid rgba(56, 189, 248, 0.4)',
+                        borderRadius: 6,
+                        color: '#38bdf8',
+                        fontSize: 11,
+                        cursor: 'pointer',
+                        fontWeight: 800,
+                        padding: '3px 8px'
+                      }}
+                      title="Recarregar últimas mensagens trocadas para confirmar contato"
+                    >
+                      🔄 Atualizar Prévia
+                    </button>
+                  )}
+                </div>
+
+                {/* estela: ultima msg */}
+                <div style={{
+                  padding: '9px 12px',
+                  borderRadius: 8,
+                  background: 'rgba(56, 189, 248, 0.09)',
+                  borderLeft: '4px solid #38bdf8',
+                  fontSize: 12.5
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                    <strong style={{ color: '#38bdf8', fontSize: 12 }}>
+                      {selectedContact.name || 'Estela'}:
+                    </strong>
+                    {previewExchange.lastFromCredor?.dateTime && (
+                      <span style={{ fontSize: 10.5, color: 'var(--ink2)', fontFamily: 'monospace' }}>
+                        🕒 {previewExchange.lastFromCredor.dateTime}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ color: '#fff', wordBreak: 'break-word', fontSize: 13, fontStyle: previewExchange.lastFromCredor ? 'normal' : 'italic' }}>
+                    {previewExchange.lastFromCredor?.text || (loadingPreview ? 'Buscando mensagem recebida...' : '(Nenhuma mensagem recebida recente encontrada)')}
+                  </div>
+                </div>
+
+                {/* eu : ultima msg */}
+                <div style={{
+                  padding: '9px 12px',
+                  borderRadius: 8,
+                  background: 'rgba(0, 229, 155, 0.09)',
+                  borderLeft: '4px solid var(--teal)',
+                  fontSize: 12.5
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                    <strong style={{ color: 'var(--teal)', fontSize: 12 }}>
+                      Eu:
+                    </strong>
+                    {previewExchange.lastFromMe?.dateTime && (
+                      <span style={{ fontSize: 10.5, color: 'var(--ink2)', fontFamily: 'monospace' }}>
+                        🕒 {previewExchange.lastFromMe.dateTime}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ color: '#fff', wordBreak: 'break-word', fontSize: 13, fontStyle: previewExchange.lastFromMe ? 'normal' : 'italic' }}>
+                    {previewExchange.lastFromMe?.text || (loadingPreview ? 'Buscando mensagem enviada...' : '(Nenhuma mensagem enviada recente encontrada)')}
+                  </div>
+                </div>
               </div>
             </div>
           )}

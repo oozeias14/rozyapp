@@ -2262,3 +2262,175 @@ export async function fetchMediaBase64FromMessage(msg) {
     return null;
   }
 }
+
+// Extrai texto limpo e legível preservando maiúsculas e identificando mídias
+export function extractCleanReadableText(m) {
+  if (!m) return '';
+  const msgObj = m.message || m;
+  
+  if (typeof msgObj.conversation === 'string' && msgObj.conversation.trim()) {
+    return msgObj.conversation.trim();
+  }
+  if (typeof msgObj.extendedTextMessage?.text === 'string' && msgObj.extendedTextMessage.text.trim()) {
+    return msgObj.extendedTextMessage.text.trim();
+  }
+  if (typeof msgObj.ephemeralMessage?.message?.conversation === 'string' && msgObj.ephemeralMessage.message.conversation.trim()) {
+    return msgObj.ephemeralMessage.message.conversation.trim();
+  }
+  if (typeof msgObj.ephemeralMessage?.message?.extendedTextMessage?.text === 'string' && msgObj.ephemeralMessage.message.extendedTextMessage.text.trim()) {
+    return msgObj.ephemeralMessage.message.extendedTextMessage.text.trim();
+  }
+  if (typeof msgObj.imageMessage?.caption === 'string' && msgObj.imageMessage.caption.trim()) {
+    return `📷 [Foto] ${msgObj.imageMessage.caption.trim()}`;
+  }
+  if (msgObj.imageMessage) return '📷 [Foto]';
+  if (typeof msgObj.videoMessage?.caption === 'string' && msgObj.videoMessage.caption.trim()) {
+    return `🎥 [Vídeo] ${msgObj.videoMessage.caption.trim()}`;
+  }
+  if (msgObj.videoMessage) return '🎥 [Vídeo]';
+  if (msgObj.audioMessage) return '🎵 [Áudio do WhatsApp]';
+  if (typeof msgObj.documentMessage?.title === 'string' || typeof msgObj.documentMessage?.fileName === 'string') {
+    return `📄 [Documento] ${msgObj.documentMessage.title || msgObj.documentMessage.fileName}`;
+  }
+  if (typeof m.body === 'string' && m.body.trim()) return m.body.trim();
+  if (typeof m.text === 'string' && m.text.trim()) return m.text.trim();
+  if (typeof m.content === 'string' && m.content.trim()) return m.content.trim();
+  return '';
+}
+
+// Busca rápida das últimas mensagens trocadas com o contato (última enviada por Mim e última enviada pelo Credor)
+export async function fetchLastChatExchange(contactOrJid) {
+  const { instanceName } = getEvolutionConfig();
+  let candidateJids = [];
+  let contactName = 'Credor';
+
+  if (contactOrJid && typeof contactOrJid === 'object') {
+    contactName = contactOrJid.name || 'Credor';
+    if (contactOrJid.jid) candidateJids.push(contactOrJid.jid);
+    if (contactOrJid.rawJid) candidateJids.push(contactOrJid.rawJid);
+    if (contactOrJid.lid) candidateJids.push(contactOrJid.lid);
+    if (contactOrJid.phone) {
+      const clean = contactOrJid.phone.replace(/\D/g, '');
+      candidateJids.push(`${clean}@s.whatsapp.net`);
+      if (clean.startsWith('55')) candidateJids.push(`${clean.substring(2)}@s.whatsapp.net`);
+      else candidateJids.push(`55${clean}@s.whatsapp.net`);
+    }
+    if (Array.isArray(contactOrJid.candidateJids)) {
+      candidateJids.push(...contactOrJid.candidateJids);
+    }
+  } else if (typeof contactOrJid === 'string' && contactOrJid.trim()) {
+    candidateJids.push(contactOrJid.trim());
+    const clean = extractCleanPhone(contactOrJid);
+    if (clean) candidateJids.push(`${clean}@s.whatsapp.net`);
+  }
+
+  // Se o contato for Estela, também garante inclusão das variações padrão
+  if (contactName.toLowerCase().includes('estela')) {
+    candidateJids.push('5561993209444@s.whatsapp.net');
+    candidateJids.push('556193209444@s.whatsapp.net');
+    candidateJids.push('61993209444@s.whatsapp.net');
+  }
+
+  // Remove IDs que sejam apenas CUID de banco de dados (que não contenham '@') se houver outros com '@'
+  const withAt = candidateJids.filter(j => j && j.includes('@'));
+  const uniqueCandidates = Array.from(new Set(withAt.length > 0 ? withAt : candidateJids.filter(Boolean)));
+
+  let lastFromCredor = null;
+  let lastFromMe = null;
+
+  // 1. Tenta buscar mensagens diretamente via endpoint /chat/findMessages por remoteJid
+  for (const cJid of uniqueCandidates) {
+    if (!cJid || !cJid.includes('@')) continue;
+    try {
+      const data = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          where: {
+            key: {
+              remoteJid: cJid
+            }
+          },
+          page: 1,
+          limit: 40
+        })
+      }).catch(() => null);
+
+      let records = data?.messages?.records || (Array.isArray(data) ? data : (data?.records || []));
+      if (!records || records.length === 0) {
+        // Tenta sintaxe plana
+        const dataAlt = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+          method: 'POST',
+          body: JSON.stringify({
+            where: {
+              remoteJid: cJid
+            },
+            page: 1,
+            limit: 40
+          })
+        }).catch(() => null);
+        records = dataAlt?.messages?.records || (Array.isArray(dataAlt) ? dataAlt : (dataAlt?.records || []));
+      }
+
+      if (Array.isArray(records) && records.length > 0) {
+        // Ordena por timestamp decrescente (mais recente primeiro)
+        records.sort((a, b) => Number(b.messageTimestamp || 0) - Number(a.messageTimestamp || 0));
+
+        for (const msg of records) {
+          const text = extractCleanReadableText(msg);
+          if (!text) continue;
+
+          const isFromMe = msg.key?.fromMe ?? false;
+          const tsSec = Number(msg.messageTimestamp || 0);
+          const dateStr = tsSec ? new Date(tsSec * 1000).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+
+          if (isFromMe && !lastFromMe) {
+            lastFromMe = { text, dateTime: dateStr, timestamp: tsSec };
+          } else if (!isFromMe && !lastFromCredor) {
+            lastFromCredor = { text, dateTime: dateStr, timestamp: tsSec };
+          }
+
+          if (lastFromMe && lastFromCredor) break;
+        }
+      }
+    } catch (e) {}
+
+    if (lastFromMe && lastFromCredor) break;
+  }
+
+  // 2. Fallback: se não encontrou ambos, busca nas mensagens recentes globais
+  if (!lastFromMe || !lastFromCredor) {
+    try {
+      const recent = await fetchRecentMessagesSummary(250);
+      const candSet = new Set(uniqueCandidates);
+      const sigSet = new Set(uniqueCandidates.map(j => extractCleanPhone(j)).filter(Boolean));
+
+      const matchedRecs = recent.filter(m => {
+        const rj = m.key?.remoteJid || m.remoteJid || '';
+        const part = m.key?.participant || m.participant || '';
+        const clR = extractCleanPhone(rj);
+        const clP = extractCleanPhone(part);
+        return candSet.has(rj) || candSet.has(part) || (clR && sigSet.has(clR)) || (clP && sigSet.has(clP));
+      });
+
+      matchedRecs.sort((a, b) => Number(b.messageTimestamp || 0) - Number(a.messageTimestamp || 0));
+
+      for (const msg of matchedRecs) {
+        const text = extractCleanReadableText(msg);
+        if (!text) continue;
+
+        const isFromMe = msg.key?.fromMe ?? false;
+        const tsSec = Number(msg.messageTimestamp || 0);
+        const dateStr = tsSec ? new Date(tsSec * 1000).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+
+        if (isFromMe && !lastFromMe) {
+          lastFromMe = { text, dateTime: dateStr, timestamp: tsSec };
+        } else if (!isFromMe && !lastFromCredor) {
+          lastFromCredor = { text, dateTime: dateStr, timestamp: tsSec };
+        }
+        if (lastFromMe && lastFromCredor) break;
+      }
+    } catch (e) {}
+  }
+
+  return { lastFromCredor, lastFromMe };
+}
