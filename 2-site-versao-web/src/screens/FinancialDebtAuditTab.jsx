@@ -14,7 +14,9 @@ import {
   buildLidPhoneMapping,
   fetchFullChatHistory,
   fetchMediaBase64FromMessage,
-  extractCleanPhone
+  extractCleanPhone,
+  getPhoneSignatures,
+  fetchRecentMessagesSummary
 } from '../lib/evolutionApi';
 
 export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
@@ -96,6 +98,24 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     const interval = setInterval(checkStatus, 4000);
     return () => clearInterval(interval);
   }, []);
+
+  // Auto-fechamento do modal de conexão assim que o WhatsApp for escaneado/conectado
+  useEffect(() => {
+    if (!showConnectModalLocal) return;
+    const interval = setInterval(async () => {
+      try {
+        const st = await fetchInstanceStatus();
+        if (st?.connected) {
+          setConnStatus(st);
+          setShowConnectModalLocal(false);
+          setQrCodeData(null);
+          setPairingCodeResult(null);
+          loadChats();
+        }
+      } catch (e) {}
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [showConnectModalLocal]);
 
   // ── COMPROVANTES AVULSOS ENVIADOS PELO USUÁRIO (PRINTS / PIX) ──
   const [uploadedReceipts, setUploadedReceipts] = useState([]);
@@ -253,12 +273,41 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     setConnectError(null);
     try {
       const res = await createOrConnectInstance();
-      if (res?.base64 || res?.qrcode) {
-        setQrCodeData(res.base64 || res.qrcode);
+      // Se a instância já estiver aberta/conectada, atualiza estado e fecha o modal
+      if (res?.instance?.state === 'open' || res?.state === 'open' || res?.status === 'open') {
+        setConnStatus({ connected: true, state: 'open' });
+        setShowConnectModalLocal(false);
+        loadChats();
+        return;
+      }
+
+      let b64 = null;
+      if (typeof res === 'string') {
+        b64 = res;
+      } else if (res?.qrcode?.base64) {
+        b64 = res.qrcode.base64;
+      } else if (res?.base64) {
+        b64 = res.base64;
+      } else if (typeof res?.qrcode === 'string') {
+        b64 = res.qrcode;
+      }
+
+      if (b64) {
+        setQrCodeData(b64);
       }
     } catch (err) {
       console.warn('Erro ao gerar QR Code:', err);
-      setConnectError(err.message || 'Servidor inacessível');
+      const errMsg = err.message || '';
+      if (errMsg.toLowerCase().includes('already in use') || errMsg.toLowerCase().includes('already open')) {
+        const st = await fetchInstanceStatus().catch(() => null);
+        if (st?.connected) {
+          setConnStatus(st);
+          setShowConnectModalLocal(false);
+          loadChats();
+          return;
+        }
+      }
+      setConnectError(errMsg || 'Servidor inacessível');
     } finally {
       setLoadingQr(false);
     }
@@ -273,8 +322,13 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     }
     setGeneratingPairing(true);
     try {
-      const code = await getPairingCode(clean);
-      setPairingCodeResult(code);
+      const res = await getPairingCode(clean);
+      const codeStr = res?.code || res?.pairingCode || (typeof res === 'string' ? res : '');
+      if (codeStr) {
+        setPairingCodeResult(codeStr);
+      } else {
+        alert('Código de pareamento não retornado. Verifique se o servidor está ativo.');
+      }
     } catch (err) {
       alert('Erro ao gerar código de pareamento: ' + err.message);
     } finally {
@@ -316,96 +370,223 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     return clean;
   }
 
-  // Carregar conversas ativas e contatos reais do WhatsApp
+  // Carregar conversas ativas e contatos reais do WhatsApp (Unificação Completa de Contatos)
   async function loadChats() {
     setLoadingChats(true);
     try {
-      const [chatList, contactList] = await Promise.all([
+      const [chatList, contactList, recentMsgs] = await Promise.all([
         fetchWhatsAppChats().catch(() => []),
-        fetchWhatsAppContacts().catch(() => [])
+        fetchWhatsAppContacts().catch(() => []),
+        fetchRecentMessagesSummary(250).catch(() => [])
       ]);
 
-      const lidToPhone = await buildLidPhoneMapping(chatList, [], contactList);
+      const lidToPhone = await buildLidPhoneMapping(chatList, recentMsgs, contactList);
 
-      // Mapeamento de contatos salvos no telefone (por JID e por telefone limpo)
+      // Identifica número do dono para não listar a si mesmo como credor
+      let ownerClean = '';
+      try {
+        const cfg = getEvolutionConfig();
+        const st = await fetchInstanceStatus().catch(() => null);
+        const ownerJid = st?.instance?.ownerJid || st?.ownerJid || cfg?.ownerJid || '';
+        if (ownerJid) ownerClean = extractCleanPhone(ownerJid);
+      } catch (e) {}
+
+      // Mapeamento de contatos com TODAS as variações telefônicas brasileiras
       const contactsMap = new Map();
       (contactList || []).forEach(ct => {
-        const ctId = ct.id || ct.remoteJid || '';
-        let ctPhone = extractCleanPhone(ct.phoneNumber || ctId);
+        const ctId = ct.id || ct.remoteJid || ct.jid || '';
+        let ctPhone = extractCleanPhone(ct.phoneNumber || ct.number || ctId);
         if (ctPhone.length < 8 && lidToPhone.has(ctPhone)) {
           ctPhone = lidToPhone.get(ctPhone);
         }
-        const ctName = ct.name || ct.pushName || '';
-        if (ctPhone) {
-          contactsMap.set(ctPhone, { ...ct, resolvedPhone: ctPhone, name: ctName });
-        }
+        const ctName = ct.name || ct.verifiedName || ct.pushName || ct.notify || ct.shortName || '';
+        const ctData = { ...ct, resolvedPhone: ctPhone, name: ctName };
+
         if (ctId) {
-          contactsMap.set(ctId, { ...ct, resolvedPhone: ctPhone, name: ctName });
+          contactsMap.set(ctId.toLowerCase(), ctData);
+        }
+        if (ctPhone) {
+          getPhoneSignatures(ctPhone).forEach(sig => {
+            contactsMap.set(sig, ctData);
+          });
         }
       });
 
-      const processedChats = (chatList || [])
-        .filter(c => {
-          const id = (c.id || c.remoteJid || '').toLowerCase();
-          return !id.includes('@g.us') && !id.includes('@broadcast');
-        })
-        .map(c => {
-          const rawJid = c.id || c.remoteJid || '';
-          let clean = extractCleanPhone(rawJid);
-          let isLid = rawJid.includes('@lid');
-          let lid = isLid ? rawJid : null;
+      // Mapa para unir conversas ativas e contatos salvos sem duplicidades
+      const mergedMap = new Map();
 
-          // Se for LID ou ID genérico, resolve para o número real de telefone do credor
-          let realPhone = '';
-          if (lidToPhone.has(clean)) {
-            realPhone = lidToPhone.get(clean);
-          } else if (c.phoneNumber) {
-            realPhone = extractCleanPhone(c.phoneNumber);
-          } else if (c.remoteJidAlt) {
-            realPhone = extractCleanPhone(c.remoteJidAlt);
-          } else if (c.lastMessage?.key?.remoteJidAlt) {
-            realPhone = extractCleanPhone(c.lastMessage.key.remoteJidAlt);
-          } else if (contactsMap.has(clean)) {
-            realPhone = contactsMap.get(clean).resolvedPhone;
-          } else if (contactsMap.has(rawJid)) {
-            realPhone = contactsMap.get(rawJid).resolvedPhone;
-          } else if (!isLid && clean.length >= 10 && clean.length <= 13) {
-            realPhone = clean;
-          }
+      // 1. Processa conversas ativas do WhatsApp
+      (chatList || []).forEach(c => {
+        const rawJid = c.id || c.remoteJid || c.jid || '';
+        const lowerJid = rawJid.toLowerCase();
+        if (!rawJid || lowerJid.includes('@g.us') || lowerJid.includes('@broadcast') || lowerJid.includes('status@broadcast')) return;
 
-          const ct = contactsMap.get(realPhone) || contactsMap.get(rawJid) || {};
-          const displayName = c.name || ct.name || c.pushName || ct.pushName || (realPhone ? formatPhoneBR(realPhone) : (clean.length <= 11 ? formatPhoneBR(clean) : 'Contato'));
-          const displayPhone = realPhone ? formatPhoneBR(realPhone) : (clean.length <= 11 ? formatPhoneBR(clean) : (displayName !== 'Contato' ? displayName : clean));
+        let clean = extractCleanPhone(rawJid);
+        let isLid = lowerJid.includes('@lid');
+        let lid = isLid ? rawJid : null;
 
-          // Lista de JIDs candidatos para busca infalível de mensagens
-          const candidateJids = [rawJid];
-          if (realPhone) {
-            candidateJids.push(`${realPhone}@s.whatsapp.net`);
-            if (realPhone.startsWith('55')) {
-              candidateJids.push(`${realPhone.substring(2)}@s.whatsapp.net`);
-            }
-          }
-          if (lid) candidateJids.push(lid);
+        let realPhone = '';
+        if (lidToPhone.has(clean)) {
+          realPhone = lidToPhone.get(clean);
+        } else if (c.phoneNumber) {
+          realPhone = extractCleanPhone(c.phoneNumber);
+        } else if (c.remoteJidAlt) {
+          realPhone = extractCleanPhone(c.remoteJidAlt);
+        } else if (c.lastMessage?.key?.remoteJidAlt) {
+          realPhone = extractCleanPhone(c.lastMessage.key.remoteJidAlt);
+        } else if (contactsMap.has(lowerJid)) {
+          realPhone = contactsMap.get(lowerJid).resolvedPhone;
+        } else if (contactsMap.has(clean)) {
+          realPhone = contactsMap.get(clean).resolvedPhone;
+        } else if (!isLid && clean.length >= 10 && clean.length <= 13) {
+          realPhone = clean;
+        }
 
-          return {
-            ...c,
+        const ct = contactsMap.get(realPhone) || contactsMap.get(clean) || contactsMap.get(lowerJid) || {};
+        const bestName = ct.name || c.name || ct.verifiedName || c.pushName || ct.pushName || c.lastMessage?.pushName || '';
+        const bestPhone = realPhone || clean;
+
+        const key = bestPhone || lowerJid;
+        mergedMap.set(key, {
+          rawJid,
+          lid,
+          realPhone: bestPhone,
+          displayName: bestName,
+          lastActivity: c.conversationTimestamp || c.timestamp || c.updatedAt || 0,
+          source: 'chat'
+        });
+      });
+
+      // 2. Processa mensagens recentes para achar conversas ativas extras
+      (recentMsgs || []).forEach(m => {
+        const rawJid = m.key?.remoteJid || '';
+        const lowerJid = rawJid.toLowerCase();
+        if (!rawJid || lowerJid.includes('@g.us') || lowerJid.includes('@broadcast') || lowerJid.includes('status@broadcast')) return;
+
+        let clean = extractCleanPhone(rawJid);
+        let isLid = lowerJid.includes('@lid');
+        let lid = isLid ? rawJid : null;
+
+        let realPhone = '';
+        if (lidToPhone.has(clean)) {
+          realPhone = lidToPhone.get(clean);
+        } else if (m.key?.remoteJidAlt) {
+          realPhone = extractCleanPhone(m.key.remoteJidAlt);
+        } else if (contactsMap.has(lowerJid)) {
+          realPhone = contactsMap.get(lowerJid).resolvedPhone;
+        } else if (contactsMap.has(clean)) {
+          realPhone = contactsMap.get(clean).resolvedPhone;
+        } else if (!isLid && clean.length >= 10 && clean.length <= 13) {
+          realPhone = clean;
+        }
+
+        const bestPhone = realPhone || clean;
+        const key = bestPhone || lowerJid;
+        const ct = contactsMap.get(bestPhone) || contactsMap.get(clean) || contactsMap.get(lowerJid) || {};
+        const pushName = m.pushName || '';
+        const bestName = ct.name || ct.verifiedName || pushName || ct.pushName || '';
+        const msgTime = m.messageTimestamp || 0;
+
+        if (mergedMap.has(key)) {
+          const existing = mergedMap.get(key);
+          if (!existing.displayName && bestName) existing.displayName = bestName;
+          if (msgTime > (existing.lastActivity || 0)) existing.lastActivity = msgTime;
+          if (!existing.lid && lid) existing.lid = lid;
+        } else {
+          mergedMap.set(key, {
             rawJid,
             lid,
-            realPhone: realPhone || clean,
-            displayPhone,
-            displayName,
-            candidateJids: Array.from(new Set(candidateJids))
-          };
-        });
+            realPhone: bestPhone,
+            displayName: bestName,
+            lastActivity: msgTime,
+            source: 'message'
+          });
+        }
+      });
 
-      // Ordena colocando quem tem nome ou telefone real identificado no topo
-      processedChats.sort((a, b) => {
-        if (a.displayName && a.displayName !== 'Contato' && (!b.displayName || b.displayName === 'Contato')) return -1;
-        if ((!a.displayName || a.displayName === 'Contato') && b.displayName && b.displayName !== 'Contato') return 1;
+      // 3. Processa a agenda de contatos do telefone (garante contatos salvos mesmo sem mensagens recentes)
+      (contactList || []).forEach(ct => {
+        const ctId = ct.id || ct.remoteJid || ct.jid || '';
+        const lowerId = ctId.toLowerCase();
+        if (lowerId.includes('@g.us') || lowerId.includes('@broadcast')) return;
+
+        let ctPhone = extractCleanPhone(ct.phoneNumber || ct.number || ctId);
+        if (ctPhone.length < 8 && lidToPhone.has(ctPhone)) {
+          ctPhone = lidToPhone.get(ctPhone);
+        }
+        if (!ctPhone && !ctId) return;
+
+        const bestPhone = ctPhone;
+        const key = bestPhone || lowerId;
+        const ctName = ct.name || ct.verifiedName || ct.pushName || ct.notify || ct.shortName || '';
+
+        if (mergedMap.has(key)) {
+          const existing = mergedMap.get(key);
+          if (!existing.displayName && ctName) existing.displayName = ctName;
+        } else if (ctName || (bestPhone && bestPhone.length >= 8)) {
+          mergedMap.set(key, {
+            rawJid: ctId || (bestPhone ? `${bestPhone}@s.whatsapp.net` : ''),
+            lid: lowerId.includes('@lid') ? ctId : null,
+            realPhone: bestPhone,
+            displayName: ctName,
+            lastActivity: 0,
+            source: 'contact'
+          });
+        }
+      });
+
+      // 4. Monta lista final normalizada para o componente
+      const finalChats = [];
+      for (const [key, item] of mergedMap.entries()) {
+        // Ignora a própria conta do usuário
+        if (ownerClean && (item.realPhone === ownerClean || item.realPhone.startsWith(ownerClean) || ownerClean.startsWith(item.realPhone))) {
+          continue;
+        }
+
+        const phone = item.realPhone || extractCleanPhone(item.rawJid);
+        const formattedPhone = formatPhoneBR(phone);
+        const name = item.displayName ? item.displayName.trim() : '';
+
+        // JIDs candidatos para busca de mensagens
+        const candidateJids = [item.rawJid];
+        if (phone) {
+          candidateJids.push(`${phone}@s.whatsapp.net`);
+          if (phone.startsWith('55')) {
+            candidateJids.push(`${phone.substring(2)}@s.whatsapp.net`);
+          } else {
+            candidateJids.push(`55${phone}@s.whatsapp.net`);
+          }
+        }
+        if (item.lid) candidateJids.push(item.lid);
+
+        finalChats.push({
+          id: item.rawJid,
+          remoteJid: item.rawJid,
+          rawJid: item.rawJid,
+          lid: item.lid,
+          realPhone: phone,
+          displayPhone: formattedPhone || phone,
+          displayName: name || (formattedPhone ? formattedPhone : 'Contato WhatsApp'),
+          hasCustomName: Boolean(name),
+          lastActivity: item.lastActivity || 0,
+          candidateJids: Array.from(new Set(candidateJids.filter(Boolean)))
+        });
+      }
+
+      // Ordenação: 
+      // 1. Quem tem nome salvo na agenda no topo
+      // 2. Quem teve mensagem/interação mais recente
+      // 3. Ordem alfabética
+      finalChats.sort((a, b) => {
+        if (a.hasCustomName && !b.hasCustomName) return -1;
+        if (!a.hasCustomName && b.hasCustomName) return 1;
+        if (a.lastActivity && b.lastActivity && a.lastActivity !== b.lastActivity) {
+          return b.lastActivity - a.lastActivity;
+        }
         return (a.displayName || '').localeCompare(b.displayName || '');
       });
 
-      setChats(processedChats);
+      setChats(finalChats);
     } catch (err) {
       console.warn('Erro ao carregar conversas e contatos:', err);
     } finally {
@@ -2910,7 +3091,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     <div style={{ color: '#081018', fontSize: 13, fontWeight: 800 }}>⏳ Gerando QR Code...</div>
                   ) : qrCodeData ? (
                     <img
-                      src={qrCodeData.startsWith('data:') ? qrCodeData : `data:image/png;base64,${qrCodeData}`}
+                      src={typeof qrCodeData === 'string' && qrCodeData.startsWith('data:') ? qrCodeData : `data:image/png;base64,${typeof qrCodeData === 'string' ? qrCodeData : (qrCodeData?.base64 || '')}`}
                       alt="QR Code WhatsApp"
                       style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                     />
@@ -2995,7 +3176,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   }}>
                     <div style={{ fontSize: 11, color: 'var(--teal)', fontWeight: 800 }}>CÓDIGO DE PAREAMENTO:</div>
                     <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: '4px', color: '#fff', margin: '6px 0' }}>
-                      {pairingCodeResult}
+                      {typeof pairingCodeResult === 'object' ? (pairingCodeResult?.code || pairingCodeResult?.pairingCode || '') : String(pairingCodeResult || '')}
                     </div>
                     <div style={{ fontSize: 11.5, color: 'var(--ink2)' }}>
                       No celular: <strong>Aparelhos Conectados</strong> ➔ <strong>Conectar com número de telefone</strong> e digite o código acima!
@@ -3756,10 +3937,12 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </button>
           </div>
 
-          {/* Conversas Recentes do WhatsApp */}
+          {/* Conversas e Contatos do WhatsApp */}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--ink1)' }}>Ou selecione das conversas ativas:</span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--ink1)' }}>
+                Conversas & Agenda ({chats.length} {chats.length === 1 ? 'contato' : 'contatos'}):
+              </span>
               <button
                 type="button"
                 onClick={loadChats}
@@ -3779,12 +3962,12 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
             <input
               type="text"
-              placeholder="Filtrar por nome ou número..."
+              placeholder="Buscar por nome ou telefone..."
               value={contactSearch}
               onChange={(e) => setContactSearch(e.target.value)}
               style={{
                 width: '100%',
-                padding: '7px 12px',
+                padding: '8px 12px',
                 borderRadius: 8,
                 border: '1px solid var(--line)',
                 background: 'rgba(0,0,0,0.3)',
@@ -3795,15 +3978,15 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             />
 
             <div style={{
-              maxHeight: 140,
+              maxHeight: 320,
               overflowY: 'auto',
               borderRadius: 8,
               border: '1px solid var(--line)',
               background: 'rgba(0,0,0,0.2)'
             }}>
               {chats.length === 0 ? (
-                <div style={{ padding: 12, textAlign: 'center', fontSize: 12, color: 'var(--ink2)' }}>
-                  {connStatus?.connected ? 'Nenhuma conversa individual encontrada.' : 'Conecte o WhatsApp no botão acima para listar conversas.'}
+                <div style={{ padding: 16, textAlign: 'center', fontSize: 12, color: 'var(--ink2)' }}>
+                  {loadingChats ? '⏳ Carregando conversas e contatos...' : (connStatus?.connected ? 'Nenhuma conversa ou contato encontrado.' : 'Conecte o WhatsApp no botão acima para listar todas as conversas.')}
                 </div>
               ) : (
                 chats
@@ -3811,35 +3994,70 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     const q = contactSearch.toLowerCase();
                     const name = (c.displayName || c.name || c.pushName || c.subject || '').toLowerCase();
                     const phone = (c.displayPhone || c.realPhone || c.id || c.remoteJid || '').toLowerCase();
-                    return name.includes(q) || phone.includes(q);
+                    return !q || name.includes(q) || phone.includes(q);
                   })
-                  .slice(0, 30)
                   .map(c => {
                     const rawJid = c.id || c.remoteJid || '';
                     const dispPhone = c.displayPhone || (extractCleanPhone(rawJid) ? formatPhoneBR(extractCleanPhone(rawJid)) : rawJid);
                     const dispName = c.displayName || c.name || c.pushName || dispPhone || 'Contato';
-                    const isSel = selectedContact?.jid === rawJid;
+                    const isSel = selectedContact?.jid === rawJid || (selectedContact?.phone && c.realPhone && selectedContact.phone === c.realPhone);
                     return (
                       <div
-                        key={rawJid}
+                        key={rawJid || c.realPhone}
                         onClick={() => handleSelectChat(c)}
                         style={{
-                          padding: '8px 12px',
+                          padding: '10px 12px',
                           borderBottom: '1px solid rgba(255,255,255,0.05)',
                           cursor: 'pointer',
                           background: isSel ? 'rgba(0, 229, 155, 0.2)' : 'transparent',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          fontSize: 12
+                          gap: 10,
+                          transition: 'background 0.2s ease'
                         }}
                       >
-                        <span style={{ fontWeight: isSel ? 900 : 600, color: isSel ? 'var(--teal)' : '#fff' }}>
-                          {dispName}
-                        </span>
-                        <span style={{ fontSize: 11, color: 'var(--ink2)', fontFamily: 'monospace' }}>
-                          {dispPhone}
-                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
+                          <span style={{ 
+                            fontWeight: isSel ? 900 : 700, 
+                            color: isSel ? 'var(--teal)' : '#fff',
+                            fontSize: 13,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {dispName}
+                          </span>
+                          {dispPhone && dispPhone !== dispName && (
+                            <span style={{ fontSize: 11, color: 'var(--ink2)', fontFamily: 'monospace' }}>
+                              📱 {dispPhone}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                          {isSel ? (
+                            <span style={{ 
+                              padding: '2px 8px', 
+                              borderRadius: 6, 
+                              background: 'var(--teal)', 
+                              color: '#081018', 
+                              fontSize: 10.5, 
+                              fontWeight: 900 
+                            }}>
+                              Selecionado ✓
+                            </span>
+                          ) : (
+                            <span style={{ 
+                              padding: '2px 8px', 
+                              borderRadius: 6, 
+                              background: 'rgba(255,255,255,0.05)', 
+                              color: 'var(--ink2)', 
+                              fontSize: 10.5 
+                            }}>
+                              Selecionar
+                            </span>
+                          )}
+                        </div>
                       </div>
                     );
                   })

@@ -293,10 +293,19 @@ export async function getPairingCode(phone) {
     cleanPhone = '55' + cleanPhone;
   }
 
+  function extractCode(res) {
+    if (!res) return null;
+    const raw = res?.code || res?.pairingCode || res?.pairing_code || res?.instance?.pairingCode;
+    if (raw && typeof raw === 'string') return raw;
+    if (typeof res === 'string' && res.length >= 6 && res.length <= 14) return res;
+    return null;
+  }
+
   // Tentativa 1: GET /instance/connect/{instance}?number={phone}
   try {
     const res = await evolutionFetch(`/instance/connect/${instanceName}?number=${cleanPhone}`);
-    if (res?.code || res?.pairingCode || res?.pairing_code) return res;
+    const code = extractCode(res);
+    if (code) return { code, pairingCode: code, raw: res };
   } catch (e) {
     console.warn('Tentativa 1 de pairing falhou:', e);
   }
@@ -307,12 +316,17 @@ export async function getPairingCode(phone) {
       method: 'POST',
       body: JSON.stringify({ number: cleanPhone }),
     });
+    const code = extractCode(resPost);
+    if (code) return { code, pairingCode: code, raw: resPost };
     return resPost;
   } catch (e) {
     console.warn('Tentativa 2 de pairing falhou:', e);
     // Tentativa 3: Se der erro, tenta restart e connect com o número
     await evolutionFetch(`/instance/restart/${instanceName}`, { method: 'POST' }).catch(() => {});
-    return await evolutionFetch(`/instance/connect/${instanceName}?number=${cleanPhone}`);
+    const resFinal = await evolutionFetch(`/instance/connect/${instanceName}?number=${cleanPhone}`);
+    const code = extractCode(resFinal);
+    if (code) return { code, pairingCode: code, raw: resFinal };
+    return resFinal;
   }
 }
 
@@ -1194,15 +1208,38 @@ export async function fetchWhatsAppContacts() {
       method: 'POST',
       body: JSON.stringify({}),
     });
-    return Array.isArray(data) ? data : [];
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.contacts)) return data.contacts;
+    if (Array.isArray(data?.records)) return data.records;
+    if (Array.isArray(data?.data)) return data.data;
+    return [];
   } catch (err) {
     try {
       const dataGet = await evolutionFetch(`/chat/findContacts/${instanceName}`);
-      return Array.isArray(dataGet) ? dataGet : [];
+      if (Array.isArray(dataGet)) return dataGet;
+      if (Array.isArray(dataGet?.contacts)) return dataGet.contacts;
+      if (Array.isArray(dataGet?.records)) return dataGet.records;
+      if (Array.isArray(dataGet?.data)) return dataGet.data;
+      return [];
     } catch (e) {
       console.warn('Erro ao buscar contatos do WhatsApp:', e);
       return [];
     }
+  }
+}
+
+// Busca rápida de histórico recente para garantir que conversas ativas apareçam mesmo se findChats estiver incompleto
+export async function fetchRecentMessagesSummary(limit = 120) {
+  const { instanceName } = getEvolutionConfig();
+  try {
+    const data = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({ limit, page: 1 }),
+    });
+    const recs = data?.messages?.records || (Array.isArray(data) ? data : (data?.records || []));
+    return Array.isArray(recs) ? recs : [];
+  } catch (e) {
+    return [];
   }
 }
 
@@ -1242,13 +1279,21 @@ export async function fetchWhatsAppChats() {
   try {
     const data = await evolutionFetch(`/chat/findChats/${instanceName}`, {
       method: 'POST',
-      body: JSON.stringify({}),
+      body: JSON.stringify({ limit: 500 }),
     });
-    return Array.isArray(data) ? data : (data?.chats || []);
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.chats)) return data.chats;
+    if (Array.isArray(data?.records)) return data.records;
+    if (Array.isArray(data?.data)) return data.data;
+    return [];
   } catch (err) {
     try {
       const dataGet = await evolutionFetch(`/chat/findChats/${instanceName}`);
-      return Array.isArray(dataGet) ? dataGet : (dataGet?.chats || []);
+      if (Array.isArray(dataGet)) return dataGet;
+      if (Array.isArray(dataGet?.chats)) return dataGet.chats;
+      if (Array.isArray(dataGet?.records)) return dataGet.records;
+      if (Array.isArray(dataGet?.data)) return dataGet.data;
+      return [];
     } catch (e) {
       console.warn('Erro ao buscar chats do WhatsApp:', e);
       return [];
