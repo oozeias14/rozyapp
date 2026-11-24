@@ -159,6 +159,13 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     localStorage.removeItem('wa_audit_manual_total_paid');
   }
 
+  // ── SELEÇÃO DE PERÍODO DE PERÍCIA (ETAPA 3) ──
+  const [auditPeriodMode, setAuditPeriodMode] = useState('full'); // 'full' = da primeira à última | 'custom' = período específico
+  const [auditDateStart, setAuditDateStart] = useState('');
+  const [auditDateEnd, setAuditDateEnd] = useState('');
+  const [auditElapsedSeconds, setAuditElapsedSeconds] = useState(0);
+  const auditElapsedTimerRef = useRef(null);
+
   // ── POP-UP COM CRONÔMETRO REGRESSIVO DE 3 MINUTOS (180s) & FEED AO VIVO ──
   const [showAuditProgressModal, setShowAuditProgressModal] = useState(false);
   const [countdownSeconds, setCountdownSeconds] = useState(180);
@@ -177,13 +184,20 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
   useEffect(() => {
     if (showAuditProgressModal && isAuditing) {
+      setAuditElapsedSeconds(0);
+      if (auditElapsedTimerRef.current) clearInterval(auditElapsedTimerRef.current);
+      auditElapsedTimerRef.current = setInterval(() => {
+        setAuditElapsedSeconds(prev => prev + 1);
+      }, 1000);
       countdownTimerRef.current = setInterval(() => {
         setCountdownSeconds(prev => (prev > 0 ? prev - 1 : 0));
       }, 1000);
     } else {
+      if (auditElapsedTimerRef.current) clearInterval(auditElapsedTimerRef.current);
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
     }
     return () => {
+      if (auditElapsedTimerRef.current) clearInterval(auditElapsedTimerRef.current);
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
     };
   }, [showAuditProgressModal, isAuditing]);
@@ -547,7 +561,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           (msg.message?.documentMessage?.mimetype && msg.message?.documentMessage?.mimetype.startsWith('image/'))
         );
 
-        if (isAudio && audioTranscripts.length < 15) {
+        if (isAudio) {
           try {
             const base64Audio = await fetchMediaBase64FromMessage(msg);
             if (base64Audio) {
@@ -569,12 +583,13 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   valores: audData.valores_mencionados || [],
                   taxaJuros: audData.taxa_juros_mencionada || ''
                 });
+                await new Promise(r => setTimeout(r, 60));
               }
             }
           } catch (e) {}
         }
 
-        if (isImage && textRecords.length < 50) {
+        if (isImage) {
           try {
             const base64Img = await fetchMediaBase64FromMessage(msg);
             if (base64Img) {
@@ -596,6 +611,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     text: `[Print / Comprovante ${imgData.tipo_comprovante || 'PIX'}: R$ ${Number(imgData.valor_pago || 0).toFixed(2)} para ${imgData.favorecido_nome || 'Favorecido'}]`
                   });
                 }
+                await new Promise(r => setTimeout(r, 60));
               }
             }
           } catch (e) {}
@@ -892,7 +908,10 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     addLog('🚀 INICIANDO PERÍCIA FINANCEIRA FORENSE DE CONVERSA & AMORTIZAÇÕES', 'info');
     addLog(`👤 Alvo da Perícia: ${targetContactDisplay}`, 'info');
     addLog(`⚙️ Modo Escolhido no Passo 2: ${step2Mode === 'auto' ? '🤖 AUTOMÁTICO (Robô & IA)' : '📝 MANUAL'}`, 'info');
-    addLog('🔒 MODO SOMENTE LEITURA ATIVO: Restrição estrita. Nenhuma mensagem, áudio ou print será apagado do WhatsApp. O sistema opera 100% preservando os dados.', 'success');
+    addLog('🛡️ PROTOCOLO FORENSE SOMENTE LEITURA ATIVO (READ-ONLY):', 'success');
+    addLog('   🚫 PROIBIDO enviar qualquer mensagem para o credor (zero contato/sem perturbar o alvo).', 'success');
+    addLog('   🚫 PROIBIDO apagar ou alterar qualquer dado, áudio ou imagem do WhatsApp.', 'success');
+    addLog('   👁️ Extração pericial estritamente passiva: audição de todos os áudios e OCR de comprovantes.', 'success');
 
     try {
       let rawMessages = [];
@@ -932,6 +951,36 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
       if (rawMessages.length === 0 && uploadedReceipts.length === 0) {
         throw new Error('Nenhuma mensagem ou comprovante encontrado para analisar.');
+      }
+
+      // ── ORDENAÇÃO CRONOLÓGICA RIGOROSA: DA PRIMEIRA À ÚLTIMA MENSAGEM ──
+      rawMessages.sort((a, b) => {
+        const tsA = Number(a.messageTimestamp || 0);
+        const tsB = Number(b.messageTimestamp || 0);
+        if (tsA && tsB) return tsA - tsB;
+        const dtA = a.isoDate ? new Date(a.isoDate).getTime() : 0;
+        const dtB = b.isoDate ? new Date(b.isoDate).getTime() : 0;
+        return dtA - dtB;
+      });
+
+      // Se o usuário selecionou período específico na Etapa 3
+      if (auditPeriodMode === 'custom' && (auditDateStart || auditDateEnd)) {
+        addLog(`📅 Filtrando período específico: de ${auditDateStart || 'início'} até ${auditDateEnd || 'fim'}...`, 'info');
+        rawMessages = rawMessages.filter(msg => {
+          const ts = Number(msg.messageTimestamp || 0);
+          const d = msg.isoDate || (ts ? new Date(ts * 1000).toISOString().slice(0, 10) : '');
+          if (!d) return true;
+          if (auditDateStart && d < auditDateStart) return false;
+          if (auditDateEnd && d > auditDateEnd) return false;
+          return true;
+        });
+        addLog(`📊 ${rawMessages.length} mensagens selecionadas dentro do período especificado.`, 'success');
+      } else if (rawMessages.length > 0) {
+        const firstMsg = rawMessages[0];
+        const lastMsg = rawMessages[rawMessages.length - 1];
+        const firstDate = firstMsg.isoDate || (firstMsg.messageTimestamp ? new Date(firstMsg.messageTimestamp * 1000).toLocaleDateString('pt-BR') : 'Início');
+        const lastDate = lastMsg.isoDate || (lastMsg.messageTimestamp ? new Date(lastMsg.messageTimestamp * 1000).toLocaleDateString('pt-BR') : 'Hoje');
+        addLog(`🌐 PERÍCIA MINUCIOSA TOTAL: Analisando toda a conversa da 1ª mensagem em ${firstDate} até a última em ${lastDate} (Total: ${rawMessages.length} mensagens, sem pular nada)`, 'success');
       }
 
       // ── FASE 2: TRANSCRIÇÃO DE ÁUDIOS, OCR DE PRINTS E LEITURA DE TEXTOS ─────────────
@@ -1013,9 +1062,9 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             }
           ]);
 
-          // Pequena pausa para o usuário acompanhar o fluxo de leitura ao vivo na tela
-          if (!isAudio && !isImage) {
-            await new Promise(r => setTimeout(r, 40));
+          // Pausa suave a cada lote de mensagens para manter a UI responsiva
+          if (!isAudio && !isImage && i % 25 === 0) {
+            await new Promise(r => setTimeout(r, 10));
           }
         }
 
@@ -1281,7 +1330,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               body: JSON.stringify({
                 action: 'detect_debts_auto',
                 payload: {
-                  mensagensTexto: textRecords.slice(-100),
+                  mensagensTexto: textRecords,
                   audiosTranscritos: audioTranscripts,
                   nomeCredor: targetContactName,
                   nomeDevedor: 'Você (Devedor)'
@@ -1347,7 +1396,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           body: JSON.stringify({
             action: 'audit_financial_history',
             payload: {
-              mensagensTexto: textRecords.filter(t => t.isFinancial).slice(-100),
+              mensagensTexto: textRecords.filter(t => t.isFinancial),
               audiosTranscritos: audioTranscripts,
               comprovantesPagamento: allPayments,
               valorEmprestimoInformado: totalContracted,
@@ -2966,7 +3015,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               </div>
 
               {/* CRONÔMETRO COMPACTO NO CABEÇALHO */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{
                   background: 'rgba(0,0,0,0.5)',
                   border: '1px solid rgba(0, 229, 155, 0.4)',
@@ -2975,16 +3024,16 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   textAlign: 'center'
                 }}>
                   <div style={{ fontSize: 9.5, fontWeight: 800, color: 'var(--ink2)', textTransform: 'uppercase' }}>
-                    ⏱️ Tempo Restante
+                    ⏱️ Tempo Decorrido
                   </div>
                   <div style={{
                     fontFamily: 'monospace, "Courier New", Courier',
-                    fontSize: 22,
+                    fontSize: 20,
                     fontWeight: 900,
-                    color: countdownSeconds === 0 ? '#38BDF8' : 'var(--teal)',
+                    color: 'var(--teal)',
                     lineHeight: 1.1
                   }}>
-                    {formatCountdown(countdownSeconds)}
+                    {formatCountdown(auditElapsedSeconds)}
                   </div>
                 </div>
 
@@ -4413,6 +4462,150 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           </label>
         </div>
 
+        {/* ESCOLHA DO PERÍODO DAS MENSAGENS PARA A PERÍCIA */}
+        <div style={{
+          background: 'rgba(0, 0, 0, 0.45)',
+          border: '1px solid rgba(0, 229, 155, 0.35)',
+          borderRadius: 14,
+          padding: 18,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 24 }}>📅</span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--teal)' }}>
+                  Período das Mensagens para Perícia Financeira
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--ink2)', marginTop: 2 }}>
+                  Escolha se deseja auditar toda a conversa histórica ou delimitar datas específicas.
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => setAuditPeriodMode('full')}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: 8,
+                  border: auditPeriodMode === 'full' ? '1px solid var(--teal)' : '1px solid var(--line)',
+                  background: auditPeriodMode === 'full' ? 'rgba(0, 229, 155, 0.2)' : 'rgba(255,255,255,0.05)',
+                  color: auditPeriodMode === 'full' ? 'var(--teal)' : 'var(--ink1)',
+                  fontSize: 12,
+                  fontWeight: 900,
+                  cursor: 'pointer'
+                }}
+              >
+                🌐 Histórico Completo (1ª à Última Mensagem)
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuditPeriodMode('custom')}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: 8,
+                  border: auditPeriodMode === 'custom' ? '1px solid var(--teal)' : '1px solid var(--line)',
+                  background: auditPeriodMode === 'custom' ? 'rgba(0, 229, 155, 0.2)' : 'rgba(255,255,255,0.05)',
+                  color: auditPeriodMode === 'custom' ? 'var(--teal)' : 'var(--ink1)',
+                  fontSize: 12,
+                  fontWeight: 900,
+                  cursor: 'pointer'
+                }}
+              >
+                📆 Período Específico por Data
+              </button>
+            </div>
+          </div>
+
+          {auditPeriodMode === 'full' ? (
+            <div style={{
+              padding: '10px 14px',
+              borderRadius: 8,
+              background: 'rgba(0, 229, 155, 0.08)',
+              border: '1px solid rgba(0, 229, 155, 0.2)',
+              fontSize: 12,
+              color: '#A7F3D0',
+              lineHeight: 1.5
+            }}>
+              ✓ <strong>Modo Minucioso Irrestrito Ativo:</strong> A IA analisará todas as mensagens da primeira até a última trocada com este contato no WhatsApp, transcrevendo todos os áudios e periciando todos os prints/comprovantes sem pular nada.
+            </div>
+          ) : (
+            <div style={{
+              display: 'flex',
+              gap: 12,
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              padding: '12px 14px',
+              borderRadius: 8,
+              background: 'rgba(0,0,0,0.3)',
+              border: '1px solid var(--line)'
+            }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink2)', display: 'block', marginBottom: 4 }}>
+                  Data Inicial:
+                </label>
+                <input
+                  type="date"
+                  value={auditDateStart}
+                  onChange={(e) => setAuditDateStart(e.target.value)}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'rgba(0,0,0,0.5)',
+                    border: '1px solid var(--line)',
+                    color: '#fff',
+                    fontSize: 12
+                  }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 800, color: 'var(--ink2)', display: 'block', marginBottom: 4 }}>
+                  Data Final:
+                </label>
+                <input
+                  type="date"
+                  value={auditDateEnd}
+                  onChange={(e) => setAuditDateEnd(e.target.value)}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'rgba(0,0,0,0.5)',
+                    border: '1px solid var(--line)',
+                    color: '#fff',
+                    fontSize: 12
+                  }}
+                />
+              </div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink2)', maxWidth: 300, alignSelf: 'flex-end', paddingBottom: 6 }}>
+                Mensagens fora desse intervalo de datas serão desconsideradas da reconstituição pericial.
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* BANNER DE SEGURANÇA E PROTOCOLO READ-ONLY */}
+        <div style={{
+          padding: '14px 18px',
+          borderRadius: 14,
+          background: 'rgba(16, 185, 129, 0.08)',
+          border: '1px solid rgba(16, 185, 129, 0.35)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14
+        }}>
+          <span style={{ fontSize: 26 }}>🛡️</span>
+          <div style={{ fontSize: 12, color: '#E2E8F0', lineHeight: 1.5 }}>
+            <strong style={{ color: '#10B981', display: 'block', fontSize: 13, marginBottom: 2 }}>
+              TRAVA DE SEGURANÇA FORENSE ATIVA: 100% SOMENTE LEITURA (READ-ONLY)
+            </strong>
+            O sistema opera sob rigorosa proteção de integridade: <strong>é terminantemente proibido enviar qualquer mensagem</strong> para o contato selecionado (zero risco de alertar ou perturbar o credor) e <strong>é impossível apagar ou modificar qualquer dado</strong> do WhatsApp. A perícia apenas lê passivamente os diálogos, transcreve áudios e analisa imagens com precisão.
+          </div>
+        </div>
+
         {/* Navegação da Etapa 3 */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, flexWrap: 'wrap', gap: 10 }}>
           <button
@@ -4434,26 +4627,49 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           >
             ⬅ Voltar para Etapa 2
           </button>
-          <button
-            type="button"
-            onClick={() => setWizardStep(4)}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '12px 24px',
-              borderRadius: 10,
-              background: 'linear-gradient(135deg, #00E59B, #00B377)',
-              color: '#081018',
-              fontSize: 13,
-              fontWeight: 900,
-              border: 'none',
-              cursor: 'pointer',
-              boxShadow: '0 4px 15px rgba(0, 229, 155, 0.35)'
-            }}
-          >
-            Avançar para Etapa 4: Executar Perícia ➔
-          </button>
+
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={runFullDebtForensicAudit}
+              disabled={isAuditing || (!selectedContact && !uploadedChatFile)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '12px 24px',
+                borderRadius: 10,
+                background: isAuditing ? 'rgba(255,255,255,0.2)' : 'linear-gradient(135deg, #00E59B, #00B377)',
+                color: '#081018',
+                fontSize: 13.5,
+                fontWeight: 900,
+                border: 'none',
+                cursor: isAuditing ? 'not-allowed' : 'pointer',
+                boxShadow: '0 4px 15px rgba(0, 229, 155, 0.35)'
+              }}
+            >
+              {isAuditing ? '⏳ Executando Perícia...' : '🚀 Executar Perícia Financeira Completa'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setWizardStep(4)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '12px 18px',
+                borderRadius: 10,
+                background: 'rgba(255,255,255,0.08)',
+                border: '1px solid var(--line)',
+                color: '#fff',
+                fontSize: 12.5,
+                fontWeight: 800,
+                cursor: 'pointer'
+              }}
+            >
+              Avançar para Etapa 4 ➔
+            </button>
+          </div>
         </div>
       </div>
     )}

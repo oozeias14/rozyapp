@@ -1889,7 +1889,7 @@ export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
     let page = 1;
     let consecutiveEmpty = 0;
 
-    while (page <= 50) { // Até 5000 mensagens
+    while (page <= 300) { // Até 30.000 mensagens - Da primeira até a última conversa
       try {
         let data = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
           method: 'POST',
@@ -1953,7 +1953,7 @@ export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
     const phoneSigs = new Set(targetPhone ? getPhoneSignatures(targetPhone) : []);
     if (targetLid) phoneSigs.add(extractCleanPhone(targetLid));
 
-    for (let p = 1; p <= 15; p++) {
+    for (let p = 1; p <= 50; p++) {
       try {
         const genData = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
           method: 'POST',

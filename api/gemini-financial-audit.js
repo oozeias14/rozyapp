@@ -16,12 +16,18 @@ export default async function handler(req, res) {
   const { action, base64Data, mimeType, payload } = req.body || {};
 
   const candidateModels = [
-    'gemini-3.8-flash',
-    'gemini-flash-lite-latest',
-    'gemini-3.5-flash',
-    'gemini-flash-latest',
-    'gemini-3.7-flash'
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-2.5-pro',
+    'gemini-1.5-pro',
+    'gemini-flash-latest'
   ];
+
+  function cleanBase64Data(raw) {
+    if (!raw || typeof raw !== 'string') return '';
+    return raw.replace(/^data:[^;]+;base64,/, '').trim();
+  }
 
   async function callGemini(parts, jsonResponse = true) {
     let lastError = null;
@@ -88,12 +94,13 @@ Retorne EXCLUSIVAMENTE um JSON com esta estrutura:
   "resumo_financeiro": "..."
 }`;
 
+      const cleanAudio = cleanBase64Data(base64Data);
       const raw = await callGemini([
         { text: prompt },
         {
           inlineData: {
             mimeType: mimeType || 'audio/ogg',
-            data: base64Data
+            data: cleanAudio
           }
         }
       ], true);
@@ -133,12 +140,13 @@ Retorne EXCLUSIVAMENTE um JSON com esta estrutura:
   "observacoes": "..."
 }`;
 
+      const cleanImg = cleanBase64Data(base64Data);
       const raw = await callGemini([
         { text: prompt },
         {
           inlineData: {
             mimeType: mimeType || 'image/jpeg',
-            data: base64Data
+            data: cleanImg
           }
         }
       ], true);
