@@ -735,26 +735,41 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
       setChats(finalChats);
 
-      // Se o contato padrão Estela 22 estiver ativo, sincroniza com o chat real identificado no aparelho
-      const foundEstela = finalChats.find(c => 
-        (c.displayName || '').toLowerCase().includes('estela 22') ||
+      // Se o contato padrão Estela estiver ativo, sincroniza e agrega os JIDs de todas as conversas encontradas com "Estela"
+      const estelaChats = finalChats.filter(c => 
+        (c.displayName || '').toLowerCase().includes('estela') ||
         (c.realPhone || '').includes('61993209444') ||
         (c.realPhone || '').includes('6193209444')
       );
-      if (foundEstela) {
+
+      if (estelaChats.length > 0) {
+        // Ordena para que o chat com mensagem mais recente seja o primário
+        estelaChats.sort((a, b) => (b.lastActivity || 0) - (a.lastActivity || 0));
+        const primaryEstela = estelaChats[0];
+
+        // Coleta todos os LIDs e JIDs de todas as conversas "Estela" para não perder mensagens
+        const combinedCandidateJids = new Set([
+          '5561993209444@s.whatsapp.net',
+          '556193209444@s.whatsapp.net',
+          '61993209444@s.whatsapp.net',
+          '6193209444@s.whatsapp.net'
+        ]);
+
+        estelaChats.forEach(ec => {
+          if (ec.rawJid) combinedCandidateJids.add(ec.rawJid);
+          if (ec.lid) combinedCandidateJids.add(ec.lid);
+          (ec.candidateJids || []).forEach(j => combinedCandidateJids.add(j));
+        });
+
         setSelectedContact(prev => {
           if (!prev || prev.phone === '5561993209444' || (prev.name && prev.name.toLowerCase().includes('estela'))) {
             return {
-              jid: foundEstela.rawJid || '5561993209444@s.whatsapp.net',
-              phone: foundEstela.realPhone || '5561993209444',
-              displayPhone: foundEstela.displayPhone || '(61) 99320-9444',
-              name: foundEstela.displayName || 'Estela 22',
-              lid: foundEstela.lid || null,
-              candidateJids: Array.from(new Set([
-                ...(foundEstela.candidateJids || []),
-                '5561993209444@s.whatsapp.net',
-                '556193209444@s.whatsapp.net'
-              ].filter(Boolean)))
+              jid: primaryEstela.rawJid || '5561993209444@s.whatsapp.net',
+              phone: primaryEstela.realPhone || '5561993209444',
+              displayPhone: primaryEstela.displayPhone || '(61) 99320-9444',
+              name: primaryEstela.displayName || 'Estela 22',
+              lid: primaryEstela.lid || null,
+              candidateJids: Array.from(combinedCandidateJids)
             };
           }
           return prev;
@@ -770,7 +785,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   // Iniciar vínculo manual de telefone para contato com ID privado
   function handlePromptLinkPhone(c) {
     setLinkingChat(c);
-    setLinkingPhoneInput(c.realPhone || manualPhone || '');
+    const isEstela = (c.displayName || c.name || '').toLowerCase().includes('estela');
+    setLinkingPhoneInput(isEstela ? '(61) 99320-9444' : (c.realPhone || manualPhone || ''));
   }
 
   // Salvar vínculo manual de telefone com DDD
@@ -4586,13 +4602,29 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                               </span>
                             )}
                           </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
+                            {c.lastActivity ? (
+                              <span style={{ fontSize: 11, color: '#38bdf8', fontFamily: 'monospace' }}>
+                                🕒 Última mensagem: {new Date(c.lastActivity > 100000000000 ? c.lastActivity : c.lastActivity * 1000).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: 10.5, color: 'var(--ink2)' }}>
+                                🕒 Sem mensagens recentes
+                              </span>
+                            )}
+                            {c.rawJid && (
+                              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace' }}>
+                                ID: {c.rawJid.replace('@lid', '').slice(-6)}@lid
+                              </span>
+                            )}
+                          </div>
                           {hasRealPhone && (
                             <span style={{ fontSize: 10.5, color: 'var(--ink2)', fontFamily: 'monospace' }}>
                               Número puro: +{c.realPhone}
                             </span>
                           )}
                           {!hasRealPhone && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 2 }}>
                               <span style={{ fontSize: 10.5, color: '#f59e0b', fontFamily: 'monospace' }}>
                                 🔒 Contato com ID Privado do WhatsApp
                               </span>
@@ -4603,17 +4635,17 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                                   handlePromptLinkPhone(c);
                                 }}
                                 style={{
-                                  padding: '2px 8px',
+                                  padding: '3px 10px',
                                   borderRadius: 6,
-                                  background: 'rgba(56, 189, 248, 0.2)',
-                                  border: '1px solid rgba(56, 189, 248, 0.5)',
-                                  color: '#38bdf8',
+                                  background: (c.displayName || '').toLowerCase().includes('estela') ? 'rgba(0, 229, 155, 0.2)' : 'rgba(56, 189, 248, 0.2)',
+                                  border: (c.displayName || '').toLowerCase().includes('estela') ? '1px solid var(--teal)' : '1px solid rgba(56, 189, 248, 0.5)',
+                                  color: (c.displayName || '').toLowerCase().includes('estela') ? 'var(--teal)' : '#38bdf8',
                                   fontSize: 10.5,
                                   fontWeight: 800,
                                   cursor: 'pointer'
                                 }}
                               >
-                                ✏️ Informar Telefone (ex: 61 9320-9444)
+                                {(c.displayName || '').toLowerCase().includes('estela') ? '✏️ Vincular a (61) 99320-9444' : '✏️ Informar Telefone (ex: 61 9320-9444)'}
                               </button>
                             </div>
                           )}
