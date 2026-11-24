@@ -552,33 +552,114 @@ export async function fetchWhatsAppMessages(params = {}) {
   }
 }
 
+// ── VALIDAÇÃO DE TELEFONES BRASILEIROS REAIS VS IDENTIFICADORES LID ──────────────
+
+export const VALID_BRAZILIAN_DDDS = new Set([
+  '11','12','13','14','15','16','17','18','19',
+  '21','22','24','27','28',
+  '31','32','33','34','35','37','38',
+  '41','42','43','44','45','46','47','48','49',
+  '51','53','54','55',
+  '61','62','63','64','65','66','67','68','69',
+  '71','73','74','75','77','79',
+  '81','82','83','84','85','86','87','88','89',
+  '91','92','93','94','95','96','97','98','99'
+]);
+
+export function isValidBrazilianDdd(ddd) {
+  return VALID_BRAZILIAN_DDDS.has(String(ddd || ''));
+}
+
+export function isRealBrazilianPhone(p) {
+  if (!p) return false;
+  let str = String(p);
+  if (str.includes('@lid')) return false; // NUNCA é telefone
+  let clean = str.replace(/\D/g, '');
+  if (clean.startsWith('55') && clean.length >= 12) {
+    clean = clean.substring(2);
+  } else if (clean.startsWith('0') && clean.length >= 11) {
+    clean = clean.substring(1);
+  }
+  if (clean.length !== 10 && clean.length !== 11) return false;
+  const ddd = clean.substring(0, 2);
+  return isValidBrazilianDdd(ddd);
+}
+
 // Helper para mapear LIDs (@lid) para números de telefone reais (@s.whatsapp.net)
 export async function buildLidPhoneMapping(chats = [], messages = [], contacts = [], statusRecords = []) {
   const lidToPhone = new Map();
 
-  function register(lidStr, phoneStr) {
-    if (!lidStr || !phoneStr) return;
-    const cleanLid = extractCleanPhone(lidStr);
-    const cleanPhone = extractCleanPhone(phoneStr);
-    if (cleanLid && cleanPhone && cleanLid !== cleanPhone && cleanPhone.length >= 8 && cleanPhone.length <= 15) {
-      lidToPhone.set(cleanLid, cleanPhone);
+  function register(candA, candB) {
+    if (!candA || !candB) return;
+    const strA = String(candA || '');
+    const strB = String(candB || '');
+
+    let lidCandidate = '';
+    let phoneCandidate = '';
+
+    if (strA.includes('@lid') && !strB.includes('@lid')) {
+      lidCandidate = extractCleanPhone(strA);
+      phoneCandidate = extractCleanPhone(strB);
+    } else if (strB.includes('@lid') && !strA.includes('@lid')) {
+      lidCandidate = extractCleanPhone(strB);
+      phoneCandidate = extractCleanPhone(strA);
+    } else {
+      const cA = extractCleanPhone(strA);
+      const cB = extractCleanPhone(strB);
+      if (isRealBrazilianPhone(cA) && !isRealBrazilianPhone(cB)) {
+        phoneCandidate = cA;
+        lidCandidate = cB;
+      } else if (isRealBrazilianPhone(cB) && !isRealBrazilianPhone(cA)) {
+        phoneCandidate = cB;
+        lidCandidate = cA;
+      }
+    }
+
+    if (lidCandidate && phoneCandidate && isRealBrazilianPhone(phoneCandidate)) {
+      lidToPhone.set(lidCandidate, phoneCandidate);
     }
   }
 
+  // 1. Mapeamento a partir dos contatos salvos da agenda
   (contacts || []).forEach(ct => {
     const id = ct.id || ct.remoteJid || '';
-    const alt = ct.remoteJidAlt || ct.phoneNumber || '';
-    if (id.includes('@lid') && alt) register(id, alt);
-    if (alt.includes('@lid') && id) register(alt, id);
+    const lid = ct.lid || (id.includes('@lid') ? id : '');
+    const phoneCandidates = [
+      ct.phoneNumber,
+      ct.number,
+      ct.phone,
+      ct.remoteJidAlt,
+      ct.wuid,
+      ct.user,
+      ct.jid,
+      ct.remoteJid,
+      id
+    ];
+    const realP = phoneCandidates.find(p => p && !String(p).includes('@lid') && isRealBrazilianPhone(extractCleanPhone(p)));
+    if (lid && realP) register(lid, realP);
   });
 
+  // 2. Mapeamento a partir das conversas do WhatsApp (chats)
   (chats || []).forEach(c => {
     const rawR = c.remoteJid || c.id || '';
-    const altR = c.remoteJidAlt || c.lastMessage?.key?.remoteJidAlt || c.lastMessage?.key?.participantAlt || '';
-    if (rawR.includes('@lid') && altR) register(rawR, altR);
-    if (altR.includes('@lid') && rawR) register(altR, rawR);
+    const lid = c.lid || (rawR.includes('@lid') ? rawR : '');
+    const phoneCandidates = [
+      c.remoteJidAlt,
+      c.phoneNumber,
+      c.number,
+      c.phone,
+      c.lastMessage?.key?.remoteJidAlt,
+      c.lastMessage?.key?.participantAlt,
+      c.lastMessage?.participant,
+      c.lastMessage?.key?.participant,
+      c.remoteJid,
+      c.id
+    ];
+    const realP = phoneCandidates.find(p => p && !String(p).includes('@lid') && isRealBrazilianPhone(extractCleanPhone(p)));
+    if (lid && realP) register(lid, realP);
   });
 
+  // 3. Mapeamento a partir das mensagens recentes
   (messages || []).forEach(m => {
     const rJid = m.key?.remoteJid || m.remoteJid || '';
     const rAlt = m.key?.remoteJidAlt || m.remoteJidAlt || '';
@@ -600,33 +681,45 @@ export async function buildLidPhoneMapping(chats = [], messages = [], contacts =
     }
   });
 
-  // Mapeia LIDs que aparecem em statusRecords buscando suas chaves de mensagem ou conversas
-  if (Array.isArray(statusRecords) && statusRecords.length > 0) {
-    const lidCandidates = new Set();
-    statusRecords.forEach(sr => {
-      const rj = sr.remoteJid || '';
-      const pt = sr.participant || '';
-      if (rj.includes('@lid')) lidCandidates.add(extractCleanPhone(rj));
-      if (pt.includes('@lid')) lidCandidates.add(extractCleanPhone(pt));
-    });
+  // 4. Resolve LIDs não mapeados consultando mensagens reais do chat correspondente
+  const unmappedLids = new Set();
+  (chats || []).forEach(c => {
+    const rawR = (c.remoteJid || c.id || '');
+    if (rawR.includes('@lid')) unmappedLids.add(extractCleanPhone(rawR));
+  });
+  (contacts || []).forEach(ct => {
+    const rawR = (ct.id || ct.remoteJid || '');
+    if (rawR.includes('@lid')) unmappedLids.add(extractCleanPhone(rawR));
+  });
 
-    const unmappedLids = Array.from(lidCandidates).filter(l => !lidToPhone.has(l));
-    if (unmappedLids.length > 0) {
-      try {
-        const { instanceName } = getEvolutionConfig();
-        await Promise.all(unmappedLids.slice(0, 10).map(async (lid) => {
-          const qRes = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
-            method: 'POST',
-            body: JSON.stringify({ where: { key: { remoteJid: lid + '@lid' } }, limit: 5 }),
-          }).catch(() => null);
-          const qRecs = qRes?.messages?.records || (Array.isArray(qRes) ? qRes : []);
-          qRecs.forEach(qm => {
-            const alt = qm.key?.remoteJidAlt || qm.remoteJidAlt;
-            if (alt && !alt.includes('@lid')) register(lid, alt);
-          });
-        }));
-      } catch (e) {}
-    }
+  const pendingLids = Array.from(unmappedLids).filter(l => l && !lidToPhone.has(l));
+  if (pendingLids.length > 0) {
+    try {
+      const { instanceName } = getEvolutionConfig();
+      await Promise.all(pendingLids.slice(0, 15).map(async (lid) => {
+        const qRes = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+          method: 'POST',
+          body: JSON.stringify({ where: { key: { remoteJid: lid + '@lid' } }, limit: 5 }),
+        }).catch(() => null);
+        const qRecs = qRes?.messages?.records || (Array.isArray(qRes) ? qRes : []);
+        qRecs.forEach(qm => {
+          const altCandidates = [
+            qm.key?.remoteJidAlt,
+            qm.key?.participantAlt,
+            qm.remoteJidAlt,
+            qm.participantAlt,
+            qm.participant,
+            qm.key?.participant
+          ];
+          for (const cand of altCandidates) {
+            if (cand && !String(cand).includes('@lid')) {
+              register(lid, cand);
+              break;
+            }
+          }
+        });
+      }));
+    } catch (e) {}
   }
 
   return lidToPhone;

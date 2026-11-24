@@ -18,7 +18,9 @@ import {
   fetchMediaBase64FromMessage,
   extractCleanPhone,
   getPhoneSignatures,
-  fetchRecentMessagesSummary
+  fetchRecentMessagesSummary,
+  isValidBrazilianDdd,
+  isRealBrazilianPhone
 } from '../lib/evolutionApi';
 
 export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
@@ -424,18 +426,18 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       clean = clean.substring(1);
     }
     if (clean.length === 11) {
-      return `(${clean.slice(0, 2)}) ${clean.slice(2, 7)}-${clean.slice(7)}`;
+      const ddd = clean.slice(0, 2);
+      if (isValidBrazilianDdd(ddd)) {
+        return `(${ddd}) ${clean.slice(2, 7)}-${clean.slice(7)}`;
+      }
     }
     if (clean.length === 10) {
-      return `(${clean.slice(0, 2)}) ${clean.slice(2, 6)}-${clean.slice(6)}`;
+      const ddd = clean.slice(0, 2);
+      if (isValidBrazilianDdd(ddd)) {
+        return `(${ddd}) ${clean.slice(2, 6)}-${clean.slice(6)}`;
+      }
     }
-    if (clean.length === 9) {
-      return `${clean.slice(0, 5)}-${clean.slice(5)}`;
-    }
-    if (clean.length === 8) {
-      return `${clean.slice(0, 4)}-${clean.slice(4)}`;
-    }
-    return clean;
+    return '';
   }
 
   // Carregar conversas ativas e contatos reais do WhatsApp (Unificação Completa de Contatos)
@@ -445,7 +447,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       const [chatList, contactList, recentMsgs] = await Promise.all([
         fetchWhatsAppChats().catch(() => []),
         fetchWhatsAppContacts().catch(() => []),
-        fetchRecentMessagesSummary(250).catch(() => [])
+        fetchRecentMessagesSummary(300).catch(() => [])
       ]);
 
       const lidToPhone = await buildLidPhoneMapping(chatList, recentMsgs, contactList);
@@ -463,17 +465,29 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       const contactsMap = new Map();
       (contactList || []).forEach(ct => {
         const ctId = ct.id || ct.remoteJid || ct.jid || '';
-        let ctPhone = extractCleanPhone(ct.phoneNumber || ct.number || ctId);
-        if (ctPhone.length < 8 && lidToPhone.has(ctPhone)) {
-          ctPhone = lidToPhone.get(ctPhone);
+        const lowerId = ctId.toLowerCase();
+        const ctDigits = extractCleanPhone(ctId);
+
+        let ctPhone = '';
+        if (lidToPhone.has(ctDigits)) {
+          ctPhone = lidToPhone.get(ctDigits);
+        } else if (isRealBrazilianPhone(ct.phoneNumber)) {
+          ctPhone = extractCleanPhone(ct.phoneNumber);
+        } else if (isRealBrazilianPhone(ct.number)) {
+          ctPhone = extractCleanPhone(ct.number);
+        } else if (isRealBrazilianPhone(ct.remoteJidAlt)) {
+          ctPhone = extractCleanPhone(ct.remoteJidAlt);
+        } else if (isRealBrazilianPhone(ctDigits) && !lowerId.includes('@lid')) {
+          ctPhone = ctDigits;
         }
+
         const ctName = ct.name || ct.verifiedName || ct.pushName || ct.notify || ct.shortName || '';
         const ctData = { ...ct, resolvedPhone: ctPhone, name: ctName };
 
         if (ctId) {
           contactsMap.set(ctId.toLowerCase(), ctData);
         }
-        if (ctPhone) {
+        if (ctPhone && isRealBrazilianPhone(ctPhone)) {
           getPhoneSignatures(ctPhone).forEach(sig => {
             contactsMap.set(sig, ctData);
           });
@@ -489,36 +503,33 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         const lowerJid = rawJid.toLowerCase();
         if (!rawJid || lowerJid.includes('@g.us') || lowerJid.includes('@broadcast') || lowerJid.includes('status@broadcast')) return;
 
-        let clean = extractCleanPhone(rawJid);
+        let cleanDigits = extractCleanPhone(rawJid);
         let isLid = lowerJid.includes('@lid');
-        let lid = isLid ? rawJid : null;
+        let lid = isLid ? rawJid : (c.lid || null);
 
         let realPhone = '';
-        if (lidToPhone.has(clean)) {
-          realPhone = lidToPhone.get(clean);
-        } else if (c.phoneNumber) {
+        if (lidToPhone.has(cleanDigits)) {
+          realPhone = lidToPhone.get(cleanDigits);
+        } else if (isRealBrazilianPhone(c.phoneNumber)) {
           realPhone = extractCleanPhone(c.phoneNumber);
-        } else if (c.remoteJidAlt) {
+        } else if (isRealBrazilianPhone(c.remoteJidAlt)) {
           realPhone = extractCleanPhone(c.remoteJidAlt);
-        } else if (c.lastMessage?.key?.remoteJidAlt) {
+        } else if (isRealBrazilianPhone(c.lastMessage?.key?.remoteJidAlt)) {
           realPhone = extractCleanPhone(c.lastMessage.key.remoteJidAlt);
-        } else if (contactsMap.has(lowerJid)) {
+        } else if (contactsMap.has(lowerJid) && contactsMap.get(lowerJid).resolvedPhone) {
           realPhone = contactsMap.get(lowerJid).resolvedPhone;
-        } else if (contactsMap.has(clean)) {
-          realPhone = contactsMap.get(clean).resolvedPhone;
-        } else if (!isLid && clean.length >= 10 && clean.length <= 13) {
-          realPhone = clean;
+        } else if (isRealBrazilianPhone(cleanDigits) && !isLid) {
+          realPhone = cleanDigits;
         }
 
-        const ct = contactsMap.get(realPhone) || contactsMap.get(clean) || contactsMap.get(lowerJid) || {};
+        const ct = (realPhone ? contactsMap.get(realPhone) : null) || contactsMap.get(lowerJid) || {};
         const bestName = ct.name || c.name || ct.verifiedName || c.pushName || ct.pushName || c.lastMessage?.pushName || '';
-        const bestPhone = realPhone || clean;
 
-        const key = bestPhone || lowerJid;
+        const key = (realPhone && isRealBrazilianPhone(realPhone)) ? realPhone : lowerJid;
         mergedMap.set(key, {
           rawJid,
           lid,
-          realPhone: bestPhone,
+          realPhone: isRealBrazilianPhone(realPhone) ? realPhone : '',
           displayName: bestName,
           lastActivity: c.conversationTimestamp || c.timestamp || c.updatedAt || 0,
           source: 'chat'
@@ -531,40 +542,36 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         const lowerJid = rawJid.toLowerCase();
         if (!rawJid || lowerJid.includes('@g.us') || lowerJid.includes('@broadcast') || lowerJid.includes('status@broadcast')) return;
 
-        let clean = extractCleanPhone(rawJid);
+        let cleanDigits = extractCleanPhone(rawJid);
         let isLid = lowerJid.includes('@lid');
         let lid = isLid ? rawJid : null;
 
         let realPhone = '';
-        if (lidToPhone.has(clean)) {
-          realPhone = lidToPhone.get(clean);
-        } else if (m.key?.remoteJidAlt) {
+        if (lidToPhone.has(cleanDigits)) {
+          realPhone = lidToPhone.get(cleanDigits);
+        } else if (isRealBrazilianPhone(m.key?.remoteJidAlt)) {
           realPhone = extractCleanPhone(m.key.remoteJidAlt);
-        } else if (contactsMap.has(lowerJid)) {
-          realPhone = contactsMap.get(lowerJid).resolvedPhone;
-        } else if (contactsMap.has(clean)) {
-          realPhone = contactsMap.get(clean).resolvedPhone;
-        } else if (!isLid && clean.length >= 10 && clean.length <= 13) {
-          realPhone = clean;
+        } else if (isRealBrazilianPhone(cleanDigits) && !isLid) {
+          realPhone = cleanDigits;
         }
 
-        const bestPhone = realPhone || clean;
-        const key = bestPhone || lowerJid;
-        const ct = contactsMap.get(bestPhone) || contactsMap.get(clean) || contactsMap.get(lowerJid) || {};
+        const ct = (realPhone ? contactsMap.get(realPhone) : null) || contactsMap.get(lowerJid) || {};
         const pushName = m.pushName || '';
         const bestName = ct.name || ct.verifiedName || pushName || ct.pushName || '';
         const msgTime = m.messageTimestamp || 0;
 
+        const key = (realPhone && isRealBrazilianPhone(realPhone)) ? realPhone : lowerJid;
         if (mergedMap.has(key)) {
           const existing = mergedMap.get(key);
           if (!existing.displayName && bestName) existing.displayName = bestName;
           if (msgTime > (existing.lastActivity || 0)) existing.lastActivity = msgTime;
+          if (!existing.realPhone && isRealBrazilianPhone(realPhone)) existing.realPhone = realPhone;
           if (!existing.lid && lid) existing.lid = lid;
         } else {
           mergedMap.set(key, {
             rawJid,
             lid,
-            realPhone: bestPhone,
+            realPhone: isRealBrazilianPhone(realPhone) ? realPhone : '',
             displayName: bestName,
             lastActivity: msgTime,
             source: 'message'
@@ -578,24 +585,35 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         const lowerId = ctId.toLowerCase();
         if (lowerId.includes('@g.us') || lowerId.includes('@broadcast')) return;
 
-        let ctPhone = extractCleanPhone(ct.phoneNumber || ct.number || ctId);
-        if (ctPhone.length < 8 && lidToPhone.has(ctPhone)) {
-          ctPhone = lidToPhone.get(ctPhone);
-        }
-        if (!ctPhone && !ctId) return;
+        let ctDigits = extractCleanPhone(ctId);
+        let isLid = lowerId.includes('@lid');
+        let lid = isLid ? ctId : (ct.lid || null);
 
-        const bestPhone = ctPhone;
-        const key = bestPhone || lowerId;
+        let realPhone = '';
+        if (lidToPhone.has(ctDigits)) {
+          realPhone = lidToPhone.get(ctDigits);
+        } else if (isRealBrazilianPhone(ct.phoneNumber)) {
+          realPhone = extractCleanPhone(ct.phoneNumber);
+        } else if (isRealBrazilianPhone(ct.number)) {
+          realPhone = extractCleanPhone(ct.number);
+        } else if (isRealBrazilianPhone(ct.remoteJidAlt)) {
+          realPhone = extractCleanPhone(ct.remoteJidAlt);
+        } else if (isRealBrazilianPhone(ctDigits) && !isLid) {
+          realPhone = ctDigits;
+        }
+
         const ctName = ct.name || ct.verifiedName || ct.pushName || ct.notify || ct.shortName || '';
+        const key = (realPhone && isRealBrazilianPhone(realPhone)) ? realPhone : lowerId;
 
         if (mergedMap.has(key)) {
           const existing = mergedMap.get(key);
           if (!existing.displayName && ctName) existing.displayName = ctName;
-        } else if (ctName || (bestPhone && bestPhone.length >= 8)) {
+          if (!existing.realPhone && isRealBrazilianPhone(realPhone)) existing.realPhone = realPhone;
+        } else {
           mergedMap.set(key, {
-            rawJid: ctId || (bestPhone ? `${bestPhone}@s.whatsapp.net` : ''),
-            lid: lowerId.includes('@lid') ? ctId : null,
-            realPhone: bestPhone,
+            rawJid: ctId,
+            lid,
+            realPhone: isRealBrazilianPhone(realPhone) ? realPhone : '',
             displayName: ctName,
             lastActivity: 0,
             source: 'contact'
@@ -611,8 +629,9 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           continue;
         }
 
-        const phone = item.realPhone || extractCleanPhone(item.rawJid);
-        const formattedPhone = formatPhoneBR(phone);
+        const hasRealPhone = Boolean(item.realPhone && isRealBrazilianPhone(item.realPhone));
+        const phone = hasRealPhone ? item.realPhone : '';
+        const formattedPhone = hasRealPhone ? formatPhoneBR(phone) : '';
         const name = item.displayName ? item.displayName.trim() : '';
 
         // JIDs candidatos para busca de mensagens
@@ -633,19 +652,23 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           rawJid: item.rawJid,
           lid: item.lid,
           realPhone: phone,
-          displayPhone: formattedPhone || phone,
+          displayPhone: formattedPhone || (hasRealPhone ? phone : ''),
           displayName: name || (formattedPhone ? formattedPhone : 'Contato WhatsApp'),
           hasCustomName: Boolean(name),
+          hasRealPhone,
           lastActivity: item.lastActivity || 0,
           candidateJids: Array.from(new Set(candidateJids.filter(Boolean)))
         });
       }
 
       // Ordenação: 
-      // 1. Quem tem nome salvo na agenda no topo
-      // 2. Quem teve mensagem/interação mais recente
-      // 3. Ordem alfabética
+      // 1. Quem tem telefone real verificado no topo
+      // 2. Quem tem nome salvo na agenda no topo
+      // 3. Quem teve mensagem/interação mais recente
+      // 4. Ordem alfabética
       finalChats.sort((a, b) => {
+        if (a.hasRealPhone && !b.hasRealPhone) return -1;
+        if (!a.hasRealPhone && b.hasRealPhone) return 1;
         if (a.hasCustomName && !b.hasCustomName) return -1;
         if (!a.hasCustomName && b.hasCustomName) return 1;
         if (a.lastActivity && b.lastActivity && a.lastActivity !== b.lastActivity) {
@@ -665,16 +688,16 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   // Selecionar por clique na lista
   function handleSelectChat(c) {
     const rawJid = c.rawJid || c.id || c.remoteJid || '';
-    const phone = c.realPhone || extractCleanPhone(rawJid);
-    const displayPhone = c.displayPhone || formatPhoneBR(phone);
-    const contactName = c.displayName || c.name || c.pushName || c.subject || displayPhone || 'Credor';
+    const phone = c.realPhone || (isRealBrazilianPhone(extractCleanPhone(rawJid)) ? extractCleanPhone(rawJid) : '');
+    const displayPhone = c.displayPhone || (phone ? formatPhoneBR(phone) : '');
+    const contactName = c.displayName || c.name || c.pushName || c.subject || (displayPhone ? `Contato ${displayPhone}` : 'Credor');
     setSelectedContact({
       jid: rawJid,
-      phone,
+      phone: phone || rawJid,
       displayPhone,
       name: contactName,
       lid: c.lid,
-      candidateJids: c.candidateJids || [rawJid, `${phone}@s.whatsapp.net`]
+      candidateJids: c.candidateJids || [rawJid, `${phone}@s.whatsapp.net`].filter(Boolean)
     });
   }
 
@@ -682,17 +705,21 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
   function handleSetManualPhone() {
     const clean = extractCleanPhone(manualPhone);
     if (!clean || clean.length < 8) {
-      alert('Por favor, digite um número de telefone válido com DDD (ex: 61999998888).');
+      alert('Por favor, digite um número de telefone válido com DDD (ex: 61993209444 ou 6193209444).');
       return;
     }
     const fullPhone = clean.startsWith('55') ? clean : '55' + clean;
     const jid = fullPhone + '@s.whatsapp.net';
-    const displayPhone = formatPhoneBR(fullPhone);
+    const displayPhone = formatPhoneBR(fullPhone) || fullPhone;
 
-    // Tenta encontrar se o contato já existe na agenda ou conversas para herdar o nome correto
+    // Tenta encontrar se o contato já existe na agenda ou conversas por telefone ou nome
+    const sigs = getPhoneSignatures(fullPhone);
     const foundChat = chats.find(c => {
-      const cDigits = (c.realPhone || c.displayPhone || c.rawJid || '').replace(/\D/g, '');
-      return cDigits.includes(clean) || clean.includes(cDigits);
+      const cDigits = (c.realPhone || c.displayPhone || '').replace(/\D/g, '');
+      return sigs.some(s => s && (cDigits.includes(s) || s.includes(cDigits)));
+    }) || chats.find(c => {
+      const q = manualPhone.toLowerCase().trim();
+      return (c.displayName || '').toLowerCase().includes(q);
     });
 
     const contactName = foundChat?.displayName || foundChat?.name || `Credor (${displayPhone})`;
@@ -703,7 +730,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       displayPhone,
       name: contactName,
       lid: foundChat?.lid || null,
-      candidateJids: [jid, `${clean}@s.whatsapp.net`]
+      candidateJids: Array.from(new Set([jid, `${clean}@s.whatsapp.net`, foundChat?.rawJid, foundChat?.lid].filter(Boolean)))
     });
   }
 
@@ -4064,38 +4091,43 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           </div>
 
           {/* Opção Digitar Número */}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              type="text"
-              placeholder="Ex: 61999998888 (com DDD)"
-              value={manualPhone}
-              onChange={(e) => setManualPhone(e.target.value)}
-              style={{
-                flex: 1,
-                padding: '10px 14px',
-                borderRadius: 10,
-                border: '1px solid var(--line)',
-                background: 'rgba(0,0,0,0.4)',
-                color: '#fff',
-                fontSize: 13
-              }}
-            />
-            <button
-              type="button"
-              onClick={handleSetManualPhone}
-              style={{
-                padding: '10px 16px',
-                borderRadius: 10,
-                border: 'none',
-                background: 'var(--teal)',
-                color: '#081018',
-                fontWeight: 900,
-                fontSize: 12.5,
-                cursor: 'pointer'
-              }}
-            >
-              Definir
-            </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                type="text"
+                placeholder="Ex: 61 9320-9444 ou 61993209444 (com DDD)"
+                value={manualPhone}
+                onChange={(e) => setManualPhone(e.target.value)}
+                style={{
+                  flex: 1,
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  border: '1px solid var(--teal)',
+                  background: 'rgba(0,0,0,0.4)',
+                  color: '#fff',
+                  fontSize: 13
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleSetManualPhone}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: 'var(--teal)',
+                  color: '#081018',
+                  fontWeight: 900,
+                  fontSize: 13,
+                  cursor: 'pointer'
+                }}
+              >
+                Definir Número
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--ink2)' }}>
+              💡 <strong>Dica:</strong> Se o contato aparecer com ID privado (LID) ou sem o número completo, basta digitar o número dele aqui (ex: <strong>61 9320-9444</strong>) e clicar em <strong>Definir Número</strong>!
+            </div>
           </div>
 
           {/* Conversas e Contatos do WhatsApp */}
@@ -4190,9 +4222,10 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   })
                   .map(c => {
                     const rawJid = c.id || c.remoteJid || '';
-                    const dispPhone = c.displayPhone || (extractCleanPhone(rawJid) ? formatPhoneBR(extractCleanPhone(rawJid)) : '');
-                    const dispName = c.displayName || c.name || c.pushName || (dispPhone ? `Contato ${dispPhone}` : 'Contato');
-                    const isSel = selectedContact?.jid === rawJid || (selectedContact?.phone && c.realPhone && selectedContact.phone === c.realPhone);
+                    const hasRealPhone = Boolean(c.hasRealPhone || (c.realPhone && isRealBrazilianPhone(c.realPhone)));
+                    const dispPhone = hasRealPhone ? (c.displayPhone || formatPhoneBR(c.realPhone)) : '';
+                    const dispName = c.displayName || c.name || c.pushName || (dispPhone ? `Contato ${dispPhone}` : 'Conversa WhatsApp');
+                    const isSel = selectedContact?.jid === rawJid || (hasRealPhone && selectedContact?.phone && selectedContact.phone === c.realPhone);
                     return (
                       <div
                         key={rawJid || c.realPhone}
@@ -4221,7 +4254,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                             }}>
                               {dispName}
                             </span>
-                            {dispPhone && (
+                            {dispPhone ? (
                               <span style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
@@ -4237,11 +4270,29 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                               }}>
                                 📞 {dispPhone}
                               </span>
+                            ) : (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                fontSize: 11,
+                                padding: '2px 6px',
+                                borderRadius: 6,
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                color: 'var(--ink2)'
+                              }}>
+                                💬 Conversa WhatsApp
+                              </span>
                             )}
                           </div>
-                          {c.realPhone && dispPhone && (
+                          {hasRealPhone && (
                             <span style={{ fontSize: 10.5, color: 'var(--ink2)', fontFamily: 'monospace' }}>
                               Número puro: +{c.realPhone}
+                            </span>
+                          )}
+                          {!hasRealPhone && (
+                            <span style={{ fontSize: 10.5, color: '#f59e0b', fontFamily: 'monospace' }}>
+                              🔒 Contato com ID Privado do WhatsApp (sem telefone público)
                             </span>
                           )}
                         </div>
