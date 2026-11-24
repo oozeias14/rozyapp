@@ -50,8 +50,8 @@ export default async function handler(req, res) {
         if (!resp.ok) {
           lastError = data?.error?.message || `HTTP ${resp.status}`;
           if (resp.status === 429 || resp.status === 503) {
-            // Pausa estratégica de 1500ms para liberação de cota antes do próximo modelo
-            await new Promise(r => setTimeout(r, 1500));
+            // Pausa estratégica dobrada de 3000ms para liberação de cota antes do próximo modelo
+            await new Promise(r => setTimeout(r, 3000));
           }
           continue;
         }

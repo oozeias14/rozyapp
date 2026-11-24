@@ -874,9 +874,9 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     audData = await resp.json();
                     break;
                   }
-                  if (att < 3) await new Promise(r => setTimeout(r, 2000 * att));
+                  if (att < 3) await new Promise(r => setTimeout(r, 4000 * att));
                 } catch (e) {
-                  if (att < 3) await new Promise(r => setTimeout(r, 2000 * att));
+                  if (att < 3) await new Promise(r => setTimeout(r, 4000 * att));
                 }
               }
 
@@ -889,7 +889,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   taxaJuros: audData.taxa_juros_mencionada || ''
                 });
               }
-              await new Promise(r => setTimeout(r, 1500));
+              await new Promise(r => setTimeout(r, 3000));
             }
           } catch (e) {}
         }
@@ -917,7 +917,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   });
                 }
               }
-              await new Promise(r => setTimeout(r, 1000));
+              await new Promise(r => setTimeout(r, 2000));
             }
           } catch (e) {}
         }
@@ -1326,7 +1326,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       let apiMsgs = [];
       if (selectedContact) {
         addLog(`🌐 Conectando à API para buscar histórico integral de ${selectedContact.name} (${selectedContact.displayPhone || selectedContact.phone})...`, 'info');
-        addLog('⏳ MODO ANTI-TRAVAMENTO ATIVO: Buscando todas as mensagens da primeira até a última com pausas suaves de 700ms...', 'info');
+        addLog('⏳ MODO ANTI-TRAVAMENTO ATIVO: Buscando todas as mensagens da primeira até a última com pausas suaves dobradas de 2.400ms para máxima segurança e precisão...', 'info');
         apiMsgs = await fetchFullChatHistory(selectedContact, (info) => {
           if (typeof info === 'object' && info !== null) {
             addLog(`📥 [Página ${info.page}] Recuperando histórico com tranquilidade... ${info.count} mensagens acumuladas no total.`, 'info');
@@ -1533,10 +1533,10 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   }
                   const errJson = await resp.json().catch(() => ({}));
                   lastApiError = errJson?.error || `HTTP ${resp.status}`;
-                  if (att < 3) await new Promise(r => setTimeout(r, 2500 * att));
+                  if (att < 3) await new Promise(r => setTimeout(r, 5000 * att));
                 } catch (e) {
                   lastApiError = e.message;
-                  if (att < 3) await new Promise(r => setTimeout(r, 2500 * att));
+                  if (att < 3) await new Promise(r => setTimeout(r, 5000 * att));
                 }
               }
 
@@ -1602,8 +1602,8 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                 } : item));
               }
 
-              // Pausa suave de 2000ms (2s) entre áudios para manter a cota da IA 100% estável e sem rate-limit (429)
-              await new Promise(r => setTimeout(r, 2000));
+              // Pausa suave dobrada de 4000ms (4s) entre áudios para manter a cota da IA 100% estável e sem rate-limit (429)
+              await new Promise(r => setTimeout(r, 4000));
             } else {
               const mediaReason = msg.fromFile ? 'Áudio citado no histórico exportado do WhatsApp (som não anexado no arquivo .txt)' : 'Arquivo de mídia expirado ou indisponível nos servidores do WhatsApp';
               transcriptionErrors.push({
@@ -1710,7 +1710,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   receiptData: ocrData,
                   isFinancial: isReceipt || valPago > 0
                 });
-                await new Promise(r => setTimeout(r, 1500));
+                await new Promise(r => setTimeout(r, 3000));
               }
             }
           } catch (imgErr) {
