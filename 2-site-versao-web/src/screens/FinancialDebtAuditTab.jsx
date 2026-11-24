@@ -782,6 +782,59 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     txt += `• Total de Capital Principal Amortizado: R$ ${auditResult.totalAmortizado.toFixed(2)}\r\n`;
     txt += `• Saldo Devedor Restante Real: R$ ${auditResult.saldoFinalReal.toFixed(2)}\r\n`;
     txt += `• Valor Pago a Mais a Restituir: R$ ${auditResult.totalPagoAMais.toFixed(2)}\r\n\r\n`;
+
+    // SEÇÃO DE NEGOCIAÇÕES E RENEGOCIAÇÕES COM DATAS
+    txt += '--------------------------------------------------------------------------------\r\n';
+    txt += 'NEGOCIAÇÕES & RENEGOCIAÇÕES COM DATAS, PARCELAS E VALORES TOTAIS:\r\n';
+    txt += '--------------------------------------------------------------------------------\r\n';
+    if ((auditResult.negotiations || []).length === 0) {
+      txt += 'Nenhuma repactuação adicional registrada além dos contratos de empréstimo.\r\n\r\n';
+    } else {
+      auditResult.negotiations.forEach((n, idx) => {
+        txt += `[Acordo ${idx + 1}] Data: ${n.data} | Tipo: ${n.tipo} | Valor: R$ ${Number(n.valorNegociado).toFixed(2)}\r\n`;
+        txt += `   ↳ Qtd Parcelas: ${n.quantidadeParcelas} | Vencimentos/Prazos: ${n.datasPagamentos}\r\n`;
+        txt += `   ↳ Valor Total Pactuado: R$ ${Number(n.valorTotal).toFixed(2)} | Detalhes: ${n.descricao}\r\n`;
+        if (n.evidencia) txt += `   ↳ Evidência: "${n.evidencia}"\r\n`;
+        txt += '\r\n';
+      });
+    }
+
+    // SEÇÃO DE AMORTIZAÇÕES COM DIREITO LEGAL NÃO CONCEDIDAS PELO CREDOR (ART. 354 CC)
+    txt += '--------------------------------------------------------------------------------\r\n';
+    txt += 'AMORTIZAÇÕES COM DIREITO LEGAL NÃO EFETUADAS PELO CREDOR (CÓDIGO CIVIL ART. 354):\r\n';
+    txt += '--------------------------------------------------------------------------------\r\n';
+    if ((auditResult.unmadeAmortizations || []).length === 0) {
+      txt += 'Nenhuma retenção indevida de amortização identificada.\r\n\r\n';
+    } else {
+      auditResult.unmadeAmortizations.forEach((u, idx) => {
+        txt += `[Ocorrência ${idx + 1}] Data do Pagamento: ${u.dataPagamento} | Empréstimo: ${u.emprestimoReferencia}\r\n`;
+        txt += `   ↳ Valor Pago: R$ ${Number(u.valorPago).toFixed(2)} | Juros Quitados no Período: R$ ${Number(u.jurosDevidosData).toFixed(2)}\r\n`;
+        txt += `   ↳ VALOR COM DIREITO LEGAL DE AMORTIZAR: R$ ${Number(u.valorDireitoAmortizacao).toFixed(2)}\r\n`;
+        txt += `   ↳ Saldo Devedor Legal Real Reduzido: R$ ${Number(u.saldoDevedorAposAmortizacao || 0).toFixed(2)}\r\n`;
+        txt += `   ↳ Irregularidade: ${u.prejuizoOuIrregularidade}\r\n`;
+        txt += '\r\n';
+      });
+    }
+
+    // SEÇÃO DE PARCELAS COBRADAS POR CADA EMPRÉSTIMO COM DATAS
+    txt += '--------------------------------------------------------------------------------\r\n';
+    txt += 'QUANTIDADE DE PARCELAS COBRADAS POR CADA EMPRÉSTIMO COM DATAS:\r\n';
+    txt += '--------------------------------------------------------------------------------\r\n';
+    if ((auditResult.installmentsCharged || []).length === 0) {
+      txt += 'Sem detalhamento de parcelas cobradas disponível.\r\n\r\n';
+    } else {
+      auditResult.installmentsCharged.forEach((inst, idx) => {
+        txt += `[Empréstimo ${idx + 1}] ${inst.emprestimo} (Concedido em: ${inst.dataEmprestimo})\r\n`;
+        txt += `   ↳ Total de Cobranças Exigidas: ${inst.quantidadeCobradas} parcela(s)\r\n`;
+        if (inst.historico && inst.historico.length > 0) {
+          inst.historico.forEach(h => {
+            txt += `      • Data: ${h.data} | Valor: R$ ${Number(h.valorCobrado).toFixed(2)} | Detalhe: ${h.descricao || 'Cobrança'}\r\n`;
+          });
+        }
+        txt += '\r\n';
+      });
+    }
+
     txt += '================================================================================\r\n';
     txt += 'TRANSCRIÇÃO CRONOLÓGICA DAS CONVERSAS, ÁUDIOS E COMPROVANTES:\r\n';
     txt += '================================================================================\r\n\r\n';
@@ -1493,6 +1546,93 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       const manualTotal = debtConditions.reduce((acc, c) => acc + c.amount, 0);
       const autoTotal = autoDetectedDebts.reduce((acc, c) => acc + c.amount, 0);
 
+      // ── AUDITORIA DETALHADA: NEGOCIAÇÕES, RENEGOCIAÇÕES & AMORTIZAÇÕES OMITIDAS ──
+      // 1. Amortizações com direito legal não efetuadas pelo credor (Art. 354 CC)
+      const calculatedUnmadeAmortizations = amortizationTimeline
+        .filter(t => t.amortizacaoCapital > 0)
+        .map((t, idx) => {
+          const matchedDebt = activeDebts.find(d => new Date(d.date) <= new Date(t.data)) || activeDebts[0];
+          return {
+            id: `unmade_amort_${idx}`,
+            dataPagamento: t.data,
+            emprestimoReferencia: matchedDebt ? (matchedDebt.description || `Empréstimo de R$ ${matchedDebt.amount.toFixed(2)} (${matchedDebt.date})`) : 'Capital Principal',
+            valorPago: t.valorPago,
+            jurosDevidosData: t.jurosAbatidos,
+            valorDireitoAmortizacao: t.amortizacaoCapital,
+            saldoAnterior: t.saldoAnterior,
+            saldoDevedorAposAmortizacao: t.saldoDevedor,
+            prejuizoOuIrregularidade: `O pagamento de R$ ${t.valorPago.toFixed(2)} quitou R$ ${t.jurosAbatidos.toFixed(2)} de juros corridos e gerou DIREITO LEGAL DE AMORTIZAR R$ ${t.amortizacaoCapital.toFixed(2)} do principal. Se o credor continuou cobrando juros sobre o saldo anterior de R$ ${t.saldoAnterior.toFixed(2)} sem reduzir para R$ ${t.saldoDevedor.toFixed(2)}, sonegou indevidamente a amortização violando o Art. 354 do Código Civil.`,
+            evidencia: t.evidencia || 'Comprovante / Registro de Pagamento'
+          };
+        });
+
+      const aiUnmadeAmortizations = (aiAuditResponse?.amortizacoes_nao_feitas || []).map((a, idx) => ({
+        id: `ai_unmade_${idx}`,
+        dataPagamento: a.data_pagamento || '-',
+        emprestimoReferencia: a.emprestimo_referencia || 'Empréstimo',
+        valorPago: Number(a.valor_pago) || 0,
+        jurosDevidosData: Number(a.juros_devidos_na_data) || 0,
+        valorDireitoAmortizacao: Number(a.valor_direito_amortizacao) || 0,
+        saldoAnterior: 0,
+        saldoDevedorAposAmortizacao: 0,
+        prejuizoOuIrregularidade: a.prejuizo_ou_irregularidade || 'Amortização do saldo principal ignorada pelo credor',
+        evidencia: a.evidencia || 'Registro em conversa'
+      }));
+
+      const finalUnmadeAmortizations = calculatedUnmadeAmortizations.length > 0
+        ? calculatedUnmadeAmortizations
+        : aiUnmadeAmortizations;
+
+      // 2. Negociações e Renegociações com datas, valores e prazos
+      const aiNegotiations = (aiAuditResponse?.negociacoes_com_datas || []).map((n, idx) => ({
+        id: `neg_${idx}`,
+        data: n.data_negociacao || '-',
+        tipo: n.tipo === 'RENEGOCIACAO' ? 'Renegociação' : 'Negociação Inicial',
+        valorNegociado: Number(n.valor_negociado) || 0,
+        quantidadeParcelas: n.quantidade_parcelas || '1 parcela',
+        datasPagamentos: Array.isArray(n.datas_pagamentos) ? n.datas_pagamentos.join(', ') : (n.datas_pagamentos || '-'),
+        valorTotal: Number(n.valor_total) || Number(n.valor_negociado) || 0,
+        descricao: n.descricao || 'Negociação financeira de empréstimo',
+        evidencia: n.evidencia || '-'
+      }));
+
+      const finalNegotiations = aiNegotiations.length > 0 ? aiNegotiations : activeDebts.map((d, idx) => ({
+        id: `neg_def_${idx}`,
+        data: d.date,
+        tipo: idx === 0 ? 'Negociação Inicial' : 'Renegociação / Reforço',
+        valorNegociado: d.amount,
+        quantidadeParcelas: 'Vencimento mensal',
+        datasPagamentos: `Vencimento mensal (Taxa: ${d.monthlyRate}% a.m.)`,
+        valorTotal: d.amount,
+        descricao: d.description || 'Contrato de Empréstimo',
+        evidencia: d.evidence || 'Registro de empréstimo pactuado'
+      }));
+
+      // 3. Quantidade de parcelas cobradas por empréstimo com datas
+      const aiInstallments = (aiAuditResponse?.parcelas_cobradas_por_emprestimo || []).map((p, idx) => ({
+        id: `inst_${idx}`,
+        emprestimo: p.emprestimo || `Empréstimo ${idx + 1}`,
+        dataEmprestimo: p.data_emprestimo || '-',
+        quantidadeCobradas: p.quantidade_parcelas_cobradas || (p.historico_cobrancas ? p.historico_cobrancas.length : 0),
+        historico: p.historico_cobrancas || []
+      }));
+
+      const finalInstallments = aiInstallments.length > 0 ? aiInstallments : activeDebts.map((d, idx) => {
+        const relatedEvents = amortizationTimeline.filter(t => t.valorPago > 0);
+        return {
+          id: `inst_def_${idx}`,
+          emprestimo: d.description || `Empréstimo de R$ ${d.amount.toFixed(2)} (${d.date})`,
+          dataEmprestimo: d.date,
+          quantidadeCobradas: relatedEvents.length,
+          historico: relatedEvents.map(p => ({
+            data: p.data,
+            valorCobrado: p.valorPago,
+            descricao: p.descricao,
+            evidencia: p.evidencia
+          }))
+        };
+      });
+
       const finalResult = {
         executionMode: step2Mode, // 'manual' | 'auto'
         manualTotal,
@@ -1513,6 +1653,9 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         fullDialog: fullConversationDialog,
         receipts: allPayments,
         targetContactDisplay,
+        negotiations: finalNegotiations,
+        unmadeAmortizations: finalUnmadeAmortizations,
+        installmentsCharged: finalInstallments,
         aiReport: aiAuditResponse || {
           diagnostico_pericial: `Após reconstituição contábil com base em dias corridos e no Código Civil art. 354 sobre ${activeDebts.length} operações de empréstimos (Total: R$ ${totalContracted.toFixed(2)}), apurou-se que foram pagos R$ ${totalPaid.toFixed(2)}. ${finalDebtBalance <= 0 ? `Dívida TOTALMENTE QUITADA, restando saldo credor a favor do devedor de R$ ${finalOverpaid.toFixed(2)} pago a mais a ser devolvido pelo número ${targetContactDisplay}!` : `Saldo devedor restante justo a pagar ao número ${targetContactDisplay}: R$ ${finalDebtBalance.toFixed(2)}.`}`,
           irregularidades_detectadas: [
@@ -1662,6 +1805,78 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       const wsDialog = XLSX.utils.aoa_to_sheet([dialogHeaders, ...dialogRows]);
       XLSX.utils.book_append_sheet(wb, wsDialog, 'Diálogo Transcrito Completo');
 
+      // ABA 6: NEGOCIAÇÕES E RENEGOCIAÇÕES COM DATAS
+      const negHeaders = ['Data da Negociação', 'Tipo de Acordo', 'Valor Negociado (R$)', 'Qtd de Parcelas', 'Datas Pactuadas de Pagamento', 'Valor Total Contratado (R$)', 'Descrição do Acordo', 'Evidência Probatória'];
+      const negRows = (auditResult.negotiations || []).map(n => [
+        n.data,
+        n.tipo,
+        n.valorNegociado,
+        n.quantidadeParcelas,
+        n.datasPagamentos,
+        n.valorTotal,
+        n.descricao,
+        n.evidencia
+      ]);
+      const wsNeg = XLSX.utils.aoa_to_sheet([negHeaders, ...negRows]);
+      XLSX.utils.book_append_sheet(wb, wsNeg, 'Negociações e Renegociações');
+
+      // ABA 7: AMORTIZAÇÕES COM DIREITO LEGAL NÃO FEITAS PELO CREDOR (ART. 354 CC)
+      const unmadeHeaders = [
+        'Data do Pagamento',
+        'Empréstimo de Referência',
+        'Valor Pago pelo Devedor (R$)',
+        'Juros Vencidos Quitados (R$)',
+        'Valor com Direito Legal de Amortização (R$)',
+        'Saldo Anterior (R$)',
+        'Saldo Legal Real Atualizado (R$)',
+        'Irregularidade e Prejuízo Cometido pelo Credor',
+        'Evidência Probatória'
+      ];
+      const unmadeRows = (auditResult.unmadeAmortizations || []).map(u => [
+        u.dataPagamento,
+        u.emprestimoReferencia,
+        u.valorPago,
+        u.jurosDevidosData,
+        u.valorDireitoAmortizacao,
+        u.saldoAnterior,
+        u.saldoDevedorAposAmortizacao,
+        u.prejuizoOuIrregularidade,
+        u.evidencia
+      ]);
+      const wsUnmade = XLSX.utils.aoa_to_sheet([unmadeHeaders, ...unmadeRows]);
+      XLSX.utils.book_append_sheet(wb, wsUnmade, 'Amortizações Não Feitas');
+
+      // ABA 8: QUANTIDADE DE PARCELAS COBRADAS POR CADA EMPRÉSTIMO COM DATAS
+      const chargedHeaders = ['Empréstimo', 'Data do Empréstimo', 'Qtd de Parcelas Cobradas', 'Data da Cobrança', 'Valor Cobrado (R$)', 'Descrição da Cobrança', 'Evidência Probatória'];
+      const chargedRows = [];
+      (auditResult.installmentsCharged || []).forEach(inst => {
+        if (inst.historico && inst.historico.length > 0) {
+          inst.historico.forEach(h => {
+            chargedRows.push([
+              inst.emprestimo,
+              inst.dataEmprestimo,
+              inst.quantidadeCobradas,
+              h.data,
+              h.valorCobrado,
+              h.descricao,
+              h.evidencia
+            ]);
+          });
+        } else {
+          chargedRows.push([
+            inst.emprestimo,
+            inst.dataEmprestimo,
+            inst.quantidadeCobradas,
+            '-',
+            0,
+            'Sem detalhamento individual de cobrança',
+            '-'
+          ]);
+        }
+      });
+      const wsCharged = XLSX.utils.aoa_to_sheet([chargedHeaders, ...chargedRows]);
+      XLSX.utils.book_append_sheet(wb, wsCharged, 'Parcelas Cobradas');
+
       const safePhone = (selectedContact?.phone || manualPhone || 'credor').replace(/\D/g, '');
       const filename = `pericia_financeira_${auditResult.executionMode}_${safePhone}_${new Date().toISOString().slice(0, 10)}.xlsx`;
       XLSX.writeFile(wb, filename);
@@ -1796,7 +2011,89 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </ul>
           ` : ''}
 
-          <h2>5. Relação de Empréstimos Contratados</h2>
+          <h2>5. Negociações & Renegociações com Datas, Parcelas e Valores Totais</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Data da Negociação</th>
+                <th>Tipo</th>
+                <th>Valor Negociado (R$)</th>
+                <th>Qtd Parcelas</th>
+                <th>Datas Pactuadas</th>
+                <th>Valor Total (R$)</th>
+                <th>Descrição do Acordo</th>
+                <th>Evidência</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(auditResult.negotiations || []).map(n => `
+                <tr>
+                  <td><strong>${n.data}</strong></td>
+                  <td><span class="${n.tipo?.includes('RENEGOCIACAO') ? 'badge-amber' : 'badge-teal'}">${n.tipo}</span></td>
+                  <td>R$ ${Number(n.valorNegociado).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  <td>${n.quantidadeParcelas}</td>
+                  <td>${n.datasPagamentos}</td>
+                  <td><strong>R$ ${Number(n.valorTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></td>
+                  <td>${n.descricao}</td>
+                  <td style="font-size: 8.5pt; color: #475569;">${n.evidencia}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <h2>6. Amortizações que o Devedor Tinha Direito e o Credor NÃO Concedeu (Art. 354 CC)</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Data Pagto</th>
+                <th>Empréstimo</th>
+                <th>Valor Pago (R$)</th>
+                <th>Juros Quitados</th>
+                <th>Valor com Direito de Amortizar (R$)</th>
+                <th>Saldo Dev. Real (R$)</th>
+                <th>Violação Legal Cometida pelo Credor</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(auditResult.unmadeAmortizations || []).map(u => `
+                <tr>
+                  <td><strong>${u.dataPagamento}</strong></td>
+                  <td>${u.emprestimoReferencia}</td>
+                  <td style="color: #047857; font-weight: bold;">R$ ${Number(u.valorPago).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  <td>R$ ${Number(u.jurosDevidosData).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  <td style="color: #0284C7; font-weight: bold; background: #ecfeff;">R$ ${Number(u.valorDireitoAmortizacao).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  <td>R$ ${Number(u.saldoDevedorAposAmortizacao || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  <td style="font-size: 8.5pt; color: #b45309;">${u.prejuizoOuIrregularidade}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <h2>7. Quantidade de Parcelas Cobradas por Empréstimo com Datas</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Empréstimo</th>
+                <th>Data Concessão</th>
+                <th>Total de Parcelas Cobradas</th>
+                <th>Datas e Valores das Cobranças Exigidas</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(auditResult.installmentsCharged || []).map(inst => `
+                <tr>
+                  <td><strong>${inst.emprestimo}</strong></td>
+                  <td>${inst.dataEmprestimo}</td>
+                  <td style="text-align: center; font-weight: bold;">${inst.quantidadeCobradas} cobrança(s)</td>
+                  <td style="font-size: 8.5pt;">
+                    ${(inst.historico || []).map(h => `• <strong>${h.data}</strong>: R$ ${Number(h.valorCobrado).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${h.descricao || 'Cobrança'})`).join('<br>')}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <h2>8. Relação de Empréstimos Concedidos</h2>
           <table>
             <thead>
               <tr>
@@ -1810,7 +2107,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             <tbody>
               ${(auditResult.debtConditions || []).map(c => `
                 <tr>
-                  <td>${c.date}</td>
+                  <td><strong>${c.date}</strong></td>
                   <td>R$ ${Number(c.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                   <td>${c.monthlyRate}% a.m.</td>
                   <td>${c.description || 'Empréstimo em Dinheiro'}</td>
@@ -1820,7 +2117,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </tbody>
           </table>
 
-          <h2>6. Relação de Pagamentos e Comprovantes Identificados</h2>
+          <h2>9. Relação de Pagamentos e Comprovantes Identificados</h2>
           <table>
             <thead>
               <tr>
@@ -1834,7 +2131,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             <tbody>
               ${auditResult.receipts.map(r => `
                 <tr>
-                  <td>${r.date}</td>
+                  <td><strong>${r.date}</strong></td>
                   <td style="color: #047857; font-weight: bold;">R$ ${Number(r.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                   <td>${r.origin}</td>
                   <td>${r.authId || '-'}</td>
@@ -1844,7 +2141,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </tbody>
           </table>
 
-          <h2>7. Extrato Cronológico de Amortizações (Código Civil Art. 354)</h2>
+          <h2>10. Extrato Cronológico de Amortizações (Código Civil Art. 354)</h2>
           <table>
             <thead>
               <tr>
@@ -2005,7 +2302,87 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </div>
           ` : ''}
 
-          <h2>4. Empréstimos Contratados</h2>
+          <h2>4. Negociações & Renegociações com Datas, Parcelas e Valores Totais</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Tipo</th>
+                <th>Valor Negociado (R$)</th>
+                <th>Qtd Parcelas</th>
+                <th>Datas Pactuadas</th>
+                <th>Valor Total (R$)</th>
+                <th>Descrição do Acordo</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(auditResult.negotiations || []).map(n => `
+                <tr>
+                  <td><strong>${n.data}</strong></td>
+                  <td>${n.tipo}</td>
+                  <td>R$ ${Number(n.valorNegociado).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  <td>${n.quantidadeParcelas}</td>
+                  <td>${n.datasPagamentos}</td>
+                  <td><strong>R$ ${Number(n.valorTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong></td>
+                  <td>${n.descricao}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <h2>5. Amortizações que o Devedor Tinha Direito e o Credor NÃO Concedeu (Art. 354 CC)</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Data Pagto</th>
+                <th>Empréstimo</th>
+                <th>Valor Pago (R$)</th>
+                <th>Juros Quitados</th>
+                <th>Valor Direito de Amortizar (R$)</th>
+                <th>Saldo Real (R$)</th>
+                <th>Irregularidade do Credor</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(auditResult.unmadeAmortizations || []).map(u => `
+                <tr>
+                  <td><strong>${u.dataPagamento}</strong></td>
+                  <td>${u.emprestimoReferencia}</td>
+                  <td style="color: #047857; font-weight: bold;">R$ ${Number(u.valorPago).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  <td>R$ ${Number(u.jurosDevidosData).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  <td style="color: #0284C7; font-weight: bold; background: #ecfeff;">R$ ${Number(u.valorDireitoAmortizacao).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  <td>R$ ${Number(u.saldoDevedorAposAmortizacao || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                  <td style="font-size: 8pt; color: #b45309;">${u.prejuizoOuIrregularidade}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <h2>6. Quantidade de Parcelas Cobradas por Empréstimo com Datas</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Empréstimo</th>
+                <th>Data Concessão</th>
+                <th>Total Cobranças</th>
+                <th>Histórico de Cobranças Exigidas (Datas e Valores)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(auditResult.installmentsCharged || []).map(inst => `
+                <tr>
+                  <td><strong>${inst.emprestimo}</strong></td>
+                  <td>${inst.dataEmprestimo}</td>
+                  <td style="text-align: center; font-weight: bold;">${inst.quantidadeCobradas} cobrança(s)</td>
+                  <td style="font-size: 8pt;">
+                    ${(inst.historico || []).map(h => `• <strong>${h.data}</strong>: R$ ${Number(h.valorCobrado).toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (${h.descricao || 'Cobrança'})`).join('<br>')}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <h2>7. Empréstimos Contratados</h2>
           <table>
             <thead>
               <tr><th>Data</th><th>Valor (R$)</th><th>Taxa (% a.m.)</th><th>Descrição</th><th>Evidência</th></tr>
@@ -2013,7 +2390,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             <tbody>
               ${(auditResult.debtConditions || []).map(c => `
                 <tr>
-                  <td>${c.date}</td>
+                  <td><strong>${c.date}</strong></td>
                   <td>R$ ${Number(c.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                   <td>${c.monthlyRate}% a.m.</td>
                   <td>${c.description || 'Empréstimo em Dinheiro'}</td>
@@ -2023,7 +2400,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
             </tbody>
           </table>
 
-          <h2>5. Extrato Cronológico de Amortizações (Código Civil Art. 354)</h2>
+          <h2>8. Extrato Cronológico de Amortizações (Código Civil Art. 354)</h2>
           <table>
             <thead>
               <tr>
@@ -4648,6 +5025,24 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
               <button
                 type="button"
+                onClick={() => setActiveTab('negotiations_audit')}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: activeTab === 'negotiations_audit' ? 'linear-gradient(135deg, #F59E0B, #D97706)' : 'rgba(255,255,255,0.05)',
+                  color: activeTab === 'negotiations_audit' ? '#081018' : '#fff',
+                  fontWeight: 900,
+                  fontSize: 12.5,
+                  cursor: 'pointer',
+                  boxShadow: activeTab === 'negotiations_audit' ? '0 4px 15px rgba(245, 158, 11, 0.35)' : 'none'
+                }}
+              >
+                🎯 Negociações & Amortizações Omitidas ({auditResult.unmadeAmortizations?.length || 0})
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setActiveTab('dialogue')}
                 style={{
                   padding: '8px 16px',
@@ -4765,7 +5160,239 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
               </div>
             )}
 
-            {/* ABA 2: DIÁLOGO COMPLETO & TRANSCRIÇÕES DOS ÁUDIOS */}
+            {/* ABA: AUDITORIA DETALHADA DE NEGOCIAÇÕES, RENEGOCIAÇÕES & AMORTIZAÇÕES OMITIDAS */}
+            {activeTab === 'negotiations_audit' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {/* 1. NEGOCIAÇÕES & RENEGOCIAÇÕES COM DATAS */}
+                <div style={{
+                  background: 'rgba(0,0,0,0.3)',
+                  border: '1px solid var(--line)',
+                  borderRadius: 14,
+                  padding: 18,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 900, color: '#F59E0B', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span>🤝</span> Negociações & Renegociações Identificadas com Datas
+                    </div>
+                    <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(245, 158, 11, 0.2)', color: '#F59E0B', fontWeight: 800 }}>
+                      {auditResult.negotiations?.length || 0} negociação(ões) registrada(s)
+                    </span>
+                  </div>
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--ink2)', textAlign: 'left' }}>
+                          <th style={{ padding: '8px 10px' }}>Data da Negociação</th>
+                          <th style={{ padding: '8px 10px' }}>Tipo</th>
+                          <th style={{ padding: '8px 10px', textAlign: 'right' }}>Valor Negociado (R$)</th>
+                          <th style={{ padding: '8px 10px' }}>Qtd Parcelas</th>
+                          <th style={{ padding: '8px 10px' }}>Datas de Pagamentos</th>
+                          <th style={{ padding: '8px 10px', textAlign: 'right' }}>Valor Total (R$)</th>
+                          <th style={{ padding: '8px 10px' }}>Descrição & Evidência</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(auditResult.negotiations || []).map((n, idx) => (
+                          <tr key={n.id || idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                            <td style={{ padding: '10px 10px', fontWeight: 900, color: 'var(--teal)' }}>
+                              📅 {n.data}
+                            </td>
+                            <td style={{ padding: '10px 10px' }}>
+                              <span style={{
+                                fontSize: 10,
+                                fontWeight: 800,
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                background: n.tipo?.includes('Renegociação') || n.tipo?.includes('RENEGOCIACAO') ? 'rgba(245, 158, 11, 0.2)' : 'rgba(0, 229, 155, 0.2)',
+                                color: n.tipo?.includes('Renegociação') || n.tipo?.includes('RENEGOCIACAO') ? '#F59E0B' : 'var(--teal)'
+                              }}>
+                                {n.tipo}
+                              </span>
+                            </td>
+                            <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 800, color: '#fff' }}>
+                              R$ {Number(n.valorNegociado).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: '10px 10px', color: '#38BDF8', fontWeight: 800 }}>
+                              {n.quantidadeParcelas}
+                            </td>
+                            <td style={{ padding: '10px 10px', color: 'var(--ink1)' }}>
+                              {n.datasPagamentos}
+                            </td>
+                            <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 900, color: '#fff' }}>
+                              R$ {Number(n.valorTotal).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: '10px 10px', fontSize: 11, color: 'var(--ink2)' }}>
+                              <div>{n.descricao}</div>
+                              {n.evidencia && (
+                                <div style={{ color: '#38BDF8', fontStyle: 'italic', marginTop: 2 }}>
+                                  Evidência: "{n.evidencia}"
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* 2. AMORTIZAÇÕES COM DIREITO LEGAL NÃO FEITAS PELO CREDOR */}
+                <div style={{
+                  background: 'rgba(0,0,0,0.3)',
+                  border: '1px solid rgba(0, 229, 155, 0.3)',
+                  borderRadius: 14,
+                  padding: 18,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 14.5, fontWeight: 900, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span>⚖️</span> Amortizações que o Devedor Tinha Direito e o Credor NÃO Concedeu
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--ink2)', marginTop: 2 }}>
+                        Art. 354 do Código Civil: Todo valor pago que excedeu os juros acumulados devia ter reduzido imediatamente a dívida principal!
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(0, 229, 155, 0.2)', color: 'var(--teal)', fontWeight: 800 }}>
+                      {auditResult.unmadeAmortizations?.length || 0} amortização(ões) de direito
+                    </span>
+                  </div>
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--ink2)', textAlign: 'left' }}>
+                          <th style={{ padding: '8px 10px' }}>Data Pagto</th>
+                          <th style={{ padding: '8px 10px' }}>Empréstimo</th>
+                          <th style={{ padding: '8px 10px', textAlign: 'right' }}>Valor Pago (R$)</th>
+                          <th style={{ padding: '8px 10px', textAlign: 'right' }}>Juros Quitados (R$)</th>
+                          <th style={{ padding: '8px 10px', textAlign: 'right', color: '#00E59B' }}>Valor a Amortizar (R$)</th>
+                          <th style={{ padding: '8px 10px', textAlign: 'right' }}>Saldo Real Restante (R$)</th>
+                          <th style={{ padding: '8px 10px' }}>Prejuízo & Irregularidade Cometida</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(auditResult.unmadeAmortizations || []).map((u, idx) => (
+                          <tr key={u.id || idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                            <td style={{ padding: '10px 10px', fontWeight: 900, color: 'var(--teal)' }}>
+                              📅 {u.dataPagamento}
+                            </td>
+                            <td style={{ padding: '10px 10px', fontWeight: 800, color: '#fff' }}>
+                              {u.emprestimoReferencia}
+                            </td>
+                            <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 800, color: '#00E59B' }}>
+                              R$ {Number(u.valorPago).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: '10px 10px', textAlign: 'right', color: '#EF4444' }}>
+                              R$ {Number(u.jurosDevidosData).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 900, color: '#38BDF8', background: 'rgba(56, 189, 248, 0.08)' }}>
+                              R$ {Number(u.valorDireitoAmortizacao).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: '10px 10px', textAlign: 'right', fontWeight: 900, color: '#fff' }}>
+                              R$ {Number(u.saldoDevedorAposAmortizacao || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: '10px 10px', fontSize: 11, color: '#F59E0B' }}>
+                              <div>{u.prejuizoOuIrregularidade}</div>
+                              {u.evidencia && (
+                                <div style={{ color: 'var(--ink2)', fontStyle: 'italic', marginTop: 2 }}>
+                                  Evidência: "{u.evidencia}"
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* 3. PARCELAS COBRADAS POR CADA EMPRÉSTIMO COM DATAS */}
+                <div style={{
+                  background: 'rgba(0,0,0,0.3)',
+                  border: '1px solid var(--line)',
+                  borderRadius: 14,
+                  padding: 18,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 900, color: '#38BDF8', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span>📊</span> Quantidade de Parcelas Cobradas por Empréstimo com Datas
+                    </div>
+                    <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(56, 189, 248, 0.2)', color: '#38BDF8', fontWeight: 800 }}>
+                      Mapeamento de Cobranças
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {(auditResult.installmentsCharged || []).map((inst, idx) => (
+                      <div
+                        key={inst.id || idx}
+                        style={{
+                          padding: 14,
+                          borderRadius: 10,
+                          background: 'rgba(255,255,255,0.03)',
+                          border: '1px solid rgba(255,255,255,0.06)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 8
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                          <div>
+                            <span style={{ fontSize: 13, fontWeight: 900, color: '#fff' }}>
+                              💵 {inst.emprestimo}
+                            </span>
+                            <span style={{ fontSize: 11, color: 'var(--ink2)', marginLeft: 8 }}>
+                              (Concedido em: <strong>{inst.dataEmprestimo}</strong>)
+                            </span>
+                          </div>
+                          <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 4, background: '#38BDF8', color: '#081018' }}>
+                            {inst.quantidadeCobradas} parcela(s) cobrada(s)
+                          </span>
+                        </div>
+
+                        {inst.historico && inst.historico.length > 0 && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                            {inst.historico.map((h, hIdx) => (
+                              <div
+                                key={hIdx}
+                                style={{
+                                  padding: '6px 10px',
+                                  borderRadius: 6,
+                                  background: 'rgba(0,0,0,0.3)',
+                                  fontSize: 11.5,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: 8
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ color: 'var(--teal)', fontWeight: 800 }}>📅 {h.data}</span>
+                                  <span style={{ color: '#fff' }}>{h.descricao || 'Cobrança efetuada'}</span>
+                                </div>
+                                <span style={{ fontWeight: 900, color: '#EF4444' }}>
+                                  R$ {Number(h.valorCobrado).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
             {activeTab === 'dialogue' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {/* Barra de Filtro e Busca */}
@@ -4914,6 +5541,13 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                       const isMe = item.isFromMe;
                       const isAudio = item.type === 'AUDIO';
                       const isImage = item.type === 'IMAGE';
+                      const fullText = `${item.content || ''} ${item.resumoFinanceiro || ''}`.toLowerCase();
+                      const hasNegotiation = /renegocia|negocia|acordo|repactua/.test(fullText);
+                      const hasLoan = /emprest|mútuo|transfer|pix|ted|dinheiro/.test(fullText);
+                      const hasAmortization = /amortiz|abater|abate|principal|rolagem|só juros|so juros/.test(fullText);
+                      const hasInstallment = /parcela|prestação|prestacao|cobranca|cobrança/.test(fullText);
+                      const isKeywordMatch = hasNegotiation || hasLoan || hasAmortization || hasInstallment;
+
                       return (
                         <div
                           key={item.id || idx}
@@ -4926,12 +5560,14 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                               ? 'linear-gradient(135deg, rgba(0, 229, 155, 0.15), rgba(15, 23, 42, 0.9))'
                               : isImage
                               ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.15), rgba(15, 23, 42, 0.95))'
+                              : isKeywordMatch
+                              ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(30, 41, 59, 0.95))'
                               : 'linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95))',
-                            border: `1px solid ${isMe ? 'rgba(0, 229, 155, 0.35)' : isAudio ? 'rgba(56, 189, 248, 0.4)' : isImage ? 'rgba(245, 158, 11, 0.4)' : 'rgba(255,255,255,0.1)'}`,
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                            border: `1.5px solid ${isKeywordMatch ? 'rgba(245, 158, 11, 0.6)' : isMe ? 'rgba(0, 229, 155, 0.35)' : isAudio ? 'rgba(56, 189, 248, 0.4)' : isImage ? 'rgba(245, 158, 11, 0.4)' : 'rgba(255,255,255,0.1)'}`,
+                            boxShadow: isKeywordMatch ? '0 0 12px rgba(245, 158, 11, 0.2)' : '0 2px 8px rgba(0,0,0,0.2)'
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <span style={{ fontSize: 12, fontWeight: 800, color: isMe ? 'var(--teal)' : '#fff' }}>
                                 {item.sender}
@@ -4946,9 +5582,24 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                               }}>
                                 {item.mediaTypeLabel}
                               </span>
+                              {hasNegotiation && (
+                                <span style={{ fontSize: 9.5, fontWeight: 800, padding: '2px 5px', borderRadius: 4, background: '#F59E0B', color: '#081018' }}>
+                                  🤝 Renegociação / Acordo
+                                </span>
+                              )}
+                              {hasAmortization && (
+                                <span style={{ fontSize: 9.5, fontWeight: 800, padding: '2px 5px', borderRadius: 4, background: '#00E59B', color: '#081018' }}>
+                                  ⚖️ Ponto de Amortização
+                                </span>
+                              )}
+                              {hasInstallment && !hasNegotiation && (
+                                <span style={{ fontSize: 9.5, fontWeight: 800, padding: '2px 5px', borderRadius: 4, background: '#38BDF8', color: '#081018' }}>
+                                  📅 Parcela / Cobrança
+                                </span>
+                              )}
                             </div>
-                            <span style={{ fontSize: 10.5, color: 'var(--ink2)' }}>
-                              {item.dateTime || item.date}
+                            <span style={{ fontSize: 11, fontWeight: isKeywordMatch ? 900 : 700, color: isKeywordMatch ? '#F59E0B' : 'var(--ink2)', background: isKeywordMatch ? 'rgba(245, 158, 11, 0.15)' : 'transparent', padding: '2px 6px', borderRadius: 4 }}>
+                              📅 {item.dateTime || item.date}
                             </span>
                           </div>
 

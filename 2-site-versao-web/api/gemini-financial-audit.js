@@ -189,7 +189,16 @@ INSTRUÇÕES RIGOROSAS DE CÁLCULO E ANÁLISE PERICIAL:
    - Houve cobrança de juros sobre juros (anatocismo / agiotagem abusiva)?
    - O devedor fez pagamentos antecipados que não foram abatidos?
    - Cobranças sem comprovante ou duplicadas?
-4. Emita o veredito final:
+4. Identifique TODAS AS NEGOCIAÇÕES E RENEGOCIAÇÕES COM DATAS:
+   - Mapeie a data de cada negociação inicial e de cada renegociação/repactuação ocorrida na conversa.
+   - Extraia valores negociados, quantidade de parcelas negociadas, datas pactuadas para os pagamentos e o valor total acordado.
+5. Identifique TODAS AS AMORTIZAÇÕES NÃO FEITAS PELO CREDOR:
+   - Pelo Código Civil art. 354, todo pagamento que supera os juros vencidos da data abate obrigatoriamente o capital principal.
+   - Aponte quais empréstimos tinham direito a amortização que o credor NÃO concedeu (tratando o pagamento como "apenas juros/rolagem" e continuando a cobrar a taxa sobre o saldo cheio anterior).
+   - Indique os valores exatos de cada amortização sonegada pelo credor e o prejuízo gerado ao devedor.
+6. Mapeie a QUANTIDADE DE PARCELAS COBRADAS POR CADA EMPRÉSTIMO COM DATAS:
+   - Quantas vezes e em quais datas o credor cobrou parcelas ou juros para cada empréstimo, com datas e valores cobrados.
+7. Emita o veredito final:
    - Total original emprestado
    - Total comprovadamente pago pelo devedor
    - Total devido segundo a matemática financeira correta
@@ -203,6 +212,53 @@ Retorne EXCLUSIVAMENTE um JSON com esta estrutura:
   "total_juros_cobrados_pelo_credor": 0.00,
   "total_juros_devidos_calculo_correto": 0.00,
   "total_amortizado_principal": 0.00,
+  "saldo_final_real": 0.00,
+  "status_quitacao": "QUITADO_PAGO_A_MAIS" | "QUITADO_EXATO" | "SALDO_DEVEDOR_RESTANTE",
+  "valor_pago_a_mais_a_restituir": 0.00,
+  "valor_restante_a_pagar": 0.00,
+  "taxa_juros_efetiva_mensal": 0.00,
+  "diagnostico_pericial": "Parecer detalhado explicando as cobranças indevidas, onde o credor errou nos cálculos e o direito do devedor...",
+  "irregularidades_detectadas": [
+    "Descrição de cada erro ou cobrança abusiva encontrada"
+  ],
+  "negociacoes_com_datas": [
+    {
+      "data_negociacao": "AAAA-MM-DD",
+      "tipo": "NEGOCIACAO" | "RENEGOCIACAO",
+      "valor_negociado": 0.00,
+      "quantidade_parcelas": "Ex: 4 parcelas",
+      "datas_pagamentos": ["AAAA-MM-DD"],
+      "valor_total": 0.00,
+      "descricao": "Resumo do que foi acordado",
+      "evidencia": "Trecho da mensagem ou áudio"
+    }
+  ],
+  "amortizacoes_nao_feitas": [
+    {
+      "data_pagamento": "AAAA-MM-DD",
+      "emprestimo_referencia": "Nome ou data do empréstimo afetado",
+      "valor_pago": 0.00,
+      "juros_devidos_na_data": 0.00,
+      "valor_direito_amortizacao": 0.00,
+      "prejuizo_ou_irregularidade": "Explicar como o credor ignorou a amortização do principal",
+      "evidencia": "Trecho da cobrança indevida"
+    }
+  ],
+  "parcelas_cobradas_por_emprestimo": [
+    {
+      "emprestimo": "Identificação do Empréstimo",
+      "data_emprestimo": "AAAA-MM-DD",
+      "quantidade_parcelas_cobradas": 0,
+      "historico_cobrancas": [
+        {
+          "data": "AAAA-MM-DD",
+          "valor_cobrado": 0.00,
+          "descricao": "...",
+          "evidencia": "..."
+        }
+      ]
+    }
+  ],
   "saldo_final_real": 0.00,
   "status_quitacao": "QUITADO_PAGO_A_MAIS" | "QUITADO_EXATO" | "SALDO_DEVEDOR_RESTANTE",
   "valor_pago_a_mais_a_restituir": 0.00,
