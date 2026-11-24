@@ -1246,7 +1246,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
         addLog(`📥 ${rawMessages.length} mensagens históricas carregadas do arquivo!`, 'success');
       } else if (selectedContact) {
         addLog(`🌐 Conectando à API para buscar histórico integral de ${selectedContact.name} (${selectedContact.displayPhone || selectedContact.phone})...`, 'info');
-        addLog('⏳ MODO ANTI-TRAVAMENTO ATIVO: Buscando todas as mensagens da primeira até a última com pausas suaves para garantir 100% de precisão sem perda de dados...', 'info');
+        addLog('⏳ MODO ANTI-TRAVAMENTO ATIVO: Buscando todas as mensagens da primeira até a última com pausas de 700ms e até 10 tentativas espaçadas para máxima precisão sem perda de dados...', 'info');
         const chatMsgs = await fetchFullChatHistory(selectedContact, (info) => {
           if (typeof info === 'object' && info !== null) {
             addLog(`📥 [Página ${info.page}] Recuperando histórico com tranquilidade... ${info.count} mensagens acumuladas no total.`, 'info');

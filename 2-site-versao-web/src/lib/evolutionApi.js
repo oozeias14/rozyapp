@@ -2201,12 +2201,12 @@ export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
   const uniqueCandidates = resolved.candidateJids;
   const phoneSigs = new Set(resolved.phoneSigs.filter(s => s && s.length >= 8));
 
-  // Helper com pausa suave (200ms) e retentativas exponenciais automáticas
+  // Helper com pausa suave (700ms) e até 10 retentativas espaçadas automáticas
   // Evita travamentos, rate-limits ou sobrecarga no WhatsApp Web ao buscar mensagens antigas
-  async function fetchWithSmoothPacing(body, retries = 3) {
+  async function fetchWithSmoothPacing(body, retries = 10) {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        await new Promise(resolve => setTimeout(resolve, 200)); // Pausa suave anti-travamento
+        await new Promise(resolve => setTimeout(resolve, 700)); // Pausa suave anti-travamento de 700ms
         const res = await evolutionFetch(`/chat/findMessages/${instanceName}`, {
           method: 'POST',
           body: JSON.stringify(body)
@@ -2215,7 +2215,8 @@ export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
         if (Array.isArray(recs)) return recs;
       } catch (err) {
         if (attempt === retries) return [];
-        await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+        // Espera espaçada com retentativa proporcional (700ms, 1400ms, 2100ms... até 10 tentativas)
+        await new Promise(resolve => setTimeout(resolve, 700 * attempt));
       }
     }
     return [];
