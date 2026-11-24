@@ -16,11 +16,11 @@ export default async function handler(req, res) {
   const { action, base64Data, mimeType, payload } = req.body || {};
 
   const candidateModels = [
-    'gemini-2.5-flash',
     'gemini-2.0-flash',
     'gemini-1.5-flash',
-    'gemini-2.5-pro',
+    'gemini-2.5-flash',
     'gemini-1.5-pro',
+    'gemini-2.5-pro',
     'gemini-flash-latest'
   ];
 
@@ -49,6 +49,10 @@ export default async function handler(req, res) {
         const data = await resp.json();
         if (!resp.ok) {
           lastError = data?.error?.message || `HTTP ${resp.status}`;
+          if (resp.status === 429 || resp.status === 503) {
+            // Pausa estratégica de 1500ms para liberação de cota antes do próximo modelo
+            await new Promise(r => setTimeout(r, 1500));
+          }
           continue;
         }
 

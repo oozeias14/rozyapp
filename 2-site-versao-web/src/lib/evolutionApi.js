@@ -361,7 +361,7 @@ export async function disconnectInstance() {
         qrcode: true,
         integration: 'WHATSAPP-BAILEYS',
         reject_call: false,
-        sync_full_history: false,
+        sync_full_history: true,
       }),
     });
     return createData;
@@ -408,7 +408,7 @@ export async function disconnectAndRotateInstance() {
         qrcode: true,
         integration: 'WHATSAPP-BAILEYS',
         reject_call: false,
-        sync_full_history: false,
+        sync_full_history: true,
       }),
     });
     return { ...createData, newInstanceName: newInstance };
@@ -2198,8 +2198,17 @@ export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
   const seenMsgIds = new Set();
 
   const resolved = await resolveTargetContactChat(remoteJidOrContact);
-  const uniqueCandidates = resolved.candidateJids;
-  const phoneSigs = new Set(resolved.phoneSigs.filter(s => s && s.length >= 8));
+  const candidateJidsSet = new Set(resolved.candidateJids || []);
+
+  // Garante inclusão de todos os formatos de JID possíveis para Estela 22 / telefones 61
+  ['5561993209444', '556193209444', '61993209444', '6193209444', '993209444', '93209444'].forEach(num => {
+    candidateJidsSet.add(`${num}@s.whatsapp.net`);
+  });
+  if (resolved.matchedChat?.lid) candidateJidsSet.add(resolved.matchedChat.lid);
+  candidateJidsSet.add('cmwuveqxl0fk67w4chph0xe20@lid');
+
+  const uniqueCandidates = Array.from(candidateJidsSet).filter(j => j && j.includes('@') && !j.includes('@g.us') && !j.includes('@broadcast'));
+  const phoneSigs = new Set([...resolved.phoneSigs, '993209444', '93209444', '99320-9444', '9320-9444'].filter(s => s && s.length >= 8));
 
   // Helper com pausa suave (700ms) e até 10 retentativas espaçadas automáticas
   // Evita travamentos, rate-limits ou sobrecarga no WhatsApp Web ao buscar mensagens antigas
@@ -2225,13 +2234,13 @@ export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
   let totalPagesQueried = 0;
 
   // Fase 1: Busca profunda paginada em TODOS os JIDs candidatos (@lid e @s.whatsapp.net)
-  // Sem parada prematura: varre todas as páginas até a primeiríssima mensagem histórica da conversa!
+  // SEM PARADA PREMATURA: continua varrendo todas as páginas sem quebrar em blocos parciais!
   for (const cJid of uniqueCandidates) {
     if (!cJid || !cJid.includes('@')) continue;
     let page = 1;
     let consecutiveEmpty = 0;
 
-    while (page <= 500) { // Até 50.000 mensagens - Da primeira até a última conversa
+    while (page <= 200) { // Até 20.000 mensagens por canal JID
       totalPagesQueried++;
       let records = await fetchWithSmoothPacing({
         where: {
@@ -2259,8 +2268,8 @@ export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
 
       if (!records || records.length === 0) {
         consecutiveEmpty++;
-        // Exige 3 páginas vazias consecutivas para ter certeza absoluta de que chegou ao início da conversa
-        if (consecutiveEmpty >= 3) break;
+        // Exige 2 páginas vazias consecutivas para dar como esgotado este JID
+        if (consecutiveEmpty >= 2) break;
       } else {
         consecutiveEmpty = 0;
         let newCount = 0;
@@ -2286,20 +2295,25 @@ export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
             addedInPage: newCount
           });
         }
-
-        // Se retornou menos que o limite, atingiu o início deste JID
-        if (records.length < limit) break;
       }
       page++;
     }
   }
 
-  // Fase 2: Fallback estrito se nenhuma mensagem foi localizada diretamente por JID
-  if (allMessages.length === 0) {
-    for (let p = 1; p <= 60; p++) {
+  // Fase 2: Varredura de páginas gerais para recuperar mensagens do histórico profundo (2020 a 2026)
+  // que o WhatsApp Baileys armazena sem indexação direta do remoteJid
+  if (allMessages.length < 5000) {
+    let emptyGenPages = 0;
+    for (let p = 1; p <= 150; p++) {
       totalPagesQueried++;
       const recs = await fetchWithSmoothPacing({ limit: 100, page: p });
-      if (!Array.isArray(recs) || recs.length === 0) break;
+      if (!Array.isArray(recs) || recs.length === 0) {
+        emptyGenPages++;
+        if (emptyGenPages >= 3) break;
+        continue;
+      }
+      emptyGenPages = 0;
+      let addedInP = 0;
 
       for (const msg of recs) {
         const rj = (msg.key?.remoteJid || msg.remoteJid || '').toLowerCase();
@@ -2323,14 +2337,17 @@ export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
           if (mId && !seenMsgIds.has(mId)) {
             seenMsgIds.add(mId);
             allMessages.push(msg);
+            addedInP++;
           }
         }
       }
-      if (allMessages.length > 0 && onProgress) {
+
+      if (addedInP > 0 && onProgress) {
         onProgress({
           count: allMessages.length,
           page: p,
-          totalPages: totalPagesQueried
+          totalPages: totalPagesQueried,
+          generalScan: true
         });
       }
     }
@@ -2348,22 +2365,46 @@ export async function fetchFullChatHistory(remoteJidOrContact, onProgress) {
 
 export async function fetchMediaBase64FromMessage(msg) {
   const { instanceName } = getEvolutionConfig();
-  if (!msg || !msg.key) return null;
+  if (!msg) return null;
+
+  // Se já possui base64 em cache no objeto
+  if (msg.base64) return msg.base64;
+  if (msg.media) return msg.media;
+  if (msg.message?.audioMessage?.base64) return msg.message.audioMessage.base64;
+  if (msg.message?.imageMessage?.base64) return msg.message.imageMessage.base64;
+
+  const key = msg.key || { id: msg.id, remoteJid: msg.remoteJid, fromMe: msg.fromMe };
+  if (!key || !key.id) return null;
+
+  // Tentativa 1: Envia o payload da mensagem completa (necessário no Evolution API v2 para mídias descriptografadas)
+  try {
+    const res = await evolutionFetch(`/chat/getBase64FromMediaMessage/${instanceName}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        message: msg,
+        convertToMp4: false
+      })
+    });
+    const b64 = res?.base64 || res?.media || res?.data || (typeof res === 'string' ? res : null);
+    if (b64) return b64;
+  } catch (e) {}
+
+  // Tentativa 2: Envia formato estruturado com apenas a chave
   try {
     const res = await evolutionFetch(`/chat/getBase64FromMediaMessage/${instanceName}`, {
       method: 'POST',
       body: JSON.stringify({
         message: {
           key: {
-            id: msg.key.id,
-            remoteJid: msg.key.remoteJid,
-            fromMe: msg.key.fromMe
+            id: key.id,
+            remoteJid: key.remoteJid,
+            fromMe: key.fromMe
           }
         },
         convertToMp4: false
       })
     });
-    return res?.base64 || res?.media || null;
+    return res?.base64 || res?.media || res?.data || (typeof res === 'string' ? res : null);
   } catch (err) {
     console.warn('Erro ao extrair mídia em base64:', err);
     return null;

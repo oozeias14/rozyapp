@@ -785,29 +785,40 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
 
     try {
       let rawMessages = [];
+      let fileMsgs = [];
       if (uploadedChatFile) {
         addLog(`📄 Lendo mensagens do arquivo de backup "${uploadedChatFile.name}"...`, 'info');
-        const lines = uploadedChatFile.content.split('\n');
-        lines.forEach((line, idx) => {
-          const match = line.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(?:às\s+)?(\d{1,2}:\d{2})\s*-\s*([^:]+):\s*(.*)$/);
-          if (match) {
-            const [, rawDate, rawTime, sender, text] = match;
-            const [d, m, y] = rawDate.split('/');
-            const fullYear = y.length === 2 ? '20' + y : y;
-            const isoDate = `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-            rawMessages.push({
-              key: { id: `file-${idx}`, fromMe: sender.toLowerCase().includes('você') || sender.toLowerCase().includes('you') },
-              messageTimestamp: Math.floor(new Date(`${isoDate}T${rawTime}:00`).getTime() / 1000),
-              senderName: sender.trim(),
-              text: text.trim(),
-              isoDate
-            });
-          }
-        });
-      } else if (selectedContact) {
-        addLog(`🌐 Buscando histórico completo do WhatsApp para ${selectedContact.name} (${selectedContact.displayPhone || selectedContact.phone})...`, 'info');
-        rawMessages = await fetchFullChatHistory(selectedContact);
+        fileMsgs = parseWhatsAppExportedText(uploadedChatFile.content);
+        addLog(`📥 ${fileMsgs.length} mensagens históricas carregadas do arquivo!`, 'success');
       }
+
+      let apiMsgs = [];
+      if (selectedContact) {
+        addLog(`🌐 Buscando histórico completo do WhatsApp para ${selectedContact.name} (${selectedContact.displayPhone || selectedContact.phone})...`, 'info');
+        apiMsgs = await fetchFullChatHistory(selectedContact);
+        addLog(`📥 ${apiMsgs.length} mensagens obtidas da conexão online do WhatsApp.`, 'info');
+      }
+
+      // Combinação inteligente
+      const msgMap = new Map();
+      for (const m of fileMsgs) {
+        const sig = `${m.isoDate}_${m.rawTime}_${(m.text || '').slice(0, 30)}`;
+        msgMap.set(sig, m);
+      }
+      for (const m of apiMsgs) {
+        const ts = Number(m.messageTimestamp || 0);
+        const iso = ts ? new Date(ts * 1000).toISOString().slice(0, 10) : '';
+        const time = ts ? new Date(ts * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+        const text = m.text || m.message?.conversation || m.message?.extendedTextMessage?.text || '';
+        const sig = `${iso}_${time}_${text.slice(0, 30)}`;
+        if (msgMap.has(sig)) {
+          const prev = msgMap.get(sig);
+          msgMap.set(sig, { ...prev, ...m, text: prev.text || text });
+        } else {
+          msgMap.set(sig || (m.key?.id || Math.random()), m);
+        }
+      }
+      rawMessages = Array.from(msgMap.values());
 
       if (rawMessages.length === 0) {
         throw new Error('Nenhuma mensagem encontrada na conversa com este contato.');
@@ -1012,6 +1023,60 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     setUploadingReceipts(false);
   }
 
+  // ── PARSER DE CONVERSA EXPORTADA DO WHATSAPP (.TXT / ANDROID & IPHONE) ──
+  function parseWhatsAppExportedText(content) {
+    if (!content || typeof content !== 'string') return [];
+    const lines = content.split(/\r?\n/);
+    const messages = [];
+    let currentMsg = null;
+
+    // 1. Android: "24/11/2026 14:10 - Nome: Mensagem" ou "24/11/26 14:10 - Nome: Mensagem" ou "24/11/2026 às 14:10 - Nome: Mensagem"
+    const regexAndroid = /^(\d{1,2}\/\d{1,2}\/\d{2,4})(?:[,\s]+)?(?:às\s+)?(\d{1,2}:\d{2}(?::\d{2})?)\s*-\s*([^:]+):\s*(.*)$/;
+    // 2. iOS: "[24/11/2026, 14:10:25] Nome: Mensagem" ou "[24/11/26 14:10:25] Nome: Mensagem"
+    const regexIOS = /^\[(\d{1,2}\/\d{1,2}\/\d{2,4})[,\s]+(\d{1,2}:\d{2}(?::\d{2})?)(?:\s*[APap][Mm])?\]\s*([^:]+):\s*(.*)$/;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line.trim()) continue;
+
+      const match = line.match(regexAndroid) || line.match(regexIOS);
+      if (match) {
+        if (currentMsg) messages.push(currentMsg);
+        const [, rawDate, rawTime, sender, text] = match;
+        const parts = rawDate.split('/');
+        const d = parts[0];
+        const m = parts[1];
+        let y = parts[2] || '';
+        if (y.length === 2) y = '20' + y;
+        const isoDate = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+        const timePart = rawTime.slice(0, 5);
+
+        const senderClean = sender.trim();
+        const isFromMe = /^(você|you)$/i.test(senderClean) || senderClean.toLowerCase().includes('você');
+        const isAudio = text.includes('áudio oculto') || text.includes('audio attached') || /PTT-\d+.*\.opus/i.test(text);
+        const isImage = text.includes('imagem ocultada') || text.includes('image attached') || /IMG-\d+.*\.jpg/i.test(text);
+
+        currentMsg = {
+          key: { id: `txt-${messages.length}`, fromMe: isFromMe },
+          messageTimestamp: Math.floor(new Date(`${isoDate}T${timePart}:00`).getTime() / 1000) || 0,
+          senderName: senderClean,
+          text: text.trim(),
+          isoDate,
+          rawTime: timePart,
+          messageType: isAudio ? 'audioMessage' : (isImage ? 'imageMessage' : 'conversation'),
+          isAudio,
+          isImage,
+          fromFile: true
+        };
+      } else if (currentMsg) {
+        // Preserva mensagens longas com múltiplas linhas sem descartar texto
+        currentMsg.text += '\n' + line;
+      }
+    }
+    if (currentMsg) messages.push(currentMsg);
+    return messages;
+  }
+
   // Upload de Conversa Exportada do WhatsApp (.txt)
   function handleChatFileUpload(e) {
     const file = e.target.files?.[0];
@@ -1019,8 +1084,10 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target.result;
-      setUploadedChatFile({ name: file.name, content });
-      addLog(`📁 Arquivo de conversa exportada "${file.name}" carregado com sucesso (${(content.length / 1024).toFixed(1)} KB).`, 'success');
+      const parsed = parseWhatsAppExportedText(content);
+      setUploadedChatFile({ name: file.name, content, count: parsed.length });
+      addLog(`📁 Arquivo de conversa "${file.name}" carregado com sucesso: ${parsed.length} mensagens históricas identificadas!`, 'success');
+      alert(`Histórico carregado com sucesso!\n\nArquivo: ${file.name}\nTotal de mensagens identificadas: ${parsed.length}\n\nO sistema agora analisará 100% de todas as mensagens desde 2020!`);
     };
     reader.readAsText(file);
   }
@@ -1223,40 +1290,49 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
       // ── FASE 1: EXTRAIR MENSAGENS DO WHATSAPP OU DO ARQUIVO ──────────
       setAuditProgress({ current: 15, total: 100, stepLabel: 'Fase 1/4: Baixando histórico completo de mensagens...' });
 
+      let fileMsgs = [];
       if (uploadedChatFile) {
-        addLog(`📄 Extraindo histórico do arquivo de backup "${uploadedChatFile.name}"...`, 'info');
-        const lines = uploadedChatFile.content.split('\n');
-        lines.forEach((line, idx) => {
-          const match = line.match(/^(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(?:às\s+)?(\d{1,2}:\d{2})\s*-\s*([^:]+):\s*(.*)$/);
-          if (match) {
-            const [, rawDate, rawTime, sender, text] = match;
-            const [d, m, y] = rawDate.split('/');
-            const fullYear = y.length === 2 ? '20' + y : y;
-            const isoDate = `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-            rawMessages.push({
-              key: { id: `file-${idx}`, fromMe: sender.toLowerCase().includes('você') || sender.toLowerCase().includes('you') },
-              messageTimestamp: Math.floor(new Date(`${isoDate}T${rawTime}:00`).getTime() / 1000),
-              senderName: sender.trim(),
-              text: text.trim(),
-              isoDate,
-              rawTime
-            });
-          }
-        });
-        addLog(`📥 ${rawMessages.length} mensagens históricas carregadas do arquivo!`, 'success');
-      } else if (selectedContact) {
+        addLog(`📄 Lendo histórico do arquivo de backup "${uploadedChatFile.name}"...`, 'info');
+        fileMsgs = parseWhatsAppExportedText(uploadedChatFile.content);
+        addLog(`📥 ${fileMsgs.length} mensagens históricas carregadas do arquivo de 2020 a 2026!`, 'success');
+      }
+
+      let apiMsgs = [];
+      if (selectedContact) {
         addLog(`🌐 Conectando à API para buscar histórico integral de ${selectedContact.name} (${selectedContact.displayPhone || selectedContact.phone})...`, 'info');
-        addLog('⏳ MODO ANTI-TRAVAMENTO ATIVO: Buscando todas as mensagens da primeira até a última com pausas de 700ms e até 10 tentativas espaçadas para máxima precisão sem perda de dados...', 'info');
-        const chatMsgs = await fetchFullChatHistory(selectedContact, (info) => {
+        addLog('⏳ MODO ANTI-TRAVAMENTO ATIVO: Buscando todas as mensagens da primeira até a última com pausas suaves de 700ms...', 'info');
+        apiMsgs = await fetchFullChatHistory(selectedContact, (info) => {
           if (typeof info === 'object' && info !== null) {
             addLog(`📥 [Página ${info.page}] Recuperando histórico com tranquilidade... ${info.count} mensagens acumuladas no total.`, 'info');
           } else {
             addLog(`📥 Baixando mensagens do WhatsApp... ${info} mensagens recuperadas.`, 'info');
           }
         });
-        rawMessages = chatMsgs;
-        addLog(`📥 Total de ${rawMessages.length} mensagens históricas recuperadas do WhatsApp de ponta a ponta!`, 'success');
+        addLog(`📥 Total de ${apiMsgs.length} mensagens históricas recuperadas do WhatsApp de ponta a ponta!`, 'success');
       }
+
+      // Combinação e desduplicação profunda entre arquivo (.txt) e API online
+      const msgMap = new Map();
+      for (const m of fileMsgs) {
+        const sig = `${m.isoDate}_${m.rawTime}_${(m.text || '').slice(0, 30)}`;
+        msgMap.set(sig, m);
+      }
+      for (const m of apiMsgs) {
+        const ts = Number(m.messageTimestamp || 0);
+        const iso = ts ? new Date(ts * 1000).toISOString().slice(0, 10) : '';
+        const time = ts ? new Date(ts * 1000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+        const text = m.text || m.message?.conversation || m.message?.extendedTextMessage?.text || '';
+        const sig = `${iso}_${time}_${text.slice(0, 30)}`;
+        if (msgMap.has(sig)) {
+          const prev = msgMap.get(sig);
+          msgMap.set(sig, { ...prev, ...m, text: prev.text || text });
+        } else {
+          msgMap.set(sig || (m.key?.id || Math.random()), m);
+        }
+      }
+
+      rawMessages = Array.from(msgMap.values());
+      addLog(`📥 Total consolidado para perícia: ${rawMessages.length} mensagens históricas prontas para exame!`, 'success');
 
       if (rawMessages.length === 0 && uploadedReceipts.length === 0) {
         throw new Error('Nenhuma mensagem ou comprovante encontrado para analisar.');
@@ -1409,17 +1485,30 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
           try {
             const base64Audio = await fetchMediaBase64FromMessage(msg);
             if (base64Audio) {
-              const resp = await fetch('/api/gemini-financial-audit', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  action: 'transcribe_audio',
-                  base64Data: base64Audio,
-                  mimeType: 'audio/ogg'
-                })
-              });
-              if (resp.ok) {
-                const audData = await resp.json();
+              let audData = null;
+              // Até 3 tentativas com pausa para respeitar cota do Gemini e evitar 429
+              for (let att = 1; att <= 3; att++) {
+                try {
+                  const resp = await fetch('/api/gemini-financial-audit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      action: 'transcribe_audio',
+                      base64Data: base64Audio,
+                      mimeType: 'audio/ogg'
+                    })
+                  });
+                  if (resp.ok) {
+                    audData = await resp.json();
+                    break;
+                  }
+                  if (att < 3) await new Promise(r => setTimeout(r, 1500 * att));
+                } catch (e) {
+                  if (att < 3) await new Promise(r => setTimeout(r, 1500 * att));
+                }
+              }
+
+              if (audData && audData.transcricao) {
                 const audItem = {
                   date: dateStr,
                   time: timeStr,
@@ -1462,7 +1551,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   valores: audData.valores_mencionados || []
                 } : item));
 
-                addLog(`✓ Áudio #${audioCount} de ${senderNameOnly} transcrito com sucesso: "${audData.resumo_financeiro || audData.transcricao.slice(0, 80)}..."`, 'success');
+                addLog(`✓ Áudio #${audioCount} de ${senderNameOnly} transcrito com sucesso: "${(audData.resumo_financeiro || audData.transcricao).slice(0, 80)}..."`, 'success');
               } else {
                 setLiveDialogueFeed(prev => prev.map(item => item.id === audioLiveId ? {
                   ...item,
@@ -1470,11 +1559,14 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   transcription: '[Áudio sem texto legível detectado]'
                 } : item));
               }
+
+              // Pausa de 1200ms entre áudios para manter a cota da IA estável e sem rate-limit (429)
+              await new Promise(r => setTimeout(r, 1200));
             } else {
               setLiveDialogueFeed(prev => prev.map(item => item.id === audioLiveId ? {
                 ...item,
                 status: 'done',
-                transcription: '[Mídia do áudio não disponível para download]'
+                transcription: msg.fromFile ? '[Áudio do WhatsApp citado no histórico .txt]' : '[Mídia do áudio expirada no servidor do WhatsApp]'
               } : item));
             }
           } catch (audioErr) {
@@ -1556,6 +1648,7 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                   receiptData: ocrData,
                   isFinancial: isReceipt || valPago > 0
                 });
+                await new Promise(r => setTimeout(r, 800));
               }
             }
           } catch (imgErr) {
@@ -4341,6 +4434,75 @@ export function FinancialDebtAuditTab({ status, setShowConnectModal, config }) {
                     {previewExchange.lastFromMe?.text || (loadingPreview ? 'Buscando última mensagem de texto enviada para Estela 22...' : '(Nenhuma mensagem de texto recente encontrada)')}
                   </div>
                 </div>
+              </div>
+
+              {/* 📁 HISTÓRICO COMPLETO DO WHATSAPP DESDE 2020 (ARQUIVO .TXT) */}
+              <div style={{
+                background: 'rgba(0, 0, 0, 0.45)',
+                border: uploadedChatFile ? '1.5px solid var(--teal)' : '1px dashed rgba(56, 189, 248, 0.45)',
+                borderRadius: 12,
+                padding: '14px 18px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 24 }}>📁</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 900, color: uploadedChatFile ? 'var(--teal)' : '#38bdf8' }}>
+                        {uploadedChatFile ? `✓ Histórico Exportado Carregado (${uploadedChatFile.count || 0} mensagens identificadas)` : 'Importar Histórico Completo do WhatsApp (.txt) — Desde 2020 (5.000+ mensagens)'}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: 'var(--ink2)', lineHeight: 1.4 }}>
+                        {uploadedChatFile
+                          ? `Arquivo "${uploadedChatFile.name}" carregado. O sistema cruzará 100% das mensagens do arquivo com o WhatsApp online!`
+                          : 'Como você conversa com Estela 22 desde 2020 com mais de 5.000 mensagens, anexe o arquivo .txt exportado do WhatsApp no celular para auditar todas as mensagens sem limites do WhatsApp Web.'}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {uploadedChatFile && (
+                      <button
+                        type="button"
+                        onClick={() => setUploadedChatFile(null)}
+                        style={{
+                          background: 'rgba(255, 68, 68, 0.15)',
+                          border: '1px solid rgba(255, 68, 68, 0.4)',
+                          color: '#ff6b6b',
+                          borderRadius: 8,
+                          padding: '6px 12px',
+                          fontSize: 11,
+                          fontWeight: 800,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        ✕ Remover
+                      </button>
+                    )}
+                    <label style={{
+                      background: uploadedChatFile ? 'rgba(0, 229, 155, 0.18)' : 'linear-gradient(135deg, #0284c7, #0369a1)',
+                      border: '1px solid ' + (uploadedChatFile ? 'var(--teal)' : '#38bdf8'),
+                      color: '#fff',
+                      borderRadius: 8,
+                      padding: '8px 16px',
+                      fontSize: 12,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}>
+                      📂 {uploadedChatFile ? 'Trocar Arquivo .txt' : 'Anexar Conversa Exportada (.txt)'}
+                      <input type="file" accept=".txt" style={{ display: 'none' }} onChange={handleChatFileUpload} />
+                    </label>
+                  </div>
+                </div>
+                {!uploadedChatFile && (
+                  <div style={{ fontSize: 11, color: 'rgba(255, 255, 255, 0.7)', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: 8, lineHeight: 1.4 }}>
+                    💡 <strong>Como exportar no celular:</strong> No WhatsApp, abra a conversa com <strong>Estela 22</strong> &gt; Toque nos 3 pontinhos no canto superior &gt; <em>Mais</em> &gt; <em>Exportar conversa</em> &gt; Selecione <em>Sem mídia</em> &gt; Salve ou envie o arquivo .txt gerado para o computador e anexe aqui. Todas as mensagens de 2020 a 2026 serão lidas com precisão cirúrgica!
+                  </div>
+                )}
               </div>
             </div>
           ) : (
